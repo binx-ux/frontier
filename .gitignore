@@ -1,0 +1,35 @@
+# Build / IDE
+.vs/
+**/x64/
+**/Debug/
+**/Release/
+*.user
+*.suo
+*.sdf
+*.opensdf
+*.VC.db
+*.ipch
+
+# Binaries
+*.exe
+*.dll
+*.pdb
+*.ilk
+*.obj
+*.iobj
+*.ipdb
+*.tlog
+*.log
+*.recipe
+*.Build.CppClean.log
+
+# Local secrets — never commit webhooks or keys
+**/secrets.h
+**/*webhook*
+.env
+.env.*
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
