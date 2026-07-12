@@ -23,10 +23,14 @@ namespace Games {
         11671999447LL,  // Zombies
     };
 
+    // https://www.roblox.com/games/95721658376580 — [MTC] Multicrew Tank Combat
+    constexpr int64_t kMtcPlaceId = 95721658376580LL;
+
     enum class Kind : int {
         None = 0,
         Arsenal,
         MiscGunTest,
+        MTC,
     };
 
     inline int64_t ReadPlaceId()
@@ -70,12 +74,18 @@ namespace Games {
         return false;
     }
 
+    inline bool IsMtcPlace(int64_t place, int64_t /*gameId*/)
+    {
+        return place == kMtcPlaceId;
+    }
+
     inline Kind Detect()
     {
         const int64_t place = ReadPlaceId();
         const int64_t gameId = ReadGameId();
         if (IsArsenalPlace(place, gameId)) return Kind::Arsenal;
         if (IsMiscGunTestPlace(place, gameId)) return Kind::MiscGunTest;
+        if (IsMtcPlace(place, gameId)) return Kind::MTC;
         return Kind::None;
     }
 
@@ -89,14 +99,17 @@ namespace Games {
         switch (Detect()) {
         case Kind::Arsenal: return "Arsenal";
         case Kind::MiscGunTest: return "MiscGunTest:X";
+        case Kind::MTC: return "MTC";
         default: return "Unsupported";
         }
     }
 
     inline const char* SupportedListShort()
     {
-        return "Arsenal or MiscGunTest:X";
+        return "Arsenal, MiscGunTest:X, or MTC";
     }
+
+    inline bool IsMTC() { return Detect() == Kind::MTC; }
 }
 
 // Back-compat aliases used across the codebase
