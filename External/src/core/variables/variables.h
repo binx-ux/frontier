@@ -393,17 +393,6 @@ namespace variables {
         inline bool hideGui = false;
     }
 
-    // [MTC] Multicrew Tank Combat — slim feature set
-    namespace MTC {
-        inline bool playerEsp = true;
-        inline bool autoRange = true;
-        inline bool espBoxes = true;
-        inline bool espNames = true;
-        inline bool espDistance = true;
-        inline bool espHealth = true;
-        inline bool teamCheck = true;
-    }
-
     // Extra combat / utility packs
     namespace Extra {
         inline bool autoClicker = false;

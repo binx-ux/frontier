@@ -580,7 +580,7 @@ public:
 
         // Supported games footer
         if (!variables::Loading::failed) {
-            const char* games = "Supports  Arsenal  ·  MiscGunTest:X  ·  MTC";
+            const char* games = "Supports  Arsenal  ·  MiscGunTest:X";
             ImVec2 gs = ImGui::CalcTextSize(games);
             ImGui::SetCursorPos(ImVec2(cx - gs.x * 0.5f, ds.y - 64.f));
             ImGui::TextColored(ImVec4(0.42f, 0.42f, 0.46f, 1), "%s", games);
@@ -643,8 +643,8 @@ public:
         if (dt < 0.f) dt = 0.f;
         if (dt > 0.05f) dt = 0.05f;
 
-        // Floating icon bar — full tabs for Arsenal/MGT; hidden in MTC (own slim UI)
-        if (variables::Theme::useFloatingHeader && !Telemetry::consentPending.load() && !Games::IsMTC()) {
+        // Floating icon bar always drawn & clickable (opens menu)
+        if (variables::Theme::useFloatingHeader && !Telemetry::consentPending.load()) {
             int prevTab = variables::selectedTab;
             UIFx::FloatingHeader(&variables::selectedTab);
             if (variables::selectedTab != prevTab)
@@ -666,19 +666,21 @@ public:
             UIFx::DrawBackgroundFX(bg, ds, dt);
 
         float anim = variables::Misc::menuAnim;
+        // Ease-out cubic for scale feel
         float ease = 1.f - powf(1.f - anim, 3.f);
         float scale = 0.88f + 0.12f * ease;
-        const bool mtcUi = Games::IsMTC();
-        float baseW = mtcUi ? 440.f : 600.f;
-        float baseH = mtcUi ? 520.f : 780.f;
+        float baseW = 600.f, baseH = 780.f;
         float winW = baseW * scale;
         float winH = baseH * scale;
         float rise = (1.f - ease) * 28.f;
 
+        static int layoutVer = 4;
+        if (layoutVer == 4) {
+            ImGui::SetNextWindowSize(ImVec2(winW, winH), ImGuiCond_Always);
+            layoutVer = 5;
+        }
         ImGui::SetNextWindowSize(ImVec2(winW, winH), ImGuiCond_Always);
-        ImGui::SetNextWindowSizeConstraints(
-            mtcUi ? ImVec2(380, 420) : ImVec2(520, 560),
-            mtcUi ? ImVec2(520, 640) : ImVec2(720, 1000));
+        ImGui::SetNextWindowSizeConstraints(ImVec2(520, 560), ImVec2(720, 1000));
         ImGui::SetNextWindowPos(
             ImVec2(ds.x * 0.5f - winW * 0.5f, ds.y * 0.5f - winH * 0.5f + rise),
             ImGuiCond_Always);
@@ -707,14 +709,10 @@ public:
         ImGui::SameLine(0, 0);
         ImGui::TextColored(MatchaUI::V4(variables::Theme::accent), "Ware");
         ImGui::SetCursorPos(ImVec2(16, 28));
-        if (mtcUi)
-            ImGui::TextColored(ImVec4(0.55f, 0.85f, 0.65f, 1.f), "MTC  ·  Player ESP + Auto Range");
-        else {
-            static const char* tabNames[] = { "Combat", "Visuals", "World", "Character", "Options", "Configs", "Servers", "Music", "Status" };
-            int ti = variables::selectedTab;
-            if (ti < 0 || ti > 8) ti = 0;
-            ImGui::TextColored(MatchaUI::V4(variables::Theme::textDim), "%s", tabNames[ti]);
-        }
+        static const char* tabNames[] = { "Combat", "Visuals", "World", "Character", "Options", "Configs", "Servers", "Music", "Status" };
+        int ti = variables::selectedTab;
+        if (ti < 0 || ti > 8) ti = 0;
+        ImGui::TextColored(MatchaUI::V4(variables::Theme::textDim), "%s", tabNames[ti]);
 
         ImGui::SetCursorPos(ImVec2(10, TOP_H + 4));
         float bodyH = wh - TOP_H - FOOT_H - 8;
@@ -722,30 +720,27 @@ public:
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 6));
         ImGui::BeginChild("##navbody", ImVec2(ww - 20, bodyH), false);
 
-        if (!mtcUi) {
-            static const char* tabNames[] = { "Combat", "Visuals", "World", "Character", "Options", "Configs", "Servers", "Music", "Status" };
-            float avail = ImGui::GetContentRegionAvail().x;
-            float gap = 4.0f;
-            float tabW = (avail - gap * 2.0f) / 3.0f;
-            if (tabW < 72.f) tabW = 72.f;
-            for (int i = 0; i < 9; i++) {
-                if (i % 3) ImGui::SameLine(0, gap);
-                bool on = variables::selectedTab == i;
-                ImGui::PushStyleColor(ImGuiCol_Button, on ? ImVec4(0.16f, 0.16f, 0.18f, 1) : ImVec4(0.08f, 0.08f, 0.09f, 1));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.14f, 0.14f, 0.16f, 1));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.18f, 0.18f, 0.20f, 1));
-                ImGui::PushStyleColor(ImGuiCol_Text, on ? MatchaUI::V4(variables::Theme::text) : MatchaUI::V4(variables::Theme::textDim));
-                ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
-                if (ImGui::Button(tabNames[i], ImVec2(tabW, 24))) {
-                    variables::selectedTab = i;
-                    variables::selectedSub = 0;
-                }
-                ImGui::PopStyleVar();
-                ImGui::PopStyleColor(4);
+        // 3 rows x 3 equal tabs
+        float avail = ImGui::GetContentRegionAvail().x;
+        float gap = 4.0f;
+        float tabW = (avail - gap * 2.0f) / 3.0f;
+        if (tabW < 72.f) tabW = 72.f;
+        for (int i = 0; i < 9; i++) {
+            if (i % 3) ImGui::SameLine(0, gap);
+            bool on = variables::selectedTab == i;
+            ImGui::PushStyleColor(ImGuiCol_Button, on ? ImVec4(0.16f, 0.16f, 0.18f, 1) : ImVec4(0.08f, 0.08f, 0.09f, 1));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.14f, 0.14f, 0.16f, 1));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.18f, 0.18f, 0.20f, 1));
+            ImGui::PushStyleColor(ImGuiCol_Text, on ? MatchaUI::V4(variables::Theme::text) : MatchaUI::V4(variables::Theme::textDim));
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
+            if (ImGui::Button(tabNames[i], ImVec2(tabW, 24))) {
+                variables::selectedTab = i;
+                variables::selectedSub = 0;
             }
-            ImGui::Spacing();
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor(4);
         }
-
+        ImGui::Spacing();
         ImGui::BeginChild("##body", ImVec2(0, -2), ImGuiChildFlags_None, ImGuiWindowFlags_AlwaysVerticalScrollbar);
         MatchaMenu::RenderBody();
         ImGui::EndChild();
@@ -769,7 +764,7 @@ public:
 
         MatchaUI::DrawToast(ImGui::GetForegroundDrawList(), ds, ImGui::GetIO().DeltaTime);
 
-        if (variables::Misc::showKeybinds && !mtcUi) {
+        if (variables::Misc::showKeybinds) {
             ImGui::SetNextWindowPos(ImVec2(16, ds.y * 0.35f), ImGuiCond_FirstUseEver);
             ImGui::Begin("##binds", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_AlwaysAutoResize);
             ImGui::TextDisabled("Keybinds");

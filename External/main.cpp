@@ -18,7 +18,6 @@
 #include "src/core/features/exploits/exploits.h"
 #include "src/core/features/exploits/gun_mods.h"
 #include "src/core/games/arsenal.h"
-#include "src/core/features/mtc/mtc.h"
 #include "src/core/variables/variables.h"
 #include "src/core/telemetry/telemetry.h"
 #include "src/render/render.h"
@@ -200,13 +199,6 @@ namespace
 			auto rootPart = character.FindChild("HumanoidRootPart");
 			if (humanoid.Addr == 0 || rootPart.Addr == 0) {
 				std::this_thread::sleep_for(std::chrono::milliseconds(20));
-				continue;
-			}
-
-			// MTC — no local movement / combat exploits
-			if (Games::IsMTC()) {
-				MTC::DisableNonMtcFeatures();
-				std::this_thread::sleep_for(std::chrono::milliseconds(40));
 				continue;
 			}
 
@@ -930,7 +922,7 @@ namespace
 		if (!character)
 			return false;
 
-		// Arsenal + MiscGunTest:X + MTC
+		// Arsenal + MiscGunTest:X only
 		if (!Arsenal::IsSupportedPlace())
 			return false;
 
@@ -944,7 +936,7 @@ namespace
 		while (!memory->find_process_id(app)) {
 			if (++tries > 40) {
 				variables::Loading::failed = true;
-				strncpy_s(variables::Loading::error, "Roblox not found. Open Roblox, join Arsenal, MiscGunTest:X, or MTC, then restart.", _TRUNCATE);
+				strncpy_s(variables::Loading::error, "Roblox not found. Open Roblox, join Arsenal or MiscGunTest:X, then restart.", _TRUNCATE);
 				return false;
 			}
 			SetLoad(0.10f + (tries % 20) * 0.01f, "Waiting for Roblox");
@@ -995,14 +987,14 @@ namespace
 			if (placeId > 0 && loaded != 0 && !Arsenal::IsSupportedPlace()) {
 				variables::Loading::failed = true;
 				strncpy_s(variables::Loading::error,
-					"Unsupported game.\nJoin Arsenal, MiscGunTest:X, or MTC, then restart.",
+					"Unsupported game.\nJoin Arsenal or MiscGunTest:X, then restart.",
 					_TRUNCATE);
 				return false;
 			}
 
 			if (++tries > 600) {
 				variables::Loading::failed = true;
-				strncpy_s(variables::Loading::error, "Timed out. Join Arsenal, MiscGunTest:X, or MTC, spawn in, then restart.", _TRUNCATE);
+				strncpy_s(variables::Loading::error, "Timed out. Join Arsenal or MiscGunTest:X, spawn in, then restart.", _TRUNCATE);
 				return false;
 			}
 			if ((tries % 10) == 0) {
@@ -1064,7 +1056,7 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	// Failsafe — Roblox must be open (in-game check happens during attach)
 	if (!memory->find_process_id(app) && !WindowManager::FindRobloxHwnd()) {
 		MessageBoxW(nullptr,
-			L"Roblox is not open.\n\nJoin Arsenal, MiscGunTest:X, or MTC first, then run Match-Ware External.",
+			L"Roblox is not open.\n\nJoin Arsenal or MiscGunTest:X first, then run Match-Ware External.",
 			L"Match-Ware External",
 			MB_OK | MB_ICONINFORMATION | MB_TOPMOST);
 		return 0;
@@ -1124,18 +1116,6 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 						strcpy_s(variables::Toast::title, "MiscGunTest:X warning");
 						strcpy_s(variables::Toast::body, "Do NOT use Hitbox Extender");
 						strcpy_s(variables::Toast::footer, "You will be banned");
-					}
-					else if (Games::Detect() == Games::Kind::MTC) {
-						MTC::DisableNonMtcFeatures();
-						variables::ESP::enabled = true;
-						variables::MTC::playerEsp = true;
-						variables::MTC::autoRange = true;
-						variables::Toast::show = true;
-						variables::Toast::warning = false;
-						variables::Toast::timer = 6.0f;
-						strcpy_s(variables::Toast::title, "MTC mode");
-						strcpy_s(variables::Toast::body, "Player ESP + auto range only");
-						strcpy_s(variables::Toast::footer, "Match-Ware");
 					}
 				}
 			});
@@ -1199,37 +1179,29 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 
 				auto viewMatrix = Globals::renderEngine.GetViewMat();
 				auto players = PlayerCache::snapshotPlayers();
+				Aimbot::RunAimbot(viewMatrix, players);
+				Aimbot::RunTriggerbot(viewMatrix, players);
+				Aimbot::RunMeleeAura(players);
+				Visuals::RenderESP(drawList, viewMatrix, players);
 
-				if (Games::IsMTC()) {
-					MTC::Tick(players);
-					if (variables::MTC::playerEsp)
-						Visuals::RenderESP(drawList, viewMatrix, players);
-				}
-				else {
-					Aimbot::RunAimbot(viewMatrix, players);
-					Aimbot::RunTriggerbot(viewMatrix, players);
-					Aimbot::RunMeleeAura(players);
-					Visuals::RenderESP(drawList, viewMatrix, players);
-
-					// Overlay extras
-					if (variables::Misc::enemyCounter) {
-						int enemies = 0;
-						for (auto& p : players) {
-							if (p.health > 0) enemies++;
-						}
-						char buf[48];
-						sprintf_s(buf, "Enemies %d", enemies);
-						drawList->AddText(ImVec2(18, 52), IM_COL32(240, 240, 245, 230), buf);
+				// Overlay extras
+				if (variables::Misc::enemyCounter) {
+					int enemies = 0;
+					for (auto& p : players) {
+						if (p.health > 0) enemies++;
 					}
-					if (variables::Misc::targetHud && Aimbot::lockedPlayerAddr) {
-						for (auto& p : players) {
-							if (p.playerAddr != Aimbot::lockedPlayerAddr) continue;
-							char buf[96];
-							sprintf_s(buf, "Target  %s  %.0f HP", p.name.c_str(), p.health);
-							drawList->AddRectFilled(ImVec2(14, 72), ImVec2(14 + 220, 98), IM_COL32(10, 10, 12, 180), 6.f);
-							drawList->AddText(ImVec2(22, 78), IM_COL32(240, 240, 245, 255), buf);
-							break;
-						}
+					char buf[48];
+					sprintf_s(buf, "Enemies %d", enemies);
+					drawList->AddText(ImVec2(18, 52), IM_COL32(240, 240, 245, 230), buf);
+				}
+				if (variables::Misc::targetHud && Aimbot::lockedPlayerAddr) {
+					for (auto& p : players) {
+						if (p.playerAddr != Aimbot::lockedPlayerAddr) continue;
+						char buf[96];
+						sprintf_s(buf, "Target  %s  %.0f HP", p.name.c_str(), p.health);
+						drawList->AddRectFilled(ImVec2(14, 72), ImVec2(14 + 220, 98), IM_COL32(10, 10, 12, 180), 6.f);
+						drawList->AddText(ImVec2(22, 78), IM_COL32(240, 240, 245, 255), buf);
+						break;
 					}
 				}
 			}

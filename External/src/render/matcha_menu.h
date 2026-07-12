@@ -5,7 +5,6 @@
 #include "../core/features/aimbot/visibility.h"
 #include "../core/features/exploits/gun_mods.h"
 #include "../core/games/arsenal.h"
-#include "../core/features/mtc/mtc.h"
 #include "../sdk/offsets.h"
 #include "../memory/memory.h"
 #include <Shellapi.h>
@@ -548,12 +547,10 @@ namespace MatchaMenu {
         CopyField("Job ID", variables::Status::jobId);
         ImGui::TextColored(
             Arsenal::IsSupportedPlace() ? ImVec4(0.45f, 0.9f, 0.55f, 1.f) : ImVec4(1.f, 0.45f, 0.35f, 1.f),
-            "Game: %s", Games::Name());
+            Arsenal::IsSupportedPlace() ? (Games::Detect() == Games::Kind::MiscGunTest ? "Game: MiscGunTest:X" : "Game: Arsenal")
+                                        : "Game: unsupported");
         if (Games::Detect() == Games::Kind::MiscGunTest) {
             ImGui::TextColored(ImVec4(1.f, 0.42f, 0.35f, 1.f), "Do not use Hitbox Extender — ban risk");
-        }
-        if (Games::Detect() == Games::Kind::MTC) {
-            ImGui::TextColored(ImVec4(0.55f, 0.85f, 0.65f, 1.f), "MTC slim mode — ESP + auto range");
         }
         MatchaUI::EndCard();
 
@@ -639,42 +636,7 @@ namespace MatchaMenu {
         MatchaUI::EndCard();
     }
 
-    inline void DrawMTC() {
-        MatchaUI::BeginCard("MTC Mode");
-        ImGui::TextColored(ImVec4(0.55f, 0.85f, 0.65f, 1.f), "Multicrew Tank Combat");
-        ImGui::TextColored(MatchaUI::V4(variables::Theme::textDim),
-            "Slim build — player ESP + auto range only. No fly, aimbot, or gun mods.");
-        MatchaUI::EndCard();
-
-        MatchaUI::BeginCard("Player ESP");
-        MatchaUI::Checkbox("Enable Player ESP", &variables::MTC::playerEsp);
-        MatchaUI::Checkbox("Boxes", &variables::MTC::espBoxes);
-        MatchaUI::Checkbox("Names", &variables::MTC::espNames);
-        MatchaUI::Checkbox("Distance", &variables::MTC::espDistance);
-        MatchaUI::Checkbox("Health Bar", &variables::MTC::espHealth);
-        MatchaUI::Checkbox("Team Check", &variables::MTC::teamCheck);
-        MatchaUI::SliderFloat("Max Distance", &variables::ESP::maxDistance, 100.f, 5000.f, "%.0f");
-        MatchaUI::EndCard();
-
-        MatchaUI::BeginCard("Auto Range");
-        MatchaUI::Checkbox("Auto Rangefinder", &variables::MTC::autoRange);
-        ImGui::TextColored(MatchaUI::V4(variables::Theme::textDim),
-            "Writes meters into Gunner.Data.Rangefinder for the player nearest your crosshair.");
-        ImGui::Spacing();
-        ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.94f, 1.f), "%s", MTC::statusBuf);
-        MatchaUI::EndCard();
-
-        MatchaUI::BeginCard("Options");
-        MatchaUI::Checkbox("Show FPS", &variables::Misc::showFps);
-        MatchaUI::Checkbox("Spotify Mini", &variables::Audio::spotifyMini);
-        MatchaUI::EndCard();
-    }
-
     inline void RenderBody() {
-        if (Games::IsMTC()) {
-            DrawMTC();
-            return;
-        }
         switch (variables::selectedTab) {
         case 0: DrawCombat(); break;
         case 1: DrawVisuals(); break;
