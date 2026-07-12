@@ -5,6 +5,7 @@
 #include "../core/features/aimbot/visibility.h"
 #include "../core/features/exploits/gun_mods.h"
 #include "../core/games/arsenal.h"
+#include "../core/servers/server_browser.h"
 #include "../sdk/offsets.h"
 #include "../memory/memory.h"
 #include <Shellapi.h>
@@ -600,31 +601,86 @@ namespace MatchaMenu {
     }
 
     inline void DrawServers() {
+        ServerBrowser::TickAutoRefresh();
+
         MatchaUI::BeginTwoCol("##srv");
         MatchaUI::BeginCard("Filters");
-        const char* sort[] = { "Descending", "Ascending" };
+        const char* sort[] = { "Most players", "Least players" };
         MatchaUI::Combo("Sort", &variables::Servers::sortMode, sort, 2);
-        const char* reg[] = { "All" };
-        MatchaUI::Combo("Region", &variables::Servers::region, reg, 1);
         const char* ar[] = { "Disabled", "5s", "15s" };
         MatchaUI::Combo("Auto Refresh", &variables::Servers::autoRefresh, ar, 3);
-        if (ImGui::Button("Refresh", ImVec2(-1, 30)))
-            variables::Servers::serverCount = 0;
+
+        bool busy = ServerBrowser::gLoading.load();
+        if (busy) ImGui::BeginDisabled();
+        if (ImGui::Button(busy ? "Loading…" : "Refresh", ImVec2(-1, 32)))
+            ServerBrowser::RequestRefresh(true);
+        if (busy) ImGui::EndDisabled();
         MatchaUI::EndCard();
+
         MatchaUI::BeginCard("Info");
+        ImGui::Text("Place: %s", variables::Status::placeId);
         ImGui::Text("Servers: %d", variables::Servers::serverCount);
-        ImGui::TextWrapped("Current: %s", variables::Servers::currentId);
+        ImGui::TextWrapped("Current job: %s", variables::Servers::currentId);
+        ImGui::Spacing();
+        ImGui::TextColored(MatchaUI::V4(variables::Theme::textDim), "%s", ServerBrowser::gStatus);
+        if (ServerBrowser::gError[0])
+            ImGui::TextColored(ImVec4(1.f, 0.45f, 0.4f, 1.f), "%s", ServerBrowser::gError);
         MatchaUI::EndCard();
 
         MatchaUI::NextCol();
-        MatchaUI::BeginCard("Servers");
-        ImGui::Text("Servers [%d]", variables::Servers::serverCount);
-        ImGui::Dummy(ImVec2(0, 40));
-        ImVec2 avail = ImGui::GetContentRegionAvail();
-        const char* empty = "No servers found";
-        ImVec2 ts = ImGui::CalcTextSize(empty);
-        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail.x - ts.x) * 0.5f);
-        ImGui::TextColored(MatchaUI::V4(variables::Theme::textDim), "%s", empty);
+        MatchaUI::BeginCard("Public servers");
+        auto list = ServerBrowser::Snapshot();
+        if (list.empty()) {
+            ImGui::Dummy(ImVec2(0, 24));
+            const char* empty = busy ? "Fetching from Roblox…" : "No servers found — hit Refresh";
+            ImVec2 avail = ImGui::GetContentRegionAvail();
+            ImVec2 ts = ImGui::CalcTextSize(empty);
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail.x - ts.x) * 0.5f);
+            ImGui::TextColored(MatchaUI::V4(variables::Theme::textDim), "%s", empty);
+        }
+        else {
+            ImGui::BeginChild("##srvlist", ImVec2(0, 0), false);
+            for (int i = 0; i < (int)list.size(); i++) {
+                auto& s = list[i];
+                ImGui::PushID(i);
+                bool isCurrent = (variables::Servers::currentId[0] &&
+                    strcmp(variables::Servers::currentId, s.id) == 0);
+
+                char line[160];
+                if (s.maxPlayers > 0)
+                    sprintf_s(line, "%d / %d players", s.playing, s.maxPlayers);
+                else
+                    sprintf_s(line, "%d players", s.playing);
+
+                if (isCurrent)
+                    ImGui::TextColored(ImVec4(0.45f, 0.9f, 0.55f, 1.f), "● %s  (you)", line);
+                else
+                    ImGui::Text("%s", line);
+
+                ImGui::SameLine();
+                ImGui::TextColored(MatchaUI::V4(variables::Theme::textDim), "  ping %d", s.ping);
+
+                char shortId[20];
+                strncpy_s(shortId, s.id, _TRUNCATE);
+                if (strlen(s.id) > 13) {
+                    shortId[8] = '.'; shortId[9] = '.'; shortId[10] = '.'; shortId[11] = 0;
+                }
+                ImGui::TextColored(MatchaUI::V4(variables::Theme::textDim), "%s", shortId);
+
+                float rowW = ImGui::GetContentRegionAvail().x;
+                float btnW = (rowW - 8.f) * 0.5f;
+                if (btnW < 70.f) btnW = 70.f;
+                if (ImGui::Button("Join", ImVec2(btnW, 26)))
+                    ServerBrowser::JoinServer(s.id);
+                ImGui::SameLine(0, 8);
+                if (ImGui::Button("Copy ID", ImVec2(btnW, 26)))
+                    ServerBrowser::CopyJobId(s.id);
+
+                ImGui::Separator();
+                ImGui::PopID();
+            }
+            ImGui::EndChild();
+        }
         MatchaUI::EndCard();
         MatchaUI::EndTwoCol();
     }
