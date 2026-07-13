@@ -1,101 +1,99 @@
-# Match-Ware External (Open Source)
+# Match-Ware External
 
-Windows x64 Roblox overlay (external) for educational / research use.
+Open-source Roblox **external** (Windows x64 overlay). Free, no key, MIT.
 
-**Repository:** https://github.com/binx-ux/open-source-roblox-cheat-
-
----
-
-## WARNING — READ BEFORE BUILDING OR RUNNING
-
-- This software interacts with **Roblox** memory and UI overlays. Using it in live games can violate Roblox's Terms of Use and may result in **account bans**, hardware bans, or other penalties.
-- You are solely responsible for how you use this code. The authors and contributors provide it **as-is**, with **no warranty**, and accept **no liability** for bans, data loss, legal issues, or damages.
-- Do **not** use this to harass players, steal accounts, distribute malware, or bypass paid anti-cheat in ways that harm others.
-- Offsets break when Roblox updates. Expect crashes and failed attaches until you update `External/src/sdk/offsets.h`.
-- This project is **open source and free**. There is **no license key**, no paywall, and no unlock gate.
-
-If you do not agree, do not build or run this software.
+> **Repo:** https://github.com/binx-ux/open-source-roblox-cheat-
 
 ---
 
-## License
+## Read this first
 
-See [LICENSE](LICENSE) (MIT). Third-party code (Dear ImGui, base projects) retains their own licenses — see Credits.
+This touches Roblox process memory. Using it on live accounts can get you **banned**.  
+That risk is on you. Code is as-is, no warranty, not affiliated with Roblox.
 
----
-
-## Features (high level)
-
-- DXGI / ImGui overlay menu
-- Aimbot, triggerbot, ESP, gun mods (game-dependent)
-- Local movement helpers, world lighting tweaks, Spotify mini controls
-- Supports places configured in-source (e.g. Arsenal / MiscGunTest:X patterns)
-
-Feature availability depends on offsets and the game you join.
+Full text: [WARNING.md](WARNING.md) · [LICENSE](LICENSE)
 
 ---
 
-## Requirements
+## What’s in here
 
-- Windows 10/11 x64
-- Visual Studio with **Desktop development with C++**
-- Windows SDK + MASM
-- Roblox client version matching the offsets dump (see `offsets/`)
+| Area | Notes |
+|------|--------|
+| Aimbot / trigger / silent | Game-dependent |
+| ESP / radar / chams | Overlay draw |
+| Gun mods | Where offsets allow |
+| Movement helpers | Disabled on some places (e.g. BloxStrike profile) |
+| ImGui menu | Insert / RCtrl |
+
+Supported place IDs live in `External/src/core/games/arsenal.h`.
 
 ---
 
 ## Build
 
-1. Open `External.sln`
-2. Configuration: **Release | x64**
-3. Build Solution
+**Need:** VS with C++ desktop workload, Windows SDK, MASM.
 
-Output: `x64\Release\External.exe`
+1. Open `External.sln`
+2. **Release | x64**
+3. Build
+
+Binary lands at `External\x64\Release\External.exe` (gitignored).
 
 ---
 
-## Use
+## Run
 
-1. Join a supported Roblox experience on the matching client build
-2. Run `External.exe` (run as admin only if attach fails)
-3. **Insert** or **Right Ctrl** toggles the menu
-4. **Delete** panic-disables features (if enabled in Options)
+1. Join a supported experience on a client build that matches the offsets
+2. Start `External.exe`
+3. **Insert** or **Right Ctrl** — menu  
+4. **Delete** — panic off (if enabled)
 
-No key entry. Optional anonymous telemetry is **off** in this public build unless you configure a webhook yourself in `telemetry.h`.
+No telemetry. No Discord webhook. Nothing phones home.
 
 ---
 
 ## Offsets
 
-Current dump folder: `offsets/`
+Roblox updates break these constantly.
 
-| File | Purpose |
-|------|---------|
-| `External/src/sdk/offsets.h` | Live C++ header |
-| `offsets/version-*.json` | Backup dump |
-| `offsets/active.json` | Active dump pointer |
+| Path | What |
+|------|------|
+| `External/src/sdk/offsets.h` | Header the build uses |
+| `offsets/` | Dump backups |
 
-Update these after every Roblox patch.
+Update after every client bump or expect a bad attach.
 
 ---
 
-## Security notes for contributors
+## Layout
 
-- Do **not** commit Discord webhook URLs, API keys, or personal tokens
-- Do **not** re-add closed license / key systems without clear disclosure
-- Prefer documenting risks in PRs that add high-ban-risk features
+```
+External/           main app + ImGui
+  src/core/         aimbot, esp, cache, config…
+  src/sdk/          instances, offsets, w2s
+  ext/imgui/        Dear ImGui
+offsets/            dump json
+```
+
+---
+
+## Contributing
+
+PRs welcome for offsets, builds, and fixes.
+
+- Don’t commit secrets, webhooks, or license servers
+- Keep ban-risk stuff labeled in the PR
+- See [SECURITY.md](SECURITY.md)
 
 ---
 
 ## Credits
 
-- Base inspiration: [metixud/RobloxExternalBase](https://github.com/metixud/RobloxExternalBase)
-- Offsets tooling: community dumpers / offsets.imtheo.lol style dumps
-- UI: Dear ImGui
-- Match-Ware / open-source release: [binx-ux](https://github.com/binx-ux)
+- Base ideas from [metixud/RobloxExternalBase](https://github.com/metixud/RobloxExternalBase)
+- Offsets: community dumpers / [offsets.imtheo.lol](https://offsets.imtheo.lol)-style dumps
+- UI: Dear ImGui  
+- Maintainer: [binx-ux](https://github.com/binx-ux)
 
 ---
 
-## Disclaimer (again)
-
-Educational / research software. Use at your own risk. Not affiliated with Roblox Corporation.
+Educational / research use. Ban risk is real. Don’t be weird with it.

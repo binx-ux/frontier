@@ -1,9 +1,7 @@
 # Warning
 
-**This is cheat / overlay software for Roblox.**
+This is a Roblox external / overlay cheat.
 
-Using it can get your Roblox account banned. There is no support guarantee.
-There is no license key. The project is MIT-licensed open source.
+Expect bans if you use it on a real account. No keys, no support desk, MIT license.
 
-By building or running binaries from this repo you accept full responsibility.
-See `README.md` and `LICENSE`.
+Build or run = you own the outcome. See README and LICENSE.
