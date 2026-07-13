@@ -4,6 +4,14 @@
 #include <string>
 #include <cstdio>
 #include <cstring>
+#include <thread>
+#include <atomic>
+#include <mutex>
+#include <vector>
+#include <winhttp.h>
+#include "avatar_cache.h"
+
+#pragma comment(lib, "winhttp.lib")
 
 #ifndef APPCOMMAND_MEDIA_PLAY_PAUSE
 #define APPCOMMAND_MEDIA_PLAY_PAUSE 14
@@ -28,6 +36,161 @@ namespace SpotifyPlayer {
     inline DWORD lastRefreshMs = 0;
     inline DWORD spotifyPid = 0;
     inline DWORD lastPidScanMs = 0;
+
+    inline std::mutex artMutex;
+    inline ID3D11ShaderResourceView* artSrv = nullptr;
+    inline ID3D11ShaderResourceView* artSrvToRelease = nullptr;
+    inline int artW = 0, artH = 0;
+    inline std::atomic<int> artState{ 0 }; // 0 idle 1 loading 2 ready 3 fail
+    inline char artKey[320] = "";
+    inline std::atomic<bool> artFetchInFlight{ false };
+    inline std::vector<uint8_t> artPendingPng;
+    inline std::atomic<bool> artPendingReady{ false };
+
+    inline unsigned HashStr(const char* s)
+    {
+        unsigned h = 2166136261u;
+        while (s && *s) { h ^= (unsigned char)*s++; h *= 16777619u; }
+        return h;
+    }
+
+    inline void FlushArtRelease()
+    {
+        if (artSrvToRelease) {
+            artSrvToRelease->Release();
+            artSrvToRelease = nullptr;
+        }
+    }
+
+    inline ID3D11ShaderResourceView* ArtSrvForDraw()
+    {
+        std::lock_guard<std::mutex> lock(artMutex);
+        return artSrv;
+    }
+
+    inline int ArtStateForDraw()
+    {
+        return artState.load(std::memory_order_acquire);
+    }
+
+    inline void RequestAlbumArt(const char* artist, const char* title)
+    {
+        if (!artist || !title || !title[0]) return;
+
+        char key[320]{};
+        sprintf_s(key, "%s|%s", artist, title);
+
+        {
+            std::lock_guard<std::mutex> lock(artMutex);
+            if (_stricmp(key, artKey) == 0) {
+                const int st = artState.load();
+                if (st == 1 || st == 2) return;
+            }
+            strncpy_s(artKey, key, _TRUNCATE);
+        }
+
+        bool expected = false;
+        if (!artFetchInFlight.compare_exchange_strong(expected, true))
+            return;
+        artState = 1;
+
+        std::string a = artist, t = title;
+        std::thread([a, t]() {
+            auto enc = [](const std::string& in) {
+                std::string o;
+                for (unsigned char c : in) {
+                    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_')
+                        o.push_back((char)c);
+                    else if (c == ' ') o.push_back('+');
+                    else {
+                        char b[8]; sprintf_s(b, "%%%02X", c); o += b;
+                    }
+                }
+                return o;
+            };
+            const std::string term = enc(a + " " + t);
+            std::wstring path = L"/search?term=" + std::wstring(term.begin(), term.end())
+                + L"&entity=song&limit=1";
+            std::string json = AvatarCache::HttpGet(L"itunes.apple.com", path);
+            std::string url;
+            auto k = json.find("\"artworkUrl100\"");
+            if (k == std::string::npos) k = json.find("\"artworkUrl60\"");
+            if (k != std::string::npos) {
+                auto c = json.find(':', k);
+                auto q1 = json.find('"', c + 1);
+                auto q2 = json.find('"', q1 + 1);
+                if (q1 != std::string::npos && q2 != std::string::npos)
+                    url = json.substr(q1 + 1, q2 - q1 - 1);
+                auto p = url.find("100x100");
+                if (p != std::string::npos) url.replace(p, 7, "200x200");
+            }
+            std::vector<uint8_t> bytes;
+            if (!url.empty() && AvatarCache::DownloadUrl(url, bytes) && !bytes.empty()) {
+                std::lock_guard<std::mutex> lock(artMutex);
+                artPendingPng = std::move(bytes);
+                artPendingReady = true;
+            } else {
+                artState = 3;
+            }
+            artFetchInFlight = false;
+        }).detach();
+    }
+
+    inline void TickAlbumArt()
+    {
+        FlushArtRelease();
+
+        if (artPendingReady.exchange(false)) {
+            std::vector<uint8_t> png;
+            {
+                std::lock_guard<std::mutex> lock(artMutex);
+                png.swap(artPendingPng);
+            }
+            int w = 0, h = 0;
+            ID3D11ShaderResourceView* newSrv = AvatarCache::CreateSrvFromPng(png, w, h);
+            {
+                std::lock_guard<std::mutex> lock(artMutex);
+                if (newSrv) {
+                    artSrvToRelease = artSrv;
+                    artSrv = newSrv;
+                    artW = w;
+                    artH = h;
+                    artState = 2;
+                } else {
+                    artState = 3;
+                }
+            }
+        }
+
+        static char lastTrack[384] = "";
+        if (playing && connected) {
+            char track[384]{};
+            sprintf_s(track, "%s|%s", trackArtist, trackTitle);
+            if (_stricmp(track, lastTrack) != 0) {
+                strncpy_s(lastTrack, track, _TRUNCATE);
+                RequestAlbumArt(trackArtist, trackTitle);
+            }
+        } else {
+            lastTrack[0] = '\0';
+        }
+    }
+
+    inline void Shutdown()
+    {
+        artFetchInFlight = false;
+        artPendingReady = false;
+        {
+            std::lock_guard<std::mutex> lock(artMutex);
+            artPendingPng.clear();
+        }
+        FlushArtRelease();
+        if (artSrv) {
+            artSrv->Release();
+            artSrv = nullptr;
+        }
+        artState = 0;
+        artKey[0] = '\0';
+    }
 
     inline DWORD FindSpotifyPid()
     {
@@ -107,7 +270,6 @@ namespace SpotifyPlayer {
         if (pos != std::string::npos)
             s = s.substr(0, pos);
 
-        // Spotify desktop title is usually "Artist - Song"
         size_t dash = s.find(" - ");
         if (dash != std::string::npos) {
             strcpy_s(trackArtist, s.substr(0, dash).c_str());
@@ -134,11 +296,9 @@ namespace SpotifyPlayer {
 
     inline void SendAppCommand(int cmd) {
         if (spotifyHwnd && IsWindow(spotifyHwnd)) {
-            // Prefer Spotify window — more reliable than global media keys alone
             SendMessageW(spotifyHwnd, WM_APPCOMMAND, (WPARAM)spotifyHwnd, MAKELONG(0, cmd));
             PostMessageW(spotifyHwnd, WM_APPCOMMAND, (WPARAM)spotifyHwnd, MAKELONG(0, cmd));
         }
-        // Also hit the foreground / system media session as fallback
         HWND fg = GetForegroundWindow();
         if (fg)
             SendMessageW(fg, WM_APPCOMMAND, (WPARAM)fg, MAKELONG(0, cmd));

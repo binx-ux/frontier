@@ -37,25 +37,45 @@ namespace UIFx {
         particlesInit = true;
     }
 
+    inline void DrawPanelAmbientGlow(ImDrawList* dl, ImVec2 panelPos, ImVec2 panelSize, float intensity = 1.f)
+    {
+        if (intensity <= 0.01f) return;
+        ImVec2 c(panelPos.x + panelSize.x * 0.5f, panelPos.y + panelSize.y * 0.42f);
+        float base = panelSize.x > panelSize.y ? panelSize.x : panelSize.y;
+        int a0 = (int)(28 * intensity);
+        int a1 = (int)(16 * intensity);
+        int a2 = (int)(8 * intensity);
+        // Match-Ware silver bloom (no blue/purple cast)
+        dl->AddCircleFilled(c, base * 0.55f, IM_COL32(200, 200, 210, a2), 64);
+        dl->AddCircleFilled(c, base * 0.38f, IM_COL32(220, 220, 230, a1), 64);
+        dl->AddCircleFilled(c, base * 0.22f, IM_COL32(235, 235, 240, a0), 48);
+        dl->AddRectFilledMultiColor(
+            ImVec2(0, 0), ImGui::GetIO().DisplaySize,
+            IM_COL32(0, 0, 0, (int)(36 * intensity)),
+            IM_COL32(0, 0, 0, (int)(36 * intensity)),
+            IM_COL32(0, 0, 0, (int)(62 * intensity)),
+            IM_COL32(0, 0, 0, (int)(62 * intensity)));
+    }
+
     inline void DrawBackgroundFX(ImDrawList* dl, ImVec2 size, float dt) {
         if (!variables::Theme::bgEffect) return;
         EnsureParticles(size.x, size.y);
         timeAcc += dt;
 
-        // soft teal wash
+        // soft charcoal wash
         dl->AddRectFilledMultiColor(
             ImVec2(0, 0), size,
-            IM_COL32(6, 18, 22, 90),
-            IM_COL32(8, 10, 16, 70),
-            IM_COL32(10, 8, 18, 100),
-            IM_COL32(4, 20, 18, 80));
+            IM_COL32(12, 12, 16, 70),
+            IM_COL32(8, 8, 10, 50),
+            IM_COL32(14, 14, 18, 80),
+            IM_COL32(6, 6, 8, 55));
 
-        // floating orbs
+        // floating silver orbs
         for (int i = 0; i < 5; i++) {
             float ox = size.x * (0.15f + 0.18f * i) + sinf(timeAcc * 0.4f + i) * 40.0f;
             float oy = size.y * (0.25f + 0.12f * (i % 3)) + cosf(timeAcc * 0.35f + i * 1.3f) * 50.0f;
             float rad = 80.0f + i * 18.0f;
-            dl->AddCircleFilled(ImVec2(ox, oy), rad, IM_COL32(80, 200, 150, 12 + i * 2), 48);
+            dl->AddCircleFilled(ImVec2(ox, oy), rad, IM_COL32(200, 200, 215, 10 + i * 2), 48);
         }
 
         if (variables::Theme::snowEffect) {
@@ -77,81 +97,88 @@ namespace UIFx {
         if (progress < 0.f) progress = 0.f;
         if (progress > 1.f) progress = 1.f;
 
-        float fade = Clampf(timeAcc / 0.35f, 0.f, 1.f);
+        float fade = Clampf(timeAcc / 0.45f, 0.f, 1.f);
         int ar = (int)(variables::Theme::accent[0] * 255);
         int ag = (int)(variables::Theme::accent[1] * 255);
         int ab = (int)(variables::Theme::accent[2] * 255);
-        float breath = 0.5f + 0.5f * sinf(timeAcc * 1.35f);
+        float breath = 0.5f + 0.5f * sinf(timeAcc * 1.15f);
 
-        // Deep charcoal base
-        dl->AddRectFilled(ImVec2(0, 0), size, IM_COL32(6, 6, 8, (int)(235 * fade)));
-
-        // Diagonal steel wash (brand atmosphere, not flat)
+        // Layered atmosphere
+        dl->AddRectFilled(ImVec2(0, 0), size, IM_COL32(5, 5, 7, (int)(250 * fade)));
         dl->AddRectFilledMultiColor(
             ImVec2(0, 0), size,
-            IM_COL32(18, 18, 22, (int)(90 * fade)),
+            IM_COL32(14, 14, 18, (int)(120 * fade)),
             IM_COL32(8, 8, 10, (int)(40 * fade)),
-            IM_COL32(22, 22, 28, (int)(110 * fade)),
-            IM_COL32(10, 10, 12, (int)(50 * fade)));
+            IM_COL32(18, 18, 24, (int)(130 * fade)),
+            IM_COL32(6, 6, 8, (int)(50 * fade)));
 
-        // Soft accent bloom behind brand
-        ImVec2 bloom(size.x * 0.5f, size.y * 0.42f);
-        dl->AddCircleFilled(bloom, 260.f + breath * 40.f,
-            IM_COL32(ar, ag, ab, (int)(16 * fade)), 72);
-        dl->AddCircleFilled(bloom, 140.f,
-            IM_COL32(ar, ag, ab, (int)(12 * fade)), 56);
+        // Soft radial bloom behind the loader
+        ImVec2 bloom(size.x * 0.5f, size.y * 0.44f);
+        dl->AddCircleFilled(bloom, 320.f + breath * 28.f,
+            IM_COL32(ar, ag, ab, (int)(14 * fade)), 80);
+        dl->AddCircleFilled(bloom, 170.f,
+            IM_COL32(ar, ag, ab, (int)(10 * fade)), 64);
 
-        // Fine horizontal scan lines
-        for (float y = 0; y < size.y; y += 4.f) {
-            int a = (int)(8 * fade);
+        // Subtle perspective grid (floor cue)
+        float horizon = size.y * 0.72f;
+        for (int i = 1; i <= 10; i++) {
+            float t = (float)i / 10.f;
+            float y = horizon + (size.y - horizon) * (t * t);
+            int a = (int)((18 - i) * fade);
+            if (a < 0) a = 0;
             dl->AddLine(ImVec2(0, y), ImVec2(size.x, y), IM_COL32(255, 255, 255, a), 1.f);
         }
+        for (int i = -8; i <= 8; i++) {
+            float x0 = size.x * 0.5f + i * 70.f;
+            dl->AddLine(ImVec2(size.x * 0.5f, horizon - 8.f), ImVec2(x0, size.y),
+                IM_COL32(255, 255, 255, (int)(10 * fade)), 1.f);
+        }
 
-        // Top / bottom vignette
-        dl->AddRectFilledMultiColor(ImVec2(0, 0), ImVec2(size.x, size.y * 0.22f),
-            IM_COL32(0, 0, 0, (int)(200 * fade)), IM_COL32(0, 0, 0, (int)(200 * fade)),
+        // Vignette
+        dl->AddRectFilledMultiColor(ImVec2(0, 0), ImVec2(size.x, size.y * 0.18f),
+            IM_COL32(0, 0, 0, (int)(210 * fade)), IM_COL32(0, 0, 0, (int)(210 * fade)),
             IM_COL32(0, 0, 0, 0), IM_COL32(0, 0, 0, 0));
-        dl->AddRectFilledMultiColor(ImVec2(0, size.y * 0.78f), size,
+        dl->AddRectFilledMultiColor(ImVec2(0, size.y * 0.82f), size,
             IM_COL32(0, 0, 0, 0), IM_COL32(0, 0, 0, 0),
-            IM_COL32(0, 0, 0, (int)(210 * fade)), IM_COL32(0, 0, 0, (int)(210 * fade)));
+            IM_COL32(0, 0, 0, (int)(220 * fade)), IM_COL32(0, 0, 0, (int)(220 * fade)));
 
         // Drift particles
         for (auto& p : particles) {
-            p.y += (14.0f + p.r * 9.0f) * dt;
-            p.x += sinf(timeAcc * 0.7f + p.r) * 8.f * dt + p.vx * 0.25f * dt;
+            p.y += (10.0f + p.r * 7.0f) * dt;
+            p.x += sinf(timeAcc * 0.55f + p.r) * 6.f * dt + p.vx * 0.2f * dt;
             if (p.y > size.y + 8) {
                 p.y = -8;
                 p.x = (float)(rand() % (int)(size.x + 1));
             }
-            int pa = (int)(p.a * 110 * fade);
-            dl->AddCircleFilled(ImVec2(p.x, p.y), p.r * 0.85f, IM_COL32(ar, ag, ab, pa), 6);
+            int pa = (int)(p.a * 90 * fade);
+            dl->AddCircleFilled(ImVec2(p.x, p.y), p.r * 0.75f, IM_COL32(ar, ag, ab, pa), 6);
         }
 
-        // Dual progress rings
-        ImVec2 c(size.x * 0.5f, size.y * 0.40f);
+        // Progress rings
+        ImVec2 c(size.x * 0.5f, size.y * 0.46f);
         float a0 = -PI * 0.5f;
         float a1 = a0 + progress * PI * 2.0f;
-        float spin = timeAcc * 2.2f;
+        float spin = timeAcc * 1.8f;
 
-        dl->AddCircle(c, 78.f, IM_COL32(36, 36, 42, (int)(200 * fade)), 72, 2.0f);
-        dl->AddCircle(c, 88.f, IM_COL32(28, 28, 34, (int)(120 * fade)), 72, 1.2f);
+        dl->AddCircle(c, 72.f, IM_COL32(32, 32, 38, (int)(220 * fade)), 72, 2.0f);
+        dl->AddCircle(c, 84.f, IM_COL32(24, 24, 30, (int)(140 * fade)), 72, 1.25f);
 
-        // Spinning dashed outer ring
-        for (int i = 0; i < 12; i++) {
-            float s0 = spin + i * (PI * 2.f / 12.f);
-            float s1 = s0 + 0.18f;
+        for (int i = 0; i < 16; i++) {
+            float s0 = spin + i * (PI * 2.f / 16.f);
+            float s1 = s0 + 0.12f;
             dl->PathClear();
-            dl->PathArcTo(c, 96.f, s0, s1, 8);
-            dl->PathStroke(IM_COL32(ar, ag, ab, (int)((40 + 30 * breath) * fade)), 0, 2.0f);
+            dl->PathArcTo(c, 92.f, s0, s1, 6);
+            dl->PathStroke(IM_COL32(ar, ag, ab, (int)((28 + 22 * breath) * fade)), 0, 1.8f);
         }
 
         if (progress > 0.001f) {
             dl->PathClear();
-            dl->PathArcTo(c, 78.f, a0, a1, 80);
-            dl->PathStroke(IM_COL32(ar, ag, ab, (int)(255 * fade)), 0, 3.4f);
+            dl->PathArcTo(c, 72.f, a0, a1, 80);
+            dl->PathStroke(IM_COL32(ar, ag, ab, (int)(255 * fade)), 0, 3.6f);
+            // Soft glow trail
             dl->PathClear();
-            dl->PathArcTo(c, 84.f, a0, a1, 48);
-            dl->PathStroke(IM_COL32(ar, ag, ab, (int)(55 * fade)), 0, 8.0f);
+            dl->PathArcTo(c, 72.f, a0, a1, 80);
+            dl->PathStroke(IM_COL32(ar, ag, ab, (int)(55 * fade)), 0, 7.0f);
         }
     }
 
@@ -201,10 +228,12 @@ namespace UIFx {
             dl->AddLine(ImVec2(c.x - h, c.y + h * 0.45f), ImVec2(c.x + h, c.y + h * 0.45f), col, 1.4f);
             dl->AddCircleFilled(ImVec2(c.x - h * 0.45f, c.y + h * 0.45f), 2.5f, col);
             break;
-        case Icon::Config: // document
-            dl->AddRect(ImVec2(c.x - h * 0.55f, c.y - h), ImVec2(c.x + h * 0.55f, c.y + h), col, 2.0f, 0, 1.4f);
-            dl->AddLine(ImVec2(c.x - h * 0.3f, c.y - h * 0.4f), ImVec2(c.x + h * 0.3f, c.y - h * 0.4f), col, 1.2f);
-            dl->AddLine(ImVec2(c.x - h * 0.3f, c.y), ImVec2(c.x + h * 0.3f, c.y), col, 1.2f);
+        case Icon::Config: // folder / explorer
+            dl->AddRect(ImVec2(c.x - h * 0.7f, c.y - h * 0.15f), ImVec2(c.x + h * 0.7f, c.y + h * 0.75f), col, 2.f, 0, 1.3f);
+            dl->AddLine(ImVec2(c.x - h * 0.7f, c.y - h * 0.15f), ImVec2(c.x - h * 0.15f, c.y - h * 0.15f), col, 1.3f);
+            dl->AddLine(ImVec2(c.x - h * 0.15f, c.y - h * 0.15f), ImVec2(c.x, c.y - h * 0.45f), col, 1.3f);
+            dl->AddLine(ImVec2(c.x, c.y - h * 0.45f), ImVec2(c.x + h * 0.7f, c.y - h * 0.45f), col, 1.3f);
+            dl->AddLine(ImVec2(c.x + h * 0.7f, c.y - h * 0.45f), ImVec2(c.x + h * 0.7f, c.y - h * 0.15f), col, 1.3f);
             break;
         case Icon::Servers: // stack
             dl->AddRect(ImVec2(c.x - h * 0.7f, c.y - h * 0.7f), ImVec2(c.x + h * 0.7f, c.y - h * 0.25f), col, 2.f, 0, 1.3f);
@@ -244,15 +273,22 @@ namespace UIFx {
 
         ImGui::SetNextWindowPos(ImVec2(px, py), ImGuiCond_Always);
         ImGui::SetNextWindowSize(ImVec2(barW, barH));
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 22.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 18.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 8));
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.05f, 0.055f, 0.065f, 0.92f));
-        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1, 1, 1, 0.10f));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.055f, 0.055f, 0.065f, 0.94f));
+        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1, 1, 1, 0.12f));
         ImGui::Begin("##floathead", nullptr,
             ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar |
             ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
 
         ImDrawList* dl = ImGui::GetWindowDrawList();
+        ImVec2 wp = ImGui::GetWindowPos();
+        ImVec2 ws = ImGui::GetWindowSize();
+        // top hairline highlight
+        dl->AddLine(ImVec2(wp.x + 14, wp.y + 1), ImVec2(wp.x + ws.x - 14, wp.y + 1),
+            IM_COL32(255, 255, 255, 28), 1.f);
+
         bool changed = false;
         for (int i = 0; i < count; i++) {
             ImGui::PushID(i);
@@ -262,25 +298,35 @@ namespace UIFx {
             bool pressed = ImGui::InvisibleButton("ic", btn);
             bool hovered = ImGui::IsItemHovered();
             if (pressed) {
-                *selectedTab = i;
+                if (*selectedTab == i && variables::Misc::floatingPanelOpen)
+                    variables::Misc::floatingPanelOpen = false;
+                else {
+                    *selectedTab = i;
+                    variables::Misc::floatingPanelOpen = true;
+                    variables::selectedSub = variables::Misc::selectedSubByTab[i];
+                }
                 changed = true;
-                variables::menuOpen = true;
-                variables::selectedSub = 0;
             }
 
             ImVec2 center(p.x + btn.x * 0.5f, p.y + btn.y * 0.42f);
-            ImU32 col = (*selectedTab == i || hovered)
-                ? IM_COL32(255, 255, 255, 255)
-                : IM_COL32(160, 168, 175, 200);
+            bool active = (*selectedTab == i && variables::Misc::floatingPanelOpen);
+            if (active || hovered) {
+                dl->AddRectFilled(ImVec2(p.x + 2, p.y + 1), ImVec2(p.x + btn.x - 2, p.y + btn.y - 1),
+                    active ? IM_COL32(255, 255, 255, 22) : IM_COL32(255, 255, 255, 10), 10.f);
+            }
+            ImU32 col = (active || hovered)
+                ? IM_COL32(250, 250, 255, 255)
+                : IM_COL32(150, 150, 160, 210);
             DrawIcon(dl, center, 15.0f, icons[i], col);
-            if (*selectedTab == i)
-                dl->AddCircleFilled(ImVec2(center.x, p.y + btn.y - 2), 2.4f, IM_COL32(255, 255, 255, 255));
+            if (active)
+                dl->AddRectFilled(ImVec2(center.x - 7, p.y + btn.y - 3),
+                    ImVec2(center.x + 7, p.y + btn.y - 1), IM_COL32(240, 240, 245, 255), 2.f);
             ImGui::PopID();
         }
 
         ImGui::End();
         ImGui::PopStyleColor(2);
-        ImGui::PopStyleVar(2);
+        ImGui::PopStyleVar(3);
         return changed;
     }
 

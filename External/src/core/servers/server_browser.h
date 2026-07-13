@@ -245,18 +245,24 @@ namespace ServerBrowser {
     {
         if (!jobId || !jobId[0]) return;
         int64_t place = CurrentPlaceId();
-        if (place <= 0) return;
+        if (place <= 0) {
+            strcpy_s(gStatus, "No place id — join a game first");
+            return;
+        }
 
-        // Opens Roblox join flow for a specific public server instance
-        char url[320]{};
-        sprintf_s(url, "https://www.roblox.com/games/start?placeId=%lld&gameInstanceId=%s",
-            (long long)place, jobId);
-        ShellExecuteA(nullptr, "open", url, nullptr, nullptr, SW_SHOWNORMAL);
+        // In-client redirect kick (no browser)
+        strncpy_s(variables::Servers::redirectMsg, "Match is redirecting you, please wait", _TRUNCATE);
+        variables::Servers::redirecting = true;
+        variables::Servers::redirectTimer = 10.f;
+        variables::Misc::floatingPanelOpen = false;
+        variables::menuOpen = false;
 
-        char deep[280]{};
+        char deep[320]{};
         sprintf_s(deep, "roblox://experiences/start?placeId=%lld&gameInstanceId=%s",
             (long long)place, jobId);
         ShellExecuteA(nullptr, "open", deep, nullptr, nullptr, SW_SHOWNORMAL);
+
+        strcpy_s(gStatus, "Redirecting to server...");
     }
 
     inline void TickAutoRefresh()

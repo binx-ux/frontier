@@ -80,6 +80,24 @@ namespace WindowManager {
         return FindRobloxHwnd() != nullptr;
     }
 
+    // True when Roblox (or a child of its window) is the foreground app.
+    // Overlay is WS_EX_NOACTIVATE, so feature keybinds must gate on this — not the overlay.
+    inline bool IsRobloxFocused()
+    {
+        HWND fg = GetForegroundWindow();
+        if (!fg) return false;
+
+        HWND rbx = (robloxWindow && IsWindow(robloxWindow)) ? robloxWindow : FindRobloxHwnd();
+        if (!rbx) return false;
+        if (fg == rbx || IsChild(rbx, fg))
+            return true;
+
+        DWORD fgPid = 0, rbxPid = 0;
+        GetWindowThreadProcessId(fg, &fgPid);
+        GetWindowThreadProcessId(rbx, &rbxPid);
+        return fgPid != 0 && fgPid == rbxPid;
+    }
+
     inline void UpdateRobloxWindowInfo() {
         ULONGLONG now = GetTickCount64();
         if (!robloxWindow || !IsWindow(robloxWindow) || (now - lastFindMs) > 1000) {

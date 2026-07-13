@@ -23,10 +23,20 @@ namespace Games {
         11671999447LL,  // Zombies
     };
 
+    // https://www.roblox.com/games/95206881/Baseplate — Studio template / sandbox
+    constexpr int64_t kBaseplatePlaceId = 95206881LL;
+
+    // https://www.roblox.com/games/114234929420007/BloxStrike
+    // PlaceId 114234929420007 → UniverseId (GameId) 7633926880
+    constexpr int64_t kBloxStrikePlaceId = 114234929420007LL;
+    constexpr int64_t kBloxStrikeUniverseId = 7633926880LL;
+
     enum class Kind : int {
         None = 0,
         Arsenal,
         MiscGunTest,
+        Baseplate,
+        BloxStrike,
     };
 
     inline int64_t ReadPlaceId()
@@ -70,12 +80,26 @@ namespace Games {
         return false;
     }
 
+    inline bool IsBaseplatePlace(int64_t place, int64_t /*gameId*/)
+    {
+        return place == kBaseplatePlaceId;
+    }
+
+    inline bool IsBloxStrikePlace(int64_t place, int64_t gameId)
+    {
+        if (place == kBloxStrikePlaceId) return true;
+        if (gameId == kBloxStrikeUniverseId) return true;
+        return false;
+    }
+
     inline Kind Detect()
     {
         const int64_t place = ReadPlaceId();
         const int64_t gameId = ReadGameId();
         if (IsArsenalPlace(place, gameId)) return Kind::Arsenal;
         if (IsMiscGunTestPlace(place, gameId)) return Kind::MiscGunTest;
+        if (IsBloxStrikePlace(place, gameId)) return Kind::BloxStrike;
+        if (IsBaseplatePlace(place, gameId)) return Kind::Baseplate;
         return Kind::None;
     }
 
@@ -84,18 +108,25 @@ namespace Games {
         return Detect() != Kind::None;
     }
 
+    inline bool IsBloxStrike()
+    {
+        return Detect() == Kind::BloxStrike;
+    }
+
     inline const char* Name()
     {
         switch (Detect()) {
         case Kind::Arsenal: return "Arsenal";
         case Kind::MiscGunTest: return "MiscGunTest:X";
+        case Kind::BloxStrike: return "BloxStrike";
+        case Kind::Baseplate: return "Baseplate";
         default: return "Unsupported";
         }
     }
 
     inline const char* SupportedListShort()
     {
-        return "Arsenal or MiscGunTest:X";
+        return "Arsenal, BloxStrike, MiscGunTest:X, or Baseplate";
     }
 }
 

@@ -1,8 +1,9 @@
 #pragma once
+#include <Windows.h>
 
 namespace variables {
     inline bool menuOpen = false;
-    // 0 Combat 1 Visuals 2 World 3 Character 4 Options 5 Configs 6 Servers 7 Music
+    // 0 Combat 1 Visuals 2 World 3 Character 4 Options 5 Explorer 6 Servers 7 Music 8 Status
     inline int selectedTab = 0;
     inline int selectedSub = 0;
     inline bool waitingForKey = false;
@@ -29,12 +30,12 @@ namespace variables {
     }
 
     namespace Theme {
-        inline float accent[4] = { 0.92f, 0.92f, 0.94f, 1.0f };
-        inline float bg[4] = { 0.047f, 0.047f, 0.051f, 0.97f };      // #0C0C0D
-        inline float card[4] = { 0.082f, 0.082f, 0.090f, 1.0f };     // #151517
-        inline float border[4] = { 0.14f, 0.14f, 0.16f, 1.0f };
-        inline float text[4] = { 0.92f, 0.92f, 0.94f, 1.0f };
-        inline float textDim[4] = { 0.55f, 0.55f, 0.58f, 1.0f };
+        inline float accent[4] = { 0.94f, 0.94f, 0.97f, 1.0f };
+        inline float bg[4] = { 0.055f, 0.055f, 0.062f, 0.96f };     // deep charcoal
+        inline float card[4] = { 0.090f, 0.090f, 0.100f, 1.0f };     // raised surface
+        inline float border[4] = { 0.18f, 0.18f, 0.22f, 1.0f };
+        inline float text[4] = { 0.94f, 0.94f, 0.96f, 1.0f };
+        inline float textDim[4] = { 0.52f, 0.52f, 0.58f, 1.0f };
         inline bool bgEffect = false;
         inline bool snowEffect = false;
         inline bool useFloatingHeader = true;
@@ -88,7 +89,9 @@ namespace variables {
         inline int aimbotKey = 2;
         inline bool toggleMode = false;
         inline bool toggledOn = false;
-        inline int smoothProfile = 0;
+        inline int smoothProfile = 0; // 0 Custom 1 Legit 2 Smooth 3 Rage
+        // 0 Closest to crosshair  1 Lowest HP  2 Closest distance
+        inline int targetPriority = 0;
     }
 
     namespace Trigger {
@@ -174,6 +177,7 @@ namespace variables {
         inline float skeletonThickness = 1.5f;
         inline bool skeletonOutline = true;
         inline bool deadCheck = true;
+        inline bool teamCheck = true;
         inline bool headDot = false;
         inline bool headDotGlow = false;
         inline bool equippedItem = false;
@@ -193,8 +197,10 @@ namespace variables {
         inline bool weaponLabels = false;
         inline bool chamsEnabled = false;
         inline bool chamsFilled = true;
-        inline int chamsMode = 0;
-        inline int chamsRender = 0;
+        inline int chamsMode = 0; // 0 Soft body  1 Glow
+        inline int chamsRender = 0; // 0 Static  1 Pulse
+        inline float chamsColor[4] = { 0.32f, 0.78f, 1.0f, 0.42f };
+        inline float chamsOutline[4] = { 0.55f, 0.92f, 1.0f, 0.95f };
         inline float boxColor[4] = { 1, 1, 1, 1 };
         inline float boxFillColor[4] = { 1, 1, 1, 0.15f };
         inline float nameColor[4] = { 1, 1, 1, 1 };
@@ -265,7 +271,8 @@ namespace variables {
         inline bool customClock = false;
         inline float clockTime = 14.f;
         inline bool customAmbient = false;
-        inline float ambientR = 1.f, ambientG = 1.f, ambientB = 1.f;
+        inline float ambientR = 0.45f, ambientG = 0.55f, ambientB = 0.85f;
+        inline float ambientColor[4] = { 0.45f, 0.55f, 0.85f, 1.f };
         inline bool removeAtmosphere = false;
         inline bool thirdPerson = false;
         inline float thirdPersonDistance = 14.f;
@@ -277,8 +284,15 @@ namespace variables {
         inline float hitVolume = 0.55f;
         inline float killVolume = 0.65f;
         inline bool music = false;
-        inline float musicVolume = 0.35f;
+        inline float musicVolume = 0.55f;
         inline bool spotifyMini = true;
+        inline bool musicLoop = true;
+        inline int musicSource = 0; // 0 Spotify  1 Local file  2 Roblox ID
+        inline char localPath[MAX_PATH] = "";
+        inline char robloxId[64] = "";
+        inline bool localPlaying = false;
+        inline bool robloxApplied = false;
+        inline bool openRobloxCatalog = false;
     }
 
     namespace Exploits {
@@ -317,6 +331,10 @@ namespace variables {
         inline float floatHeight = 10.0f;
         inline bool noclip = false;
         inline bool antiFling = false;
+        inline bool walkFling = false;
+        inline float walkFlingPower = 180.f;
+        inline float walkFlingRange = 4.5f; // touch distance
+        inline int walkFlingKey = 0; // 0 = always when enabled
         inline bool clickTp = false;
         inline int clickTpKey = 'C';
         inline bool freeze = false;
@@ -349,6 +367,9 @@ namespace variables {
         inline int autoRefresh = 0; // 0 Disabled
         inline char currentId[64] = "—";
         inline int serverCount = 0;
+        inline bool redirecting = false;
+        inline float redirectTimer = 0.f;
+        inline char redirectMsg[96] = "Match is redirecting you, please wait";
     }
 
     namespace Status {
@@ -379,7 +400,11 @@ namespace variables {
         inline float menuX = 0, menuY = 0, menuW = 600, menuH = 820;
         inline float spotX = 0, spotY = 0, spotW = 0, spotH = 0;
         inline float floatX = 0, floatY = 0, floatW = 0, floatH = 0;
-        inline int onlineCount = 9746;
+        inline bool floatingPanelOpen = false;
+        inline float panelX = 0, panelY = 0, panelW = 0, panelH = 0;
+        inline int selectedSubByTab[9] = {};
+        inline HWND overlayHwnd = nullptr;
+        inline int onlineCount = 0; // unused — footer shows "Online" only
         // Menu open/close animation (0 = closed, 1 = fully open)
         inline float menuAnim = 0.f;
         inline float menuAnimSpeed = 14.f;

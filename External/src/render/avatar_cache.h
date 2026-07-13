@@ -21,6 +21,8 @@ namespace AvatarCache {
         int w = 0;
         int h = 0;
         std::atomic<int> state{ 0 }; // 0 none, 1 loading, 2 ready, 3 fail
+        std::vector<uint8_t> pendingPng;
+        std::atomic<bool> pngReady{ false };
     };
 
     inline ID3D11Device* gDevice = nullptr;
@@ -99,33 +101,78 @@ namespace AvatarCache {
 
     inline ID3D11ShaderResourceView* CreateSrvFromPng(const std::vector<uint8_t>& png, int& outW, int& outH)
     {
+        outW = outH = 0;
         if (!gDevice || png.empty()) return nullptr;
 
         IWICImagingFactory* factory = nullptr;
         if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
-            IID_PPV_ARGS(&factory)))) return nullptr;
+            IID_PPV_ARGS(&factory))) || !factory)
+            return nullptr;
 
         IWICStream* stream = nullptr;
-        factory->CreateStream(&stream);
-        stream->InitializeFromMemory((BYTE*)png.data(), (DWORD)png.size());
+        if (FAILED(factory->CreateStream(&stream)) || !stream) {
+            factory->Release();
+            return nullptr;
+        }
+        if (FAILED(stream->InitializeFromMemory((BYTE*)png.data(), (DWORD)png.size()))) {
+            stream->Release();
+            factory->Release();
+            return nullptr;
+        }
 
         IWICBitmapDecoder* decoder = nullptr;
-        factory->CreateDecoderFromStream(stream, nullptr, WICDecodeMetadataCacheOnLoad, &decoder);
+        if (FAILED(factory->CreateDecoderFromStream(stream, nullptr, WICDecodeMetadataCacheOnLoad, &decoder)) || !decoder) {
+            stream->Release();
+            factory->Release();
+            return nullptr;
+        }
 
         IWICBitmapFrameDecode* frame = nullptr;
-        decoder->GetFrame(0, &frame);
+        if (FAILED(decoder->GetFrame(0, &frame)) || !frame) {
+            decoder->Release();
+            stream->Release();
+            factory->Release();
+            return nullptr;
+        }
 
         IWICFormatConverter* converter = nullptr;
-        factory->CreateFormatConverter(&converter);
-        converter->Initialize(frame, GUID_WICPixelFormat32bppRGBA, WICBitmapDitherTypeNone,
-            nullptr, 0.0, WICBitmapPaletteTypeCustom);
+        if (FAILED(factory->CreateFormatConverter(&converter)) || !converter) {
+            frame->Release();
+            decoder->Release();
+            stream->Release();
+            factory->Release();
+            return nullptr;
+        }
+        if (FAILED(converter->Initialize(frame, GUID_WICPixelFormat32bppRGBA, WICBitmapDitherTypeNone,
+            nullptr, 0.0, WICBitmapPaletteTypeCustom))) {
+            converter->Release();
+            frame->Release();
+            decoder->Release();
+            stream->Release();
+            factory->Release();
+            return nullptr;
+        }
 
         UINT w = 0, h = 0;
-        converter->GetSize(&w, &h);
+        if (FAILED(converter->GetSize(&w, &h)) || w == 0 || h == 0) {
+            converter->Release();
+            frame->Release();
+            decoder->Release();
+            stream->Release();
+            factory->Release();
+            return nullptr;
+        }
         outW = (int)w;
         outH = (int)h;
-        std::vector<uint8_t> pixels(w * h * 4);
-        converter->CopyPixels(nullptr, w * 4, (UINT)pixels.size(), pixels.data());
+        std::vector<uint8_t> pixels((size_t)w * h * 4);
+        if (FAILED(converter->CopyPixels(nullptr, w * 4, (UINT)pixels.size(), pixels.data()))) {
+            converter->Release();
+            frame->Release();
+            decoder->Release();
+            stream->Release();
+            factory->Release();
+            return nullptr;
+        }
 
         D3D11_TEXTURE2D_DESC desc{};
         desc.Width = w;
@@ -143,7 +190,7 @@ namespace AvatarCache {
 
         ID3D11Texture2D* tex = nullptr;
         ID3D11ShaderResourceView* srv = nullptr;
-        if (SUCCEEDED(gDevice->CreateTexture2D(&desc, &sub, &tex))) {
+        if (SUCCEEDED(gDevice->CreateTexture2D(&desc, &sub, &tex)) && tex) {
             gDevice->CreateShaderResourceView(tex, nullptr, &srv);
             tex->Release();
         }
@@ -181,21 +228,36 @@ namespace AvatarCache {
             std::string json = HttpGet(L"thumbnails.roblox.com", path);
             std::string imageUrl = ExtractImageUrl(json);
             std::vector<uint8_t> png;
-            if (imageUrl.empty() || !DownloadUrl(imageUrl, png)) {
+            if (imageUrl.empty() || !DownloadUrl(imageUrl, png) || png.empty()) {
                 e->state = 3;
                 return;
             }
+            e->pendingPng = std::move(png);
+            e->pngReady = true;
+        }).detach();
+    }
+
+    inline void ProcessPending()
+    {
+        if (!gDevice) return;
+        std::lock_guard<std::mutex> lock(gMutex);
+        for (auto& pair : gMap) {
+            Entry* e = pair.second;
+            if (!e || e->state.load() != 1 || !e->pngReady.load())
+                continue;
+            e->pngReady = false;
+            std::vector<uint8_t> png = std::move(e->pendingPng);
             int w = 0, h = 0;
-            auto srv = CreateSrvFromPng(png, w, h);
+            ID3D11ShaderResourceView* srv = CreateSrvFromPng(png, w, h);
             if (!srv) {
                 e->state = 3;
-                return;
+                continue;
             }
             e->srv = srv;
             e->w = w;
             e->h = h;
             e->state = 2;
-        }).detach();
+        }
     }
 
     inline ID3D11ShaderResourceView* Get(int64_t userId)

@@ -110,6 +110,45 @@ namespace RBX {
             return memory->read_string(namePtr);
         }
 
+        // Reads a string/number Instance attribute (e.g. BloxStrike Player:GetAttribute("Team")).
+        std::string GetAttributeString(const char* attrName) {
+            if (!Addr || !attrName || !attrName[0]) return {};
+            uintptr_t container = memory->read<uintptr_t>(Addr + Offsets::Instance::AttributeContainer);
+            if (!container) return {};
+            uintptr_t list = memory->read<uintptr_t>(container + Offsets::AttributesMap::Attributes);
+            if (!list) {
+                // Older layout: Attributes at +0x10
+                list = memory->read<uintptr_t>(container + 0x10);
+            }
+            if (!list) return {};
+
+            for (int i = 0; i < 64; i++) {
+                uintptr_t entry = list + (uintptr_t)i * Offsets::Attribute::Size;
+                uintptr_t namePtr = memory->read<uintptr_t>(entry + Offsets::Attribute::Key);
+                if (!namePtr) break;
+                std::string name = memory->read_string(namePtr);
+                if (name.empty()) break;
+                if (_stricmp(name.c_str(), attrName) != 0) continue;
+
+                // Prefer string payload
+                uintptr_t valPtr = memory->read<uintptr_t>(entry + Offsets::Attribute::Value);
+                if (valPtr) {
+                    std::string s = memory->read_string(valPtr);
+                    if (!s.empty()) return s;
+                    // Sometimes Value itself is an embedded/shared string
+                    s = memory->read_string(entry + Offsets::Attribute::Value);
+                    if (!s.empty()) return s;
+                }
+                // Bool / numeric (Team ids 1/2, Dead=true)
+                int iv = memory->read<int>(entry + Offsets::Attribute::Value);
+                if (iv != 0)
+                    return "id:" + std::to_string(iv);
+                // Matched name with empty/false value
+                return {};
+            }
+            return {};
+        }
+
         RbxInstance GetParent() {
             return RbxInstance(memory->read<uintptr_t>(Addr + Offsets::Instance::Parent));
         }

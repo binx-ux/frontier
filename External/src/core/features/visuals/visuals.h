@@ -22,19 +22,273 @@ namespace Visuals {
     inline void RenderGunWireframe(ImDrawList* drawList, const RBX::Mat4& viewMatrix);
 
     inline void DrawOutlinedText(ImDrawList* drawList, const ImVec2& pos, const std::string& text, ImU32 textColor) {
-        // Single shadow pass instead of 4 outline draws (big ESP FPS win)
-        drawList->AddText(ImVec2(pos.x + 1.0f, pos.y + 1.0f), IM_COL32(0, 0, 0, 200), text.c_str());
+        // Soft dual-shadow for readability without heavy outlines
+        drawList->AddText(ImVec2(pos.x + 1.0f, pos.y + 1.0f), IM_COL32(0, 0, 0, 170), text.c_str());
+        drawList->AddText(ImVec2(pos.x, pos.y + 1.0f), IM_COL32(0, 0, 0, 90), text.c_str());
         drawList->AddText(pos, textColor, text.c_str());
     }
 
     inline void DrawLine(ImDrawList* drawList, const ImVec2& start, const ImVec2& end, ImU32 color, float thickness, bool outline) {
-        if (outline) drawList->AddLine(start, end, IM_COL32(0, 0, 0, 255), thickness + 2.0f);
+        if (outline) drawList->AddLine(start, end, IM_COL32(0, 0, 0, 200), thickness + 2.0f);
         drawList->AddLine(start, end, color, thickness);
     }
 
     inline ImU32 Col4(const float c[4], int a = -1) {
         int aa = (a < 0) ? (int)(c[3] * 255) : a;
+        if (aa < 0) aa = 0; if (aa > 255) aa = 255;
         return IM_COL32((int)(c[0] * 255), (int)(c[1] * 255), (int)(c[2] * 255), aa);
+    }
+
+    inline ImU32 MulAlpha(ImU32 c, float a) {
+        int aa = (int)(((c >> 24) & 255) * a);
+        if (aa < 0) aa = 0; if (aa > 255) aa = 255;
+        return (c & 0x00FFFFFF) | ((ImU32)aa << 24);
+    }
+
+    inline void DrawCleanBox(ImDrawList* dl, float minX, float minY, float maxX, float maxY, ImU32 col, float th) {
+        // Outer dark stroke + crisp inner color
+        dl->AddRect(ImVec2(minX, minY), ImVec2(maxX, maxY), IM_COL32(0, 0, 0, 200), 0.f, 0, th + 1.8f);
+        dl->AddRect(ImVec2(minX, minY), ImVec2(maxX, maxY), col, 0.f, 0, th);
+        // Subtle inner hairline for depth
+        dl->AddRect(ImVec2(minX + 1.f, minY + 1.f), ImVec2(maxX - 1.f, maxY - 1.f),
+            MulAlpha(col, 0.28f), 0.f, 0, 1.0f);
+    }
+
+    inline void DrawCornerBox(ImDrawList* dl, float minX, float minY, float maxX, float maxY, ImU32 col, float th) {
+        float cl = (maxX - minX) * 0.26f;
+        float ch = (maxY - minY) * 0.20f;
+        if (cl < 5.f) cl = 5.f;
+        if (ch < 5.f) ch = 5.f;
+        auto corner = [&](float x1, float y1, float x2, float y2) {
+            dl->AddLine(ImVec2(x1, y1), ImVec2(x2, y2), IM_COL32(0, 0, 0, 210), th + 1.6f);
+            dl->AddLine(ImVec2(x1, y1), ImVec2(x2, y2), col, th);
+        };
+        corner(minX, minY, minX + cl, minY); corner(minX, minY, minX, minY + ch);
+        corner(maxX, minY, maxX - cl, minY); corner(maxX, minY, maxX, minY + ch);
+        corner(minX, maxY, minX + cl, maxY); corner(minX, maxY, minX, maxY - ch);
+        corner(maxX, maxY, maxX - cl, maxY); corner(maxX, maxY, maxX, maxY - ch);
+    }
+
+    inline void DrawHealthBarClean(ImDrawList* dl, float minX, float minY, float maxY, float hp, ImU32 hc) {
+        const float x0 = minX - 8.f, x1 = minX - 3.f;
+        float h = maxY - minY;
+        if (h < 4.f) return;
+        dl->AddRectFilled(ImVec2(x0 - 1.f, minY - 1.f), ImVec2(x1 + 1.f, maxY + 1.f), IM_COL32(0, 0, 0, 190), 2.0f);
+        dl->AddRectFilled(ImVec2(x0, minY), ImVec2(x1, maxY), IM_COL32(18, 18, 22, 220), 1.5f);
+        float barH = h * hp;
+        float top = maxY - barH;
+        // Soft glow behind fill
+        dl->AddRectFilled(ImVec2(x0 - 1.f, top), ImVec2(x1 + 1.f, maxY), MulAlpha(hc, 0.35f), 1.5f);
+        dl->AddRectFilled(ImVec2(x0, top), ImVec2(x1, maxY), hc, 1.5f);
+        // Cap highlight
+        if (barH > 3.f)
+            dl->AddRectFilled(ImVec2(x0, top), ImVec2(x1, top + 2.f), IM_COL32(255, 255, 255, 70), 1.0f);
+    }
+
+    // Capsule limb for body chams
+    inline void DrawChamLimb(ImDrawList* dl, ImVec2 a, ImVec2 b, float radius, ImU32 fill, ImU32 outline, bool filled) {
+        ImVec2 d(b.x - a.x, b.y - a.y);
+        float len = sqrtf(d.x * d.x + d.y * d.y);
+        if (len < 0.8f) {
+            if (filled) dl->AddCircleFilled(a, radius, fill, 16);
+            dl->AddCircle(a, radius, outline, 16, 1.4f);
+            return;
+        }
+        float inv = 1.f / len;
+        ImVec2 n(-d.y * inv * radius, d.x * inv * radius);
+        ImVec2 pts[4] = {
+            ImVec2(a.x + n.x, a.y + n.y), ImVec2(b.x + n.x, b.y + n.y),
+            ImVec2(b.x - n.x, b.y - n.y), ImVec2(a.x - n.x, a.y - n.y)
+        };
+        if (filled) {
+            dl->AddConvexPolyFilled(pts, 4, fill);
+            dl->AddCircleFilled(a, radius, fill, 14);
+            dl->AddCircleFilled(b, radius, fill, 14);
+        }
+        dl->AddPolyline(pts, 4, outline, ImDrawFlags_Closed, 1.35f);
+        dl->AddCircle(a, radius, outline, 14, 1.2f);
+        dl->AddCircle(b, radius, outline, 14, 1.2f);
+    }
+
+    inline bool ProjectBone(const RBX::Vec3& w, const RBX::Mat4& vm, ImVec2& out) {
+        RBX::Vec2 s = W2S::WorldToScreen(w, vm);
+        if (s.X == 0.f && s.Y == 0.f) return false;
+        out = ImVec2(s.X, s.Y);
+        return true;
+    }
+
+    inline float Dist3(const RBX::Vec3& a, const RBX::Vec3& b) {
+        float dx = a.X - b.X, dy = a.Y - b.Y, dz = a.Z - b.Z;
+        return sqrtf(dx * dx + dy * dy + dz * dz);
+    }
+
+    // Tight screen box from a character-local 3D AABB (never uses zeroed bones → no stretch)
+    inline bool ComputeBodyScreenBox(const PlayerCache::BoneSet& bones, const RBX::Mat4& vm,
+        float& minX, float& minY, float& maxX, float& maxY, RBX::Vec2& headScreen)
+    {
+        if (!bones.hasHead || !bones.hasHrp) return false;
+
+        const RBX::Vec3& head = bones.head;
+        const RBX::Vec3& hrp = bones.hrp;
+
+        {
+            ImVec2 hs;
+            if (ProjectBone(head, vm, hs)) {
+                headScreen.X = hs.x;
+                headScreen.Y = hs.y;
+            }
+            else headScreen = {};
+        }
+
+        // Vertical extents from head / HRP, refined by nearby valid feet only
+        float topY = head.Y + 0.55f;
+        float botY = hrp.Y - (bones.isR6 ? 3.05f : 2.75f);
+
+        auto considerFoot = [&](const RBX::Vec3& p) {
+            if (Dist3(p, hrp) > 7.5f) return; // reject zeroed / stale bones
+            if (p.Y < botY) botY = p.Y - 0.12f;
+        };
+        if (bones.isR6) {
+            considerFoot(bones.leftLeg);
+            considerFoot(bones.rightLeg);
+            if (Dist3(bones.leftLeg, hrp) <= 7.5f)
+                botY = (std::min)(botY, bones.leftLeg.Y - 1.05f);
+            if (Dist3(bones.rightLeg, hrp) <= 7.5f)
+                botY = (std::min)(botY, bones.rightLeg.Y - 1.05f);
+        }
+        else {
+            considerFoot(bones.leftFoot);
+            considerFoot(bones.rightFoot);
+            considerFoot(bones.leftLowerLeg);
+            considerFoot(bones.rightLowerLeg);
+        }
+
+        if (topY - botY < 1.5f) {
+            topY = head.Y + 0.55f;
+            botY = hrp.Y - (bones.isR6 ? 3.05f : 2.75f);
+        }
+
+        // Character-local half-extents (studs) — wide enough for arms, not screen-space stretched
+        float halfW = bones.isR6 ? 1.35f : 1.25f;
+        float halfD = halfW;
+        float cx = hrp.X, cz = hrp.Z;
+
+        RBX::Vec3 corners[8] = {
+            { cx - halfW, botY, cz - halfD }, { cx + halfW, botY, cz - halfD },
+            { cx + halfW, botY, cz + halfD }, { cx - halfW, botY, cz + halfD },
+            { cx - halfW, topY, cz - halfD }, { cx + halfW, topY, cz - halfD },
+            { cx + halfW, topY, cz + halfD }, { cx - halfW, topY, cz + halfD },
+        };
+
+        minX = 1e9f; minY = 1e9f; maxX = -1e9f; maxY = -1e9f;
+        int hit = 0;
+        for (int i = 0; i < 8; i++) {
+            ImVec2 s;
+            if (!ProjectBone(corners[i], vm, s)) continue;
+            if (s.x < minX) minX = s.x;
+            if (s.y < minY) minY = s.y;
+            if (s.x > maxX) maxX = s.x;
+            if (s.y > maxY) maxY = s.y;
+            hit++;
+        }
+        if (hit < 2) return false;
+
+        float h = maxY - minY;
+        float w = maxX - minX;
+        if (h < 6.f || h > 5000.f) return false;
+
+        // Clamp absurd width from near-plane / perspective (keeps box on the body)
+        float maxW = h * 0.95f;
+        float minW = h * 0.42f;
+        float midX = (minX + maxX) * 0.5f;
+        if (w > maxW) {
+            minX = midX - maxW * 0.5f;
+            maxX = midX + maxW * 0.5f;
+        }
+        else if (w < minW) {
+            minX = midX - minW * 0.5f;
+            maxX = midX + minW * 0.5f;
+        }
+
+        // Prefer centering on head/HRP screen X so labels sit on the player
+        ImVec2 hrpS;
+        if (ProjectBone(hrp, vm, hrpS)) {
+            float prefer = (headScreen.X != 0.f || headScreen.Y != 0.f)
+                ? (headScreen.X * 0.55f + hrpS.x * 0.45f) : hrpS.x;
+            float curMid = (minX + maxX) * 0.5f;
+            float shift = prefer - curMid;
+            minX += shift;
+            maxX += shift;
+        }
+
+        float padX = (maxX - minX) * 0.04f + 1.0f;
+        float padY = h * 0.02f + 1.0f;
+        minX -= padX; maxX += padX;
+        minY -= padY; maxY += padY;
+        return true;
+    }
+
+    inline void DrawPlayerChams(ImDrawList* dl, const PlayerCache::BoneSet& bones, const RBX::Mat4& vm,
+        float boxH, ImU32 fill, ImU32 outline, bool filled, int mode)
+    {
+        float baseR = boxH * 0.055f;
+        if (baseR < 2.2f) baseR = 2.2f;
+        if (baseR > 9.0f) baseR = 9.0f;
+        float limbR = baseR * (mode == 1 ? 1.15f : 1.0f);
+        float torsoR = limbR * 1.55f;
+        float headR = limbR * 1.35f;
+
+        auto limb = [&](const RBX::Vec3& a, const RBX::Vec3& b, float r) {
+            ImVec2 sa, sb;
+            if (!ProjectBone(a, vm, sa) || !ProjectBone(b, vm, sb)) return;
+            if (mode == 1) {
+                // Glow pass
+                DrawChamLimb(dl, sa, sb, r * 1.55f, MulAlpha(fill, 0.22f), MulAlpha(outline, 0.0f), true);
+            }
+            DrawChamLimb(dl, sa, sb, r, fill, outline, filled);
+        };
+
+        if (bones.isR6) {
+            if (!bones.hasHead) return;
+            ImVec2 head;
+            if (ProjectBone(bones.head, vm, head)) {
+                if (mode == 1) dl->AddCircleFilled(head, headR * 1.5f, MulAlpha(fill, 0.25f), 18);
+                if (filled) dl->AddCircleFilled(head, headR, fill, 18);
+                dl->AddCircle(head, headR, outline, 18, 1.5f);
+            }
+            limb(bones.head, bones.torso, torsoR * 0.7f);
+            limb(bones.torso, bones.leftArm, limbR);
+            limb(bones.torso, bones.rightArm, limbR);
+            limb(bones.torso, bones.leftLeg, limbR);
+            limb(bones.torso, bones.rightLeg, limbR);
+            // Torso plate
+            ImVec2 t;
+            if (ProjectBone(bones.torso, vm, t) && filled)
+                dl->AddCircleFilled(t, torsoR * 0.85f, MulAlpha(fill, 0.85f), 16);
+            return;
+        }
+
+        if (!bones.hasHead) return;
+        ImVec2 head;
+        if (ProjectBone(bones.head, vm, head)) {
+            if (mode == 1) dl->AddCircleFilled(head, headR * 1.55f, MulAlpha(fill, 0.28f), 20);
+            if (filled) dl->AddCircleFilled(head, headR, fill, 20);
+            dl->AddCircle(head, headR, outline, 20, 1.55f);
+        }
+        limb(bones.head, bones.upperTorso, limbR * 0.75f);
+        limb(bones.upperTorso, bones.lowerTorso, torsoR);
+        limb(bones.upperTorso, bones.leftUpperArm, limbR);
+        limb(bones.leftUpperArm, bones.leftLowerArm, limbR * 0.9f);
+        limb(bones.leftLowerArm, bones.leftHand, limbR * 0.75f);
+        limb(bones.upperTorso, bones.rightUpperArm, limbR);
+        limb(bones.rightUpperArm, bones.rightLowerArm, limbR * 0.9f);
+        limb(bones.rightLowerArm, bones.rightHand, limbR * 0.75f);
+        limb(bones.lowerTorso, bones.leftUpperLeg, limbR);
+        limb(bones.leftUpperLeg, bones.leftLowerLeg, limbR * 0.95f);
+        limb(bones.leftLowerLeg, bones.leftFoot, limbR * 0.8f);
+        limb(bones.lowerTorso, bones.rightUpperLeg, limbR);
+        limb(bones.rightUpperLeg, bones.rightLowerLeg, limbR * 0.95f);
+        limb(bones.rightLowerLeg, bones.rightFoot, limbR * 0.8f);
     }
 
     inline std::string TruncateWidth(const std::string& text, float maxW) {
@@ -82,8 +336,7 @@ namespace Visuals {
             DrawLine(drawList, ImVec2(a.X, a.Y), ImVec2(b.X, b.Y), color, thickness, outline);
     }
 
-    inline void RenderSkeletonCached(ImDrawList* drawList, const PlayerCache::BoneSet& bones, const RBX::Mat4& viewMatrix) {
-        ImU32 boneColor = IM_COL32(255, 255, 255, 255);
+    inline void RenderSkeletonCached(ImDrawList* drawList, const PlayerCache::BoneSet& bones, const RBX::Mat4& viewMatrix, ImU32 boneColor) {
         float th = variables::ESP::skeletonThickness;
         bool ol = variables::ESP::skeletonOutline;
         if (bones.isR6) {
@@ -165,28 +418,32 @@ namespace Visuals {
         ImVec2 perp(-dir.y, dir.x);
 
         ImVec2 tip = edge;
-        ImVec2 left(edge.x - dir.x * size + perp.x * size * 0.55f, edge.y - dir.y * size + perp.y * size * 0.55f);
-        ImVec2 right(edge.x - dir.x * size - perp.x * size * 0.55f, edge.y - dir.y * size - perp.y * size * 0.55f);
+        ImVec2 left(edge.x - dir.x * size + perp.x * size * 0.52f, edge.y - dir.y * size + perp.y * size * 0.52f);
+        ImVec2 right(edge.x - dir.x * size - perp.x * size * 0.52f, edge.y - dir.y * size - perp.y * size * 0.52f);
 
-        ImU32 accent = IM_COL32(
-            (int)(variables::Theme::accent[0] * 255),
-            (int)(variables::Theme::accent[1] * 255),
-            (int)(variables::Theme::accent[2] * 255), 230);
-
+        ImU32 accent = Col4(variables::ESP::oofColor, 230);
+        // Soft outer glow
+        dl->AddTriangleFilled(
+            ImVec2(tip.x + dir.x * 2.f, tip.y + dir.y * 2.f),
+            ImVec2(left.x - dir.x * 2.f, left.y - dir.y * 2.f),
+            ImVec2(right.x - dir.x * 2.f, right.y - dir.y * 2.f),
+            MulAlpha(accent, 0.25f));
         dl->AddTriangleFilled(tip, left, right, accent);
-        dl->AddTriangle(tip, left, right, IM_COL32(0, 0, 0, 200), 1.5f);
+        dl->AddTriangle(tip, left, right, IM_COL32(0, 0, 0, 180), 1.35f);
 
-        ImVec2 pfpCenter(edge.x - dir.x * (size + 14.0f), edge.y - dir.y * (size + 14.0f));
-        float r = 14.0f;
+        ImVec2 pfpCenter(edge.x - dir.x * (size + 15.0f), edge.y - dir.y * (size + 15.0f));
+        float r = 13.0f;
         if (pfp && variables::ESP::oofShowPfp) {
+            dl->AddCircleFilled(pfpCenter, r + 2.f, IM_COL32(0, 0, 0, 160), 24);
             dl->AddImageRounded(ImTextureRef((void*)pfp),
                 ImVec2(pfpCenter.x - r, pfpCenter.y - r),
                 ImVec2(pfpCenter.x + r, pfpCenter.y + r),
                 ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, 255), r);
-            dl->AddCircle(pfpCenter, r, IM_COL32(0, 0, 0, 220), 24, 1.5f);
+            dl->AddCircle(pfpCenter, r, MulAlpha(accent, 0.9f), 24, 1.6f);
         }
         else {
-            dl->AddCircleFilled(pfpCenter, r * 0.6f, accent);
+            dl->AddCircleFilled(pfpCenter, r * 0.55f, accent, 16);
+            dl->AddCircle(pfpCenter, r * 0.55f, IM_COL32(0, 0, 0, 180), 16, 1.2f);
         }
     }
 
@@ -195,6 +452,10 @@ namespace Visuals {
         if (!variables::Crosshair::enabled) return;
         float cx, cy;
         W2S::GetCursorClient(cx, cy);
+        if (variables::Crosshair::followTarget && Aimbot::hasLockScreen) {
+            cx = Aimbot::lockScreenX;
+            cy = Aimbot::lockScreenY;
+        }
         ImVec2 c(cx, cy);
         float len = variables::Crosshair::length > 1.f ? variables::Crosshair::length : variables::Crosshair::size;
         float gap = variables::Crosshair::gap;
@@ -251,6 +512,7 @@ namespace Visuals {
 
         for (auto& plr : PlayerCache::snapshotPlayers()) {
             if (!plr.isValid) continue;
+            if (variables::ESP::teamCheck && !PlayerCache::PassesTeamFilter(plr)) continue;
             float dx = plr.position.X - PlayerCache::localPlayerPos.X;
             float dy = plr.position.Y - PlayerCache::localPlayerPos.Y;
             float dz = plr.position.Z - PlayerCache::localPlayerPos.Z;
@@ -286,7 +548,9 @@ namespace Visuals {
         float sw = rw, sh = rh;
         ImVec2 screenCenter(sw * 0.5f, sh * 0.5f);
 
-        const bool drawSkeleton = variables::ESP::skeleton &&
+        const bool needBones = variables::ESP::enabled || variables::ESP::skeleton ||
+            variables::ESP::wireframePlayers || variables::ESP::chamsEnabled;
+        const bool drawSkeleton = needBones &&
             !(variables::Perf::skipSkeletonWhenLowFps && variables::Perf::currentFps > 0 &&
               variables::Perf::currentFps < variables::Perf::lowFpsThreshold);
         const bool lowFps = variables::Perf::currentFps > 0 &&
@@ -298,14 +562,25 @@ namespace Visuals {
 
         for (auto& plr : playersSnap) {
             if (!plr.isValid) continue;
-            if (!plr.bones.hasHead || !plr.bones.hasHrp) continue;
+            // BloxStrike can briefly omit Head — allow HRP-only boxes
+            if (!plr.bones.hasHrp) continue;
+            if (!plr.bones.hasHead) {
+                plr.bones.head = plr.bones.hrp;
+                plr.bones.head.Y += 1.4f;
+                plr.bones.hasHead = true;
+            }
+            if (variables::ESP::teamCheck && !PlayerCache::PassesTeamFilter(plr)) continue;
             if (plr.distance > variables::ESP::maxDistance) continue;
+            if (variables::ESP::deadCheck && plr.health <= 0.f) continue;
 
             if (variables::ESP::visibleOnly) {
-                RBX::Vec3 eye = PlayerCache::localPlayerPos;
-                eye.Y += 1.5f;
-                if (!Visibility::HasLineOfSight(eye, plr.bones.head))
-                    continue;
+                // Fail-open when wall mesh isn't ready (BloxStrike / first seconds)
+                if (Visibility::boxCount.load() > 0) {
+                    RBX::Vec3 eye = PlayerCache::localPlayerPos;
+                    eye.Y += 1.5f;
+                    if (!Visibility::HasLineOfSight(eye, plr.bones.head))
+                        continue;
+                }
             }
 
             if (doOofPfp && (avatarThrottle % 8 == 0))
@@ -340,8 +615,8 @@ namespace Visuals {
                 plr.bones.hrp = RBX::RbxInstance(plr.rootPartAddr).GetPos();
                 plr.position = plr.bones.hrp;
             }
-            // Skeleton: cheap GetPos from cached part addrs (no GetChildList per bone)
-            if (drawSkeleton) {
+            // Bones for full-body box + skeleton/chams
+            if (needBones) {
                 if (!plr.boneParts.ready && plr.characterAddr)
                     PlayerCache::fillBoneParts(RBX::RbxInstance(plr.characterAddr), plr.boneParts);
                 if (plr.boneParts.ready)
@@ -356,73 +631,97 @@ namespace Visuals {
             RBX::Vec3 headPos = plr.bones.head;
             RBX::Vec3 hrpPos = plr.bones.hrp;
             bool isR6 = plr.bones.isR6;
-            float feetY = hrpPos.Y - (isR6 ? 3.0f : 2.55f);
-            RBX::Vec3 topPos{ headPos.X, headPos.Y + (isR6 ? 0.5f : 0.4f), headPos.Z };
-            RBX::Vec3 bottomPos{ hrpPos.X, feetY, hrpPos.Z };
-            RBX::Vec2 topScreen = W2S::WorldToScreen(topPos, viewMatrix);
-            RBX::Vec2 bottomScreen = W2S::WorldToScreen(bottomPos, viewMatrix);
             RBX::Vec2 headScreen = headOverlay;
-            if ((topScreen.X == 0.f && topScreen.Y == 0.f) || (bottomScreen.X == 0.f && bottomScreen.Y == 0.f))
-                continue;
 
-            float height = bottomScreen.Y - topScreen.Y;
-            if (height < 6.f || height > sh * 1.5f) continue;
-            float width = height * (isR6 ? 0.50f : 0.45f);
-            float midX = (topScreen.X + bottomScreen.X) * 0.5f;
-            // Raw screen box — no lerp (lerp lagged behind movers and slid off players)
-            float minX = midX - width * 0.5f;
-            float maxX = midX + width * 0.5f;
-            float minY = topScreen.Y;
-            float maxY = bottomScreen.Y;
+            float minX, minY, maxX, maxY;
+            if (!ComputeBodyScreenBox(plr.bones, viewMatrix, minX, minY, maxX, maxY, headScreen)) {
+                // Fallback if bones incomplete
+                float feetY = hrpPos.Y - (isR6 ? 3.2f : 2.85f);
+                RBX::Vec3 topPos{ headPos.X, headPos.Y + 0.55f, headPos.Z };
+                RBX::Vec3 bottomPos{ hrpPos.X, feetY, hrpPos.Z };
+                RBX::Vec2 topScreen = W2S::WorldToScreen(topPos, viewMatrix);
+                RBX::Vec2 bottomScreen = W2S::WorldToScreen(bottomPos, viewMatrix);
+                if ((topScreen.X == 0.f && topScreen.Y == 0.f) || (bottomScreen.X == 0.f && bottomScreen.Y == 0.f))
+                    continue;
+                float height = bottomScreen.Y - topScreen.Y;
+                if (height < 6.f || height > sh * 1.5f) continue;
+                float width = height * (isR6 ? 0.55f : 0.50f);
+                float midX = (topScreen.X + bottomScreen.X) * 0.5f;
+                minX = midX - width * 0.5f;
+                maxX = midX + width * 0.5f;
+                minY = topScreen.Y;
+                maxY = bottomScreen.Y;
+            }
+
+            float height = maxY - minY;
             float boxW = maxX - minX;
+            if (height < 6.f || height > sh * 1.5f) continue;
             if (minX < -200 || minY < -200 || maxX > sw + 200 || maxY > sh + 200) continue;
 
-            if (drawSkeleton) RenderSkeletonCached(drawList, plr.bones, viewMatrix);
-
             ImU32 boxCol = Col4(variables::ESP::boxColor);
-            if (variables::ESP::teamColors && plr.teamAddr) {
-                uint32_t h = (uint32_t)(plr.teamAddr ^ (plr.teamAddr >> 16));
+            if (variables::ESP::teamColors && (!plr.teamKey.empty() || plr.teamAddr)) {
+                uint32_t h = 0;
+                if (!plr.teamKey.empty()) {
+                    for (unsigned char c : plr.teamKey) h = h * 16777619u ^ c;
+                    if (plr.teamKey == "t") h = 12;
+                    else if (plr.teamKey == "ct") h = 210;
+                } else {
+                    h = (uint32_t)(plr.teamAddr ^ (plr.teamAddr >> 16));
+                }
                 float hue = (h % 360) / 360.f;
                 float r, g, b;
-                ImGui::ColorConvertHSVtoRGB(hue, 0.75f, 1.f, r, g, b);
+                ImGui::ColorConvertHSVtoRGB(hue, 0.72f, 1.f, r, g, b);
                 boxCol = IM_COL32((int)(r * 255), (int)(g * 255), (int)(b * 255), 255);
             }
             if (variables::ESP::rainbow) {
                 float hue = fmodf((float)ImGui::GetTime() * 0.35f + (float)(plr.userId % 97) * 0.01f, 1.f);
                 float r, g, b;
-                ImGui::ColorConvertHSVtoRGB(hue, 0.85f, 1.f, r, g, b);
+                ImGui::ColorConvertHSVtoRGB(hue, 0.82f, 1.f, r, g, b);
                 boxCol = IM_COL32((int)(r * 255), (int)(g * 255), (int)(b * 255), 255);
             }
-            if (variables::ESP::targetHighlight && Aimbot::lockedPlayerAddr &&
-                plr.playerAddr == Aimbot::lockedPlayerAddr) {
-                boxCol = IM_COL32(255, 210, 60, 255);
+            bool isTarget = variables::ESP::targetHighlight && Aimbot::lockedPlayerAddr &&
+                plr.playerAddr == Aimbot::lockedPlayerAddr;
+            if (isTarget)
+                boxCol = IM_COL32(255, 214, 72, 255);
+
+            if (variables::ESP::chamsEnabled && !lowFps) {
+                float pulse = 1.f;
+                if (variables::ESP::chamsRender == 1)
+                    pulse = 0.72f + 0.28f * (0.5f + 0.5f * sinf((float)ImGui::GetTime() * 3.2f));
+                ImU32 cFill = MulAlpha(Col4(variables::ESP::chamsColor), pulse);
+                ImU32 cOut = MulAlpha(Col4(variables::ESP::chamsOutline), pulse);
+                if (isTarget) {
+                    cFill = MulAlpha(IM_COL32(255, 210, 60, (int)(variables::ESP::chamsColor[3] * 255)), pulse);
+                    cOut = MulAlpha(IM_COL32(255, 230, 120, 255), pulse);
+                }
+                DrawPlayerChams(drawList, plr.bones, viewMatrix, height, cFill, cOut,
+                    variables::ESP::chamsFilled, variables::ESP::chamsMode);
             }
+
+            if (variables::ESP::skeleton)
+                RenderSkeletonCached(drawList, plr.bones, viewMatrix, MulAlpha(boxCol, 0.92f));
+            if (variables::ESP::wireframePlayers && !variables::ESP::skeleton)
+                RenderSkeletonCached(drawList, plr.bones, viewMatrix, MulAlpha(boxCol, 0.75f));
+
             if (variables::ESP::boxGlow && variables::ESP::boxes) {
-                drawList->AddRect(ImVec2(minX - 2, minY - 2), ImVec2(maxX + 2, maxY + 2),
-                    (boxCol & 0x00FFFFFF) | 0x55000000, 3.f, 0, 4.f);
-            }
-            if (variables::ESP::targetHighlight && Aimbot::lockedPlayerAddr &&
-                plr.playerAddr == Aimbot::lockedPlayerAddr) {
                 drawList->AddRect(ImVec2(minX - 3, minY - 3), ImVec2(maxX + 3, maxY + 3),
-                    IM_COL32(255, 210, 60, 160), 3.f, 0, 2.5f);
+                    MulAlpha(boxCol, 0.22f), 0.f, 0, 5.5f);
+                drawList->AddRect(ImVec2(minX - 1.5f, minY - 1.5f), ImVec2(maxX + 1.5f, maxY + 1.5f),
+                    MulAlpha(boxCol, 0.40f), 0.f, 0, 3.0f);
             }
-            if (variables::ESP::fillBox || variables::ESP::chamsEnabled)
+            if (isTarget) {
+                drawList->AddRect(ImVec2(minX - 3.5f, minY - 3.5f), ImVec2(maxX + 3.5f, maxY + 3.5f),
+                    IM_COL32(255, 214, 72, 140), 0.f, 0, 2.2f);
+            }
+            if (variables::ESP::fillBox)
                 drawList->AddRectFilled(ImVec2(minX, minY), ImVec2(maxX, maxY),
-                    Col4(variables::ESP::boxFillColor, (int)(variables::ESP::boxFillColor[3] * 220)));
+                    Col4(variables::ESP::boxFillColor, (int)(variables::ESP::boxFillColor[3] * 200)));
+
             if (variables::ESP::boxes) {
                 float th = variables::ESP::boxThickness;
                 int bt = variables::ESP::boxType;
                 if (bt == 2 || variables::ESP::cornerBox) {
-                    float cl = (maxX - minX) * 0.28f;
-                    float ch = (maxY - minY) * 0.22f;
-                    auto corner = [&](float x1, float y1, float x2, float y2) {
-                        drawList->AddLine(ImVec2(x1, y1), ImVec2(x2, y2), IM_COL32(0, 0, 0, 220), th + 1.5f);
-                        drawList->AddLine(ImVec2(x1, y1), ImVec2(x2, y2), boxCol, th);
-                    };
-                    corner(minX, minY, minX + cl, minY); corner(minX, minY, minX, minY + ch);
-                    corner(maxX, minY, maxX - cl, minY); corner(maxX, minY, maxX, minY + ch);
-                    corner(minX, maxY, minX + cl, maxY); corner(minX, maxY, minX, maxY - ch);
-                    corner(maxX, maxY, maxX - cl, maxY); corner(maxX, maxY, maxX, maxY - ch);
+                    DrawCornerBox(drawList, minX, minY, maxX, maxY, boxCol, th);
                 }
                 else if (bt == 1 && !lowFps) {
                     float hw = isR6 ? 1.1f : 1.0f;
@@ -442,12 +741,13 @@ namespace Visuals {
                     int edges[12][2] = { {0,1},{1,2},{2,3},{3,0},{4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7} };
                     for (auto& e : edges) {
                         if (!ok[e[0]] || !ok[e[1]]) continue;
+                        drawList->AddLine(ImVec2(s[e[0]].X, s[e[0]].Y), ImVec2(s[e[1]].X, s[e[1]].Y),
+                            IM_COL32(0, 0, 0, 180), th + 1.4f);
                         drawList->AddLine(ImVec2(s[e[0]].X, s[e[0]].Y), ImVec2(s[e[1]].X, s[e[1]].Y), boxCol, th);
                     }
                 }
                 else {
-                    drawList->AddRect(ImVec2(minX, minY), ImVec2(maxX, maxY), IM_COL32(0, 0, 0, 220), 2.0f, 0, th + 1.5f);
-                    drawList->AddRect(ImVec2(minX, minY), ImVec2(maxX, maxY), boxCol, 2.0f, 0, th);
+                    DrawCleanBox(drawList, minX, minY, maxX, maxY, boxCol, th);
                 }
             }
 
@@ -456,7 +756,7 @@ namespace Visuals {
                 RBX::Vec3 c[8] = {
                     {hrpPos.X - hs, hrpPos.Y - hs, hrpPos.Z - hs}, {hrpPos.X + hs, hrpPos.Y - hs, hrpPos.Z - hs},
                     {hrpPos.X + hs, hrpPos.Y - hs, hrpPos.Z + hs}, {hrpPos.X - hs, hrpPos.Y - hs, hrpPos.Z + hs},
-                    {hrpPos.X - hs, hrpPos.Y + hs, hrpPos.Z - hs}, {hrpPos.X + hs, hrpPos.Y + hs, hrpPos.Z - hs},
+                    {hrpPos.X - hs, hrpPos.Y + hs, hrpPos.Z - hs}, {hrpPos.X + hs, hrpPos.Y + hs, hrpPos.Z + hs},
                     {hrpPos.X + hs, hrpPos.Y + hs, hrpPos.Z + hs}, {hrpPos.X - hs, hrpPos.Y + hs, hrpPos.Z + hs},
                 };
                 RBX::Vec2 s[8]; bool ok[8];
@@ -473,9 +773,13 @@ namespace Visuals {
             }
 
             if (variables::ESP::headDot && (headScreen.X != 0 || headScreen.Y != 0)) {
-                drawList->AddCircleFilled(ImVec2(headScreen.X, headScreen.Y), 3.0f, Col4(variables::ESP::headDotColor));
+                float hr = height * 0.018f;
+                if (hr < 2.4f) hr = 2.4f;
+                drawList->AddCircleFilled(ImVec2(headScreen.X, headScreen.Y), hr + 1.2f, IM_COL32(0, 0, 0, 160), 16);
+                drawList->AddCircleFilled(ImVec2(headScreen.X, headScreen.Y), hr, Col4(variables::ESP::headDotColor), 16);
                 if (variables::ESP::headDotGlow)
-                    drawList->AddCircle(ImVec2(headScreen.X, headScreen.Y), 8.0f, Col4(variables::ESP::headDotColor, 80), 16, 2.0f);
+                    drawList->AddCircle(ImVec2(headScreen.X, headScreen.Y), hr * 2.6f,
+                        Col4(variables::ESP::headDotColor, 70), 18, 2.0f);
             }
 
             if (variables::ESP::chinaHat && (headScreen.X != 0 || headScreen.Y != 0)) {
@@ -484,28 +788,36 @@ namespace Visuals {
                 ImVec2 tip(headScreen.X, headScreen.Y - hw * 0.9f);
                 ImVec2 left(headScreen.X - hw, headScreen.Y + 2.f);
                 ImVec2 right(headScreen.X + hw, headScreen.Y + 2.f);
-                drawList->AddTriangleFilled(tip, left, right, (boxCol & 0x00FFFFFF) | 0x88000000);
+                drawList->AddTriangleFilled(tip, left, right, MulAlpha(boxCol, 0.45f));
                 drawList->AddTriangle(tip, left, right, boxCol, 1.5f);
             }
 
             if (variables::ESP::lookDir && (headScreen.X != 0 || headScreen.Y != 0)) {
-                RBX::Vec3 lookEnd{ headPos.X, headPos.Y, headPos.Z + 3.f };
-                // Prefer bone look if available via HRP facing — simple forward Z offset in world
-                auto lookScr = W2S::WorldToScreen(RBX::Vec3{ headPos.X + 0.f, headPos.Y, headPos.Z }, viewMatrix);
-                (void)lookScr;
-                drawList->AddLine(ImVec2(headScreen.X, headScreen.Y),
-                    ImVec2(headScreen.X, headScreen.Y - 18.f), boxCol, 1.5f);
+                RBX::Vec3 look{ 0.f, 0.f, -1.f };
+                uintptr_t lookPart = plr.rootPartAddr ? plr.rootPartAddr : plr.headAddr;
+                if (lookPart) {
+                    auto cf = RBX::RbxInstance(lookPart).GetCFrame();
+                    look = cf.GetLookVector();
+                }
+                RBX::Vec3 tipWorld = plr.bones.head;
+                tipWorld.X += look.X * 4.5f;
+                tipWorld.Y += look.Y * 4.5f;
+                tipWorld.Z += look.Z * 4.5f;
+                RBX::Vec2 tip = W2S::WorldToScreen(tipWorld, viewMatrix);
+                if (tip.X != 0.f || tip.Y != 0.f)
+                    drawList->AddLine(ImVec2(headScreen.X, headScreen.Y), ImVec2(tip.X, tip.Y), boxCol, 1.6f);
+                else
+                    drawList->AddLine(ImVec2(headScreen.X, headScreen.Y),
+                        ImVec2(headScreen.X, headScreen.Y - 18.f), boxCol, 1.5f);
             }
 
             if (variables::ESP::healthBar && plr.maxHealth > 0.0f) {
                 float hp = plr.health / plr.maxHealth;
                 if (hp < 0) hp = 0; if (hp > 1) hp = 1;
                 ImU32 hc = variables::ESP::healthBasedColor
-                    ? IM_COL32((int)(255 * (1 - hp)), (int)(255 * hp), 40, 255)
+                    ? IM_COL32((int)(255 * (1 - hp)), (int)(220 * hp + 35), 50, 255)
                     : Col4(variables::ESP::healthColor);
-                float barH = (maxY - minY) * hp;
-                drawList->AddRectFilled(ImVec2(minX - 7, minY - 1), ImVec2(minX - 2, maxY + 1), IM_COL32(0, 0, 0, 210), 2.0f);
-                drawList->AddRectFilled(ImVec2(minX - 6, maxY - barH), ImVec2(minX - 3, maxY), hc, 1.5f);
+                DrawHealthBarClean(drawList, minX, minY, maxY, hp, hc);
             }
 
             if (variables::ESP::armorBar) {
@@ -515,79 +827,101 @@ namespace Visuals {
                     if (ff.Addr) armor = 1.f;
                 }
                 if (armor > 0.01f) {
+                    float x0 = maxX + 3.f, x1 = maxX + 8.f;
+                    drawList->AddRectFilled(ImVec2(x0 - 1.f, minY - 1.f), ImVec2(x1 + 1.f, maxY + 1.f), IM_COL32(0, 0, 0, 190), 2.0f);
+                    drawList->AddRectFilled(ImVec2(x0, minY), ImVec2(x1, maxY), IM_COL32(18, 18, 22, 220), 1.5f);
                     float barH = (maxY - minY) * armor;
-                    drawList->AddRectFilled(ImVec2(maxX + 2, minY - 1), ImVec2(maxX + 7, maxY + 1), IM_COL32(0, 0, 0, 210), 2.0f);
-                    drawList->AddRectFilled(ImVec2(maxX + 3, maxY - barH), ImVec2(maxX + 6, maxY), IM_COL32(80, 180, 255, 255), 1.5f);
+                    drawList->AddRectFilled(ImVec2(x0, maxY - barH), ImVec2(x1, maxY), IM_COL32(90, 190, 255, 255), 1.5f);
                 }
             }
 
             if (variables::ESP::flags) {
                 float fy = minY;
-                auto flag = [&](const char* t, ImU32 c) {
-                    ImVec2 ts = ImGui::CalcTextSize(t);
-                    DrawOutlinedText(drawList, ImVec2(maxX + (variables::ESP::armorBar ? 10.f : 4.f), fy), t, c);
+                auto flag = [&](const char* txt, ImU32 c) {
+                    ImVec2 ts = ImGui::CalcTextSize(txt);
+                    DrawOutlinedText(drawList, ImVec2(maxX + (variables::ESP::armorBar ? 11.f : 5.f), fy), txt, c);
                     fy += ts.y + 1.f;
                 };
-                if (plr.health <= 0.f) flag("DEAD", IM_COL32(255, 80, 80, 255));
+                if (plr.health <= 0.f) flag("DEAD", IM_COL32(255, 90, 90, 255));
                 else if (plr.health / (plr.maxHealth > 0 ? plr.maxHealth : 100.f) < 0.35f)
-                    flag("LOW", IM_COL32(255, 160, 60, 255));
+                    flag("LOW", IM_COL32(255, 170, 70, 255));
                 if (!plr.equippedTool.empty()) flag("GUN", IM_COL32(255, 210, 120, 255));
-                if (Aimbot::lockedPlayerAddr == plr.playerAddr) flag("TGT", IM_COL32(255, 210, 60, 255));
+                if (isTarget) flag("TGT", IM_COL32(255, 214, 72, 255));
                 if (plr.distance < 40.f) flag("NEAR", IM_COL32(120, 220, 255, 255));
             }
 
-            float textMaxW = (boxW > 28.f) ? boxW + 24.f : 72.f;
+            float textMaxW = (boxW > 28.f) ? boxW + 28.f : 76.f;
             std::string shownName = DisplayName(plr);
+            float nameY = minY - 3.f;
+
+            if (variables::ESP::profilePicture && !lowFps) {
+                AvatarCache::Ensure(plr.userId);
+                if (auto* pfp = AvatarCache::Get(plr.userId)) {
+                    float pr = 9.f;
+                    ImVec2 pc((minX + maxX) * 0.5f, nameY - pr - 2.f);
+                    if (variables::ESP::names) pc.y -= 12.f;
+                    drawList->AddCircleFilled(pc, pr + 1.5f, IM_COL32(0, 0, 0, 170), 20);
+                    drawList->AddImageRounded(ImTextureRef((void*)pfp),
+                        ImVec2(pc.x - pr, pc.y - pr), ImVec2(pc.x + pr, pc.y + pr),
+                        ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, 255), pr);
+                    drawList->AddCircle(pc, pr, MulAlpha(boxCol, 0.85f), 20, 1.4f);
+                    nameY = pc.y - pr - 2.f;
+                }
+            }
 
             if (variables::ESP::names) {
                 std::string nm = TruncateWidth(shownName, textMaxW);
                 ImVec2 ts = ImGui::CalcTextSize(nm.c_str());
-                DrawOutlinedText(drawList, ImVec2((minX + maxX) * 0.5f - ts.x * 0.5f, minY - ts.y - 2),
-                    nm, Col4(variables::ESP::nameColor));
+                float nx = (minX + maxX) * 0.5f - ts.x * 0.5f;
+                float ny = nameY - ts.y;
+                drawList->AddRectFilled(ImVec2(nx - 3.f, ny - 1.f), ImVec2(nx + ts.x + 3.f, ny + ts.y + 1.f),
+                    IM_COL32(8, 8, 10, 120), 3.0f);
+                DrawOutlinedText(drawList, ImVec2(nx, ny), nm, Col4(variables::ESP::nameColor));
             }
             if (variables::ESP::healthText && plr.maxHealth > 0) {
                 char buf[32]; sprintf_s(buf, "%.0f/%.0f", plr.health, plr.maxHealth);
                 ImVec2 ts = ImGui::CalcTextSize(buf);
                 float hx = (minX + maxX) * 0.5f - ts.x * 0.5f;
                 float hy = (variables::ESP::healthTextPos == 1)
-                    ? (maxY + (variables::ESP::distance ? 16.f : 2.f))
-                    : (minY - ts.y - (variables::ESP::names ? 14.f : 2.f));
-                DrawOutlinedText(drawList, ImVec2(hx, hy), buf, IM_COL32(180, 255, 180, 255));
+                    ? (maxY + (variables::ESP::distance ? 15.f : 2.f))
+                    : (minY - ts.y - (variables::ESP::names ? 15.f : 2.f));
+                DrawOutlinedText(drawList, ImVec2(hx, hy), buf, IM_COL32(170, 255, 175, 240));
             }
             if (variables::ESP::distance) {
                 std::string d = std::to_string((int)plr.distance) + "m";
                 ImVec2 ts = ImGui::CalcTextSize(d.c_str());
-                DrawOutlinedText(drawList, ImVec2((minX + maxX) * 0.5f - ts.x * 0.5f, maxY + 2), d, IM_COL32(255, 255, 255, 255));
+                DrawOutlinedText(drawList, ImVec2((minX + maxX) * 0.5f - ts.x * 0.5f, maxY + 2),
+                    d, IM_COL32(210, 210, 220, 230));
             }
             if (variables::ESP::equippedItem && !plr.equippedTool.empty()) {
                 std::string tool = TruncateWidth(plr.equippedTool, textMaxW);
                 ImVec2 ts = ImGui::CalcTextSize(tool.c_str());
-                float ey = maxY + (variables::ESP::distance ? 16.f : 2.f)
-                    + (variables::World::showVelocity ? 14.f : 0.f);
+                float ey = maxY + (variables::ESP::distance ? 15.f : 2.f)
+                    + (variables::World::showVelocity ? 13.f : 0.f);
                 DrawOutlinedText(drawList, ImVec2((minX + maxX) * 0.5f - ts.x * 0.5f, ey),
-                    tool, IM_COL32(255, 210, 120, 255));
+                    tool, IM_COL32(255, 205, 115, 240));
             }
             if (variables::World::showVelocity) {
                 float spd = sqrtf(plr.velocity.X * plr.velocity.X + plr.velocity.Y * plr.velocity.Y + plr.velocity.Z * plr.velocity.Z);
                 char vb[32]; sprintf_s(vb, "%.0f studs/s", spd);
                 ImVec2 ts = ImGui::CalcTextSize(vb);
-                float vy = maxY + (variables::ESP::distance ? 16.f : 2.f);
-                DrawOutlinedText(drawList, ImVec2((minX + maxX) * 0.5f - ts.x * 0.5f, vy), vb, IM_COL32(180, 200, 255, 255));
+                float vy = maxY + (variables::ESP::distance ? 15.f : 2.f);
+                DrawOutlinedText(drawList, ImVec2((minX + maxX) * 0.5f - ts.x * 0.5f, vy), vb, IM_COL32(175, 195, 255, 230));
             }
             if (variables::ESP::snaplines) {
                 ImVec2 origin_pos;
                 switch (variables::ESP::snaplinesOrigin) {
-                case 0: origin_pos = ImVec2(sw * 0.5f, 0); break; // Top
-                case 1: origin_pos = screenCenter; break; // Middle
-                case 2: origin_pos = ImVec2(sw * 0.5f, sh); break; // Bottom
+                case 0: origin_pos = ImVec2(sw * 0.5f, 0); break;
+                case 1: origin_pos = screenCenter; break;
+                case 2: origin_pos = ImVec2(sw * 0.5f, sh); break;
                 default: {
                     float cx, cy; W2S::GetCursorClient(cx, cy);
-                    origin_pos = ImVec2(cx, cy); break; // Mouse
+                    origin_pos = ImVec2(cx, cy); break;
                 }
                 }
                 ImVec2 dest = (variables::ESP::snaplinesDestination == 1)
                     ? ImVec2((minX + maxX) * 0.5f, (minY + maxY) * 0.5f) : ImVec2(headScreen.X, headScreen.Y);
-                DrawLine(drawList, origin_pos, dest, Col4(variables::ESP::snapColor),
+                DrawLine(drawList, origin_pos, dest, MulAlpha(Col4(variables::ESP::snapColor), 0.85f),
                     variables::ESP::snaplinesThickness, variables::ESP::snaplinesOutline);
             }
         }

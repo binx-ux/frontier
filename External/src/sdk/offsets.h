@@ -54,10 +54,11 @@ namespace Offsets {
          inline constexpr uintptr_t Key = 0x0;
          inline constexpr uintptr_t Size = 0x58;
          inline constexpr uintptr_t Value = 0x18;
+         inline constexpr uintptr_t TypeDescriptor = 0x8;
     }
 
     namespace AttributesMap {
-         inline constexpr uintptr_t Attributes = 0x10;
+         inline constexpr uintptr_t Attributes = 0x18; // list start inside AttributeContainer
          inline constexpr uintptr_t Length = 0x0;
     }
 
@@ -259,6 +260,8 @@ namespace Offsets {
          inline constexpr uintptr_t ClassDescriptor = 0x18;
          inline constexpr uintptr_t ClassName = 0x8;
          inline constexpr uintptr_t ComponentMap = 0x38;
+         // Attributes: container at Instance+0x48, list ptr at container+0x18
+         inline constexpr uintptr_t AttributeContainer = 0x48;
          inline constexpr uintptr_t Name = 0x98;
          inline constexpr uintptr_t Parent = 0x68;
          inline constexpr uintptr_t This = 0x8;
