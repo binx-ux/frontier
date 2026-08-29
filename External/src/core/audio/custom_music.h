@@ -89,7 +89,7 @@ namespace CustomMusic {
         ofn.nMaxFile = MAX_PATH;
         ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR |
             OFN_EXPLORER | OFN_HIDEREADONLY | OFN_ENABLESIZING;
-        ofn.lpstrTitle = "Match-Ware — Choose Music";
+        ofn.lpstrTitle = "FRONTIER — Choose Music";
         ofn.lpstrDefExt = "mp3";
 
         HWND hwnd = variables::Misc::overlayHwnd;

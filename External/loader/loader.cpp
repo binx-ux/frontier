@@ -14,7 +14,7 @@
 
 
 
-// Thin launcher — runs usermode\MatchWare-External.exe next to this loader.
+// Thin launcher — runs usermode\Frontier.exe next to this loader.
 
 int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 
@@ -40,7 +40,7 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 
     const std::wstring usermodeDir = dir + L"\\usermode";
 
-    const std::wstring target = usermodeDir + L"\\MatchWare-External.exe";
+    const std::wstring target = usermodeDir + L"\\Frontier.exe";
 
 
 
@@ -50,11 +50,11 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 
         MessageBoxW(nullptr,
 
-            L"Could not find usermode\\MatchWare-External.exe\n\n"
+            L"Could not find usermode\\Frontier.exe\n\n"
 
-            L"Unzip MatchWare.zip fully and run loader.exe from the MatchWare folder.",
+            L"Build Release|x64 from External.sln or unzip a release bundle fully.",
 
-            L"Match-Ware Loader", MB_OK | MB_ICONERROR);
+            L"FRONTIER Loader", MB_OK | MB_ICONERROR);
 
         return 1;
 
@@ -104,7 +104,7 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 
     if (!ShellExecuteExW(&sei)) {
 
-        MessageBoxW(nullptr, L"Failed to start Match-Ware External.", L"Match-Ware Loader",
+        MessageBoxW(nullptr, L"Failed to start FRONTIER.", L"FRONTIER Loader",
 
             MB_OK | MB_ICONERROR);
 

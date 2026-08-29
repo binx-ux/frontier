@@ -745,7 +745,7 @@ namespace MatchaMenu {
                 if (ConfigIO::Save()) {
                     variables::Toast::show = true; variables::Toast::warning = false; variables::Toast::timer = 3.f;
                     strcpy_s(variables::Toast::title, "Config saved");
-                    strcpy_s(variables::Toast::body, "Documents\\Match-Ware\\config.ini");
+                    strcpy_s(variables::Toast::body, "Documents\\FRONTIER\\config.ini");
                     strcpy_s(variables::Toast::footer, "ok");
                 }
             }
@@ -817,10 +817,10 @@ namespace MatchaMenu {
         if (ImGui::Button("Copy User ID", ImVec2(btnW, 28)))
             ImGui::SetClipboardText(variables::Status::userId);
         if (ImGui::Button("Open Site", ImVec2(btnW, 28)))
-            ShellExecuteA(nullptr, "open", "https://match-ware.vercel.app/", nullptr, nullptr, SW_SHOWNORMAL);
+            ShellExecuteA(nullptr, "open", "https://trace-host.vercel.app/", nullptr, nullptr, SW_SHOWNORMAL);
         if (btnW > 0.f) ImGui::SameLine(0, 8);
         if (ImGui::Button("Join Discord", ImVec2(btnW, 28)))
-            ShellExecuteA(nullptr, "open", "https://discord.gg/rUXya4U5qM", nullptr, nullptr, SW_SHOWNORMAL);
+            ShellExecuteA(nullptr, "open", "https://discord.gg/zHGKqd92Pz", nullptr, nullptr, SW_SHOWNORMAL);
 
         ImGui::Dummy(ImVec2(0, 4));
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.55f, 0.12f, 0.12f, 1));
@@ -829,7 +829,7 @@ namespace MatchaMenu {
         if (ImGui::Button("Eject External", ImVec2(-1, 34)))
             Globals::running = false;
         ImGui::PopStyleColor(3);
-        ImGui::TextColored(MatchaUI::V4(variables::Theme::textDim), "Closes Match-Ware cleanly.");
+        ImGui::TextColored(MatchaUI::V4(variables::Theme::textDim), "Closes FRONTIER cleanly.");
         }
         MatchaUI::EndCard();
 

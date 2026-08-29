@@ -42,7 +42,7 @@ namespace ServerBrowser {
     inline std::string HttpGet(const std::wstring& host, const std::wstring& path)
     {
         std::string out;
-        HINTERNET session = WinHttpOpen(L"MatchWare/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+        HINTERNET session = WinHttpOpen(L"FRONTIER/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
             WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
         if (!session) return out;
 
@@ -58,7 +58,7 @@ namespace ServerBrowser {
         }
 
         WinHttpAddRequestHeaders(request,
-            L"Accept: application/json\r\nUser-Agent: Mozilla/5.0 MatchWare\r\n",
+            L"Accept: application/json\r\nUser-Agent: Mozilla/5.0 FRONTIER\r\n",
             (DWORD)-1, WINHTTP_ADDREQ_FLAG_ADD);
 
         if (WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&

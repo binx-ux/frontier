@@ -45,7 +45,7 @@ namespace UIFx {
         int a0 = (int)(28 * intensity);
         int a1 = (int)(16 * intensity);
         int a2 = (int)(8 * intensity);
-        // Match-Ware silver bloom (no blue/purple cast)
+        // FRONTIER silver bloom (no blue/purple cast)
         dl->AddCircleFilled(c, base * 0.55f, IM_COL32(200, 200, 210, a2), 64);
         dl->AddCircleFilled(c, base * 0.38f, IM_COL32(220, 220, 230, a1), 64);
         dl->AddCircleFilled(c, base * 0.22f, IM_COL32(235, 235, 240, a0), 48);

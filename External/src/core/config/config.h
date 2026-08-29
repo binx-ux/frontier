@@ -7,15 +7,15 @@
 #include <fstream>
 #include "../variables/variables.h"
 
-// Lightweight config dump next to Documents\Match-Ware\config.ini
+// Lightweight config dump next to Documents\FRONTIER\config.ini
 namespace ConfigIO {
 
     inline std::wstring ConfigPath()
     {
         wchar_t docs[MAX_PATH]{};
         if (FAILED(SHGetFolderPathW(nullptr, CSIDL_PERSONAL, nullptr, SHGFP_TYPE_CURRENT, docs)))
-            return L"MatchWare-config.ini";
-        std::wstring dir = std::wstring(docs) + L"\\Match-Ware";
+            return L"Frontier-config.ini";
+        std::wstring dir = std::wstring(docs) + L"\\FRONTIER";
         CreateDirectoryW(dir.c_str(), nullptr);
         return dir + L"\\config.ini";
     }
@@ -49,7 +49,7 @@ namespace ConfigIO {
         FILE* f = nullptr;
         if (_wfopen_s(&f, path.c_str(), L"w") != 0 || !f) return false;
 
-        fprintf(f, "# Match-Ware External config\n");
+        fprintf(f, "# FRONTIER config\n");
         W(f, "aim.enabled", variables::Aimbot::enabled);
         W(f, "aim.alwaysOn", variables::Aimbot::alwaysOn);
         W(f, "aim.showFOV", variables::Aimbot::showFOV);

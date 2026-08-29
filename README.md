@@ -1,16 +1,18 @@
-# Match-Ware External
+# FRONTIER
 
-Open-source Roblox **external** (Windows x64 overlay). Free, no key, MIT.
+**See ahead. Built open.**
 
-> **Repo:** https://github.com/binx-ux/open-source-roblox-cheat-  
-> **Status:** Community fork — maintained by [binx-ux](https://github.com/binx-ux). Offsets may be stale; verify before building.
+Open-source Roblox **external** for Windows x64 — overlay ESP, aimbot, ImGui menu. Part of [AHEAD](https://trace-host.vercel.app). MIT, no keys, no telemetry.
+
+> **Repo:** https://github.com/binx-ux/frontier  
+> **Site:** https://trace-host.vercel.app  
+> **Status:** Maintained by [binx-ux](https://github.com/binx-ux). Offsets may be stale — verify before building. Full release target: **May 10, 2028**.
 
 ---
 
 ## Read this first
 
-This touches Roblox process memory. Using it on live accounts can get you **banned**.  
-That risk is on you. Code is as-is, no warranty, not affiliated with Roblox.
+This reads Roblox process memory from outside the client. Using it on live accounts can get you **banned**. That risk is on you. Not affiliated with Roblox.
 
 Full text: [WARNING.md](WARNING.md) · [LICENSE](LICENSE)
 
@@ -23,33 +25,33 @@ Full text: [WARNING.md](WARNING.md) · [LICENSE](LICENSE)
 | Aimbot / trigger / silent | Game-dependent |
 | ESP / radar / chams | Overlay draw |
 | Gun mods | Where offsets allow |
-| Movement helpers | Disabled on some places (e.g. BloxStrike profile) |
-| ImGui menu | Insert / RCtrl |
+| Movement helpers | Disabled on some places |
+| ImGui menu | Insert / Right Ctrl |
 
-Supported place IDs live in `External/src/core/games/arsenal.h`.
+Supported place IDs: `External/src/core/games/arsenal.h`
 
 ---
 
 ## Build
 
-**Need:** VS with C++ desktop workload, Windows SDK, MASM.
+**Need:** Visual Studio with C++ desktop workload, Windows SDK, MASM.
 
 1. Open `External.sln`
 2. **Release | x64**
 3. Build
 
-Binary lands at `External\x64\Release\External.exe` (gitignored).
+Output: `External\x64\Release\Frontier.exe`
 
 ---
 
 ## Run
 
 1. Join a supported experience on a client build that matches the offsets
-2. Start `External.exe`
-3. **Insert** or **Right Ctrl** — menu  
+2. Start `Frontier.exe`
+3. **Insert** or **Right Ctrl** — menu
 4. **Delete** — panic off (if enabled)
 
-No telemetry. No Discord webhook. Nothing phones home.
+No telemetry. No Discord webhook. Nothing phones home. Build from source or grab [GitHub Releases](https://github.com/binx-ux/frontier/releases) when published.
 
 ---
 
@@ -62,7 +64,7 @@ Roblox updates break these constantly.
 | `External/src/sdk/offsets.h` | Header the build uses |
 | `offsets/` | Dump backups |
 
-Update after every client bump or expect a bad attach.
+Update after every client bump or expect a failed attach.
 
 ---
 
@@ -76,11 +78,13 @@ External/           main app + ImGui
 offsets/            dump json
 ```
 
+Config saves to `%USERPROFILE%\Documents\FRONTIER\`
+
 ---
 
 ## Contributing
 
-PRs welcome for offsets, builds, and fixes.
+PRs welcome for offsets, fixes, and docs.
 
 - Don’t commit secrets, webhooks, or license servers
 - Keep ban-risk stuff labeled in the PR
@@ -91,11 +95,11 @@ PRs welcome for offsets, builds, and fixes.
 ## Credits
 
 - Base ideas from [metixud/RobloxExternalBase](https://github.com/metixud/RobloxExternalBase)
-- Offsets: community dumpers / [offsets.imtheo.lol](https://offsets.imtheo.lol)-style dumps
-- UI: Dear ImGui  
-- Maintainer: [binx-ux](https://github.com/binx-ux)
+- Offsets: community dumpers
+- UI: Dear ImGui
+- Maintainer: [binx-ux](https://github.com/binx-ux) · [AHEAD](https://trace-host.vercel.app)
 - Original co-dev: [astwdnya](https://github.com/astwdnya)
 
 ---
 
-Educational / research use. Ban risk is real. Don’t be weird with it.
+Educational / research use. Ban risk is real.

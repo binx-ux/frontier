@@ -24,7 +24,7 @@ namespace variables {
         inline bool show = false;
         inline float timer = 0.0f;
         inline char title[64] = "Session Validated";
-        inline char body[128] = "Welcome to Match-Ware";
+        inline char body[128] = "Welcome to FRONTIER";
         inline char footer[64] = "alpha";
         inline bool warning = false; // red accent toast
     }

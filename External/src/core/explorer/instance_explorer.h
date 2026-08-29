@@ -46,7 +46,7 @@ namespace InstanceExplorer {
         char docs[MAX_PATH]{};
         if (FAILED(SHGetFolderPathA(nullptr, CSIDL_PERSONAL, nullptr, SHGFP_TYPE_CURRENT, docs)))
             strcpy_s(docs, ".");
-        std::filesystem::path p = std::filesystem::path(docs) / "Match-Ware" / "dumps";
+        std::filesystem::path p = std::filesystem::path(docs) / "FRONTIER" / "dumps";
         std::error_code ec;
         std::filesystem::create_directories(p, ec);
         return p.string();
@@ -504,7 +504,7 @@ namespace InstanceExplorer {
         {
             char hdr[256]{};
             sprintf_s(hdr,
-                "Match-Ware Instance Dump\nRoot: %s \"%s\"\nAddress: 0x%llX\nMaxDepth: %d\n\n",
+                "FRONTIER Instance Dump\nRoot: %s \"%s\"\nAddress: 0x%llX\nMaxDepth: %d\n\n",
                 n.className.c_str(), n.name.c_str(),
                 (unsigned long long)n.addr, maxDepth);
             payload += hdr;

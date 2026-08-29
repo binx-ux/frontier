@@ -384,14 +384,14 @@ public:
         windowClass.style = CS_HREDRAW | CS_VREDRAW;
         windowClass.lpfnWndProc = OverlayWndProc;
         windowClass.hInstance = GetModuleHandleW(nullptr);
-        windowClass.lpszClassName = L"MatchWareExternal";
+        windowClass.lpszClassName = L"FrontierExternal";
         if (!RegisterClassExW(&windowClass)) return false;
 
         int screenW = GetSystemMetrics(SM_CXSCREEN);
         int screenH = GetSystemMetrics(SM_CYSCREEN);
         windowHandle = CreateWindowExW(
             WS_EX_TOPMOST | WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
-            windowClass.lpszClassName, L"Match-Ware",
+            windowClass.lpszClassName, L"FRONTIER",
             WS_POPUP, 0, 0, screenW, screenH, nullptr, nullptr, windowClass.hInstance, nullptr);
         if (!windowHandle) return false;
 
@@ -1034,17 +1034,16 @@ public:
         wdl->AddLine(ImVec2(wp.x + 16, wp.y + 1), ImVec2(wp.x + ws.x - 16, wp.y + 1),
             IM_COL32(255, 255, 255, 24), 1.f);
 
-        ImGui::TextColored(ImVec4(0.94f, 0.94f, 0.97f, 1), "Match-Ware");
+        ImGui::TextColored(ImVec4(0.94f, 0.94f, 0.97f, 1), "FRONTIER");
         ImGui::SameLine();
-        ImGui::TextColored(ImVec4(0.55f, 0.55f, 0.60f, 1), "· usage notice");
+        ImGui::TextColored(ImVec4(0.55f, 0.55f, 0.60f, 1), "· See ahead. Built open.");
         ImGui::Dummy(ImVec2(0, 6));
         ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + 390);
         ImGui::TextColored(ImVec4(0.62f, 0.62f, 0.68f, 1),
-            "Match-Ware can send a one-line launch ping so we know the app started. "
-            "It does not include your name, key, HWID, PC name, or any personal info.");
+            "FRONTIER is open source. This build does not send telemetry or launch pings.");
         ImGui::Spacing();
         ImGui::TextColored(ImVec4(0.52f, 0.52f, 0.58f, 1),
-            "Agree to allow the ping. Decline and nothing is sent.");
+            "Source: github.com/binx-ux/frontier");
         ImGui::PopTextWrapPos();
         ImGui::Dummy(ImVec2(0, 14));
 
@@ -1104,7 +1103,7 @@ public:
         if (ImGui::InvisibleButton("##updateclick", ImVec2(440.f, barH)))
             Updater::OpenDownload();
         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Click to download the latest MatchWare-External.exe");
+            ImGui::SetTooltip("Open FRONTIER releases on GitHub");
         ImGui::End();
     }
 
@@ -1235,9 +1234,9 @@ public:
             if (variables::Misc::streamerModePlus)
                 sprintf_s(buf, "Private  |  %d fps", fps);
             else if (variables::Misc::streamerMode)
-                sprintf_s(buf, "Match-Ware  |  %d fps", fps);
+                sprintf_s(buf, "FRONTIER  |  %d fps", fps);
             else
-                sprintf_s(buf, "Match-Ware  |  %s  |  %d fps", Offsets::ClientVersion.c_str(), fps);
+                sprintf_s(buf, "FRONTIER  |  %s  |  %d fps", Offsets::ClientVersion.c_str(), fps);
             ImVec2 ts = ImGui::CalcTextSize(buf);
             float x = ImGui::GetIO().DisplaySize.x - ts.x - 14;
             drawList->AddText(ImVec2(x + 1, 11), IM_COL32(0, 0, 0, 200), buf);

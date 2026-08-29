@@ -5,7 +5,7 @@
 #include "../../memory/memory.h"
 #include <cstdint>
 
-// Supported FPS experiences for Match-Ware External.
+// Supported FPS experiences for FRONTIER.
 namespace Games {
 
     // https://www.roblox.com/games/286090429/Arsenal
