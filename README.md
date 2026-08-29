@@ -2,7 +2,8 @@
 
 Open-source Roblox **external** (Windows x64 overlay). Free, no key, MIT.
 
-> **Repo:** https://github.com/binx-ux/open-source-roblox-cheat-
+> **Repo:** https://github.com/binx-ux/open-source-roblox-cheat-  
+> **Status:** Community fork — maintained by [binx-ux](https://github.com/binx-ux). Offsets may be stale; verify before building.
 
 ---
 
@@ -93,6 +94,7 @@ PRs welcome for offsets, builds, and fixes.
 - Offsets: community dumpers / [offsets.imtheo.lol](https://offsets.imtheo.lol)-style dumps
 - UI: Dear ImGui  
 - Maintainer: [binx-ux](https://github.com/binx-ux)
+- Original co-dev: [astwdnya](https://github.com/astwdnya)
 
 ---
 
