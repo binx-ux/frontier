@@ -1,0 +1,87 @@
+{
+  "project": "FRONTIER",
+  "source": "https://offsets.imtheo.lol",
+  "syncedAt": "2026-08-29T17:02:52.624Z",
+  "activeVersion": "version-f5a60436d48947d3",
+  "activeArchive": "offsets/version-f5a60436d48947d3.json",
+  "discord": "https://offsets.imtheo.lol/discord",
+  "routes": [
+    {
+      "name": "Offsets.hpp",
+      "local": "offsets/offsets.hpp",
+      "upstream": "https://offsets.imtheo.lol/Offsets.hpp",
+      "ahead": "https://trace-host.vercel.app/api/frontier-offsets?file=Offsets.hpp",
+      "github": "https://raw.githubusercontent.com/binx-ux/frontier/main/offsets/offsets.hpp"
+    },
+    {
+      "name": "Offsets.json",
+      "local": "offsets/offsets.json",
+      "upstream": "https://offsets.imtheo.lol/Offsets.json",
+      "ahead": "https://trace-host.vercel.app/api/frontier-offsets?file=Offsets.json",
+      "github": "https://raw.githubusercontent.com/binx-ux/frontier/main/offsets/offsets.json"
+    },
+    {
+      "name": "Offsets.cs",
+      "local": "offsets/offsets.cs",
+      "upstream": "https://offsets.imtheo.lol/Offsets.cs",
+      "ahead": "https://trace-host.vercel.app/api/frontier-offsets?file=Offsets.cs",
+      "github": "https://raw.githubusercontent.com/binx-ux/frontier/main/offsets/offsets.cs"
+    },
+    {
+      "name": "Offsets.txt",
+      "local": "offsets/offsets.txt",
+      "upstream": "https://offsets.imtheo.lol/Offsets.txt",
+      "ahead": "https://trace-host.vercel.app/api/frontier-offsets?file=Offsets.txt",
+      "github": "https://raw.githubusercontent.com/binx-ux/frontier/main/offsets/offsets.txt"
+    },
+    {
+      "name": "OffsetsHex.json",
+      "local": "offsets/offsets-hex.json",
+      "upstream": "https://offsets.imtheo.lol/OffsetsHex.json",
+      "ahead": "https://trace-host.vercel.app/api/frontier-offsets?file=OffsetsHex.json",
+      "github": "https://raw.githubusercontent.com/binx-ux/frontier/main/offsets/offsets-hex.json"
+    },
+    {
+      "name": "FFlags.json",
+      "local": "offsets/fflags.json",
+      "upstream": "https://offsets.imtheo.lol/FFlags.json",
+      "ahead": "https://trace-host.vercel.app/api/frontier-offsets?file=FFlags.json",
+      "github": "https://raw.githubusercontent.com/binx-ux/frontier/main/offsets/fflags.json"
+    },
+    {
+      "name": "FFlags.hpp",
+      "local": "offsets/fflags.hpp",
+      "upstream": "https://offsets.imtheo.lol/FFlags.hpp",
+      "ahead": "https://trace-host.vercel.app/api/frontier-offsets?file=FFlags.hpp",
+      "github": "https://raw.githubusercontent.com/binx-ux/frontier/main/offsets/fflags.hpp"
+    },
+    {
+      "name": "FFlags.cs",
+      "local": "offsets/fflags.cs",
+      "upstream": "https://offsets.imtheo.lol/FFlags.cs",
+      "ahead": "https://trace-host.vercel.app/api/frontier-offsets?file=FFlags.cs",
+      "github": "https://raw.githubusercontent.com/binx-ux/frontier/main/offsets/fflags.cs"
+    },
+    {
+      "name": "FFlagsHex.json",
+      "local": "offsets/fflags-hex.json",
+      "upstream": "https://offsets.imtheo.lol/FFlagsHex.json",
+      "ahead": "https://trace-host.vercel.app/api/frontier-offsets?file=FFlagsHex.json",
+      "github": "https://raw.githubusercontent.com/binx-ux/frontier/main/offsets/fflags-hex.json"
+    },
+    {
+      "name": "Struct.hpp",
+      "local": "offsets/struct.hpp",
+      "upstream": "https://offsets.imtheo.lol/Struct.hpp",
+      "ahead": "https://trace-host.vercel.app/api/frontier-offsets?file=Struct.hpp",
+      "github": "https://raw.githubusercontent.com/binx-ux/frontier/main/offsets/struct.hpp"
+    },
+    {
+      "name": "Types.json",
+      "local": "offsets/types.json",
+      "upstream": "https://offsets.imtheo.lol/Types.json",
+      "ahead": "https://trace-host.vercel.app/api/frontier-offsets?file=Types.json",
+      "github": "https://raw.githubusercontent.com/binx-ux/frontier/main/offsets/types.json"
+    }
+  ]
+}

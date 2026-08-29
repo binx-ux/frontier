@@ -57,14 +57,24 @@ No telemetry. No Discord webhook. Nothing phones home. Build from source or grab
 
 ## Offsets
 
-Roblox updates break these constantly.
+Roblox updates break these constantly. **FRONTIER** mirrors [theo's offsets](https://offsets.imtheo.lol/) in this repo — no build required to download them.
+
+| Where | URL |
+|-------|-----|
+| Live upstream | https://offsets.imtheo.lol |
+| This repo | [`offsets/`](./offsets/) · `node scripts/sync-offsets.js` |
+| AHEAD catalog | https://trace-host.vercel.app/api/frontier-offsets |
+| Example JSON | https://trace-host.vercel.app/api/frontier-offsets?file=Offsets.json |
 
 | Path | What |
 |------|------|
-| `External/src/sdk/offsets.h` | Header the build uses |
-| `offsets/` | Dump backups |
+| `offsets/offsets.json` | Latest JSON mirror |
+| `offsets/offsets.hpp` | Latest C++ header mirror |
+| `offsets/sources.json` | Full route manifest |
+| `offsets/active.json` | Active Roblox client version |
+| `External/src/sdk/offsets.h` | Header used when you build |
 
-Update after every client bump or expect a failed attach.
+See [offsets/README.md](./offsets/README.md). Update after every client bump or expect a failed attach.
 
 ---
 
@@ -95,7 +105,7 @@ PRs welcome for offsets, fixes, and docs.
 ## Credits
 
 - Base ideas from [metixud/RobloxExternalBase](https://github.com/metixud/RobloxExternalBase)
-- Offsets: community dumpers
+- Offsets: [theo's offsets](https://offsets.imtheo.lol) · mirrored in `offsets/`
 - UI: Dear ImGui
 - Maintainer: [binx-ux](https://github.com/binx-ux) · [AHEAD](https://trace-host.vercel.app)
 - Original co-dev: [astwdnya](https://github.com/astwdnya)
