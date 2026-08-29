@@ -76,6 +76,10 @@ Roblox updates break these constantly. **FRONTIER** mirrors [theo's offsets](htt
 
 See [offsets/README.md](./offsets/README.md). Update after every client bump or expect a failed attach.
 
+### UI preview (no build)
+
+Open [`dev/ui-preview.html`](./dev/ui-preview.html) in Chrome or Edge — interactive HTML mockup of the menu layout (tabs, cards, toggles, floating header mode).
+
 ---
 
 ## Layout
