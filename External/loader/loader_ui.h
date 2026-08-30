@@ -6,7 +6,7 @@
 #include <thread>
 #include "loader_config.h"
 #include "loader_update.h"
-#include "loader_auth.h"
+#include "loader_oauth.h"
 #include "resource.h"
 #include <Shellapi.h>
 
@@ -15,12 +15,11 @@
 namespace LoaderUI {
 
     enum CtrlId : int {
-        ID_BTN_DISCORD = 1000,
-        ID_BTN_UPDATE = 1001,
-        ID_BTN_LAUNCH = 1002,
-        ID_BTN_RELEASES = 1003,
-        ID_EDIT_USER = 1004,
-        ID_BTN_VERIFY = 1005,
+        ID_BTN_SIGNIN = 1000,
+        ID_BTN_SIGNOUT = 1001,
+        ID_BTN_UPDATE = 1002,
+        ID_BTN_LAUNCH = 1003,
+        ID_BTN_RELEASES = 1004,
     };
 
     struct State {
@@ -28,19 +27,19 @@ namespace LoaderUI {
         bool kernelAvailable = false;
         bool checking = false;
         bool updating = false;
-        bool verifying = false;
+        bool signingIn = false;
         bool updateAvailable = false;
         bool accessRequired = true;
         bool verified = false;
         int localVersion = LoaderConfig::kLocalVersion;
         int remoteVersion = 0;
-        int robloxUserId = 0;
         char status[256] = "Ready";
         char remoteDisplay[64] = "";
-        char robloxUsername[64] = "";
         char discordInvite[128] = "";
+        char discordName[64] = "";
         float progress = 0.f;
         LoaderUpdate::Manifest manifest{};
+        LoaderOAuth::Session session{};
     };
 
     inline State* gState = nullptr;
@@ -65,12 +64,23 @@ namespace LoaderUI {
         if (gWnd) InvalidateRect(gWnd, nullptr, FALSE);
     }
 
-    inline void RefreshLaunchButton(State* s)
+    inline void SyncVerified(State* s)
     {
+        s->verified = s->session.verified && s->session.allowed;
+        if (s->session.globalName[0])
+            strncpy_s(s->discordName, s->session.globalName, _TRUNCATE);
+        else
+            strncpy_s(s->discordName, s->session.username, _TRUNCATE);
+    }
+
+    inline void RefreshAuthButtons(State* s)
+    {
+        HWND signIn = GetDlgItem(gWnd, ID_BTN_SIGNIN);
+        HWND signOut = GetDlgItem(gWnd, ID_BTN_SIGNOUT);
         HWND launch = GetDlgItem(gWnd, ID_BTN_LAUNCH);
-        if (!launch) return;
-        bool blocked = s->accessRequired && !s->verified;
-        EnableWindow(launch, !blocked && !s->updating);
+        if (signIn) ShowWindow(signIn, s->accessRequired && !s->verified ? SW_SHOW : SW_HIDE);
+        if (signOut) ShowWindow(signOut, s->accessRequired && s->verified ? SW_SHOW : SW_HIDE);
+        if (launch) EnableWindow(launch, (!s->accessRequired || s->verified) && !s->updating && !s->signingIn);
     }
 
     inline void Paint(HDC hdc, State* s)
@@ -95,10 +105,8 @@ namespace LoaderUI {
 
         char ver[64];
         sprintf_s(ver, "v%d", s->localVersion);
-        SetTextColor(hdc, LoaderConfig::kTextDim);
         TextOutA(hdc, client.right - 56, 20, ver, (int)strlen(ver));
 
-        // Discord access card
         if (s->accessRequired) {
             RECT access{ 24, 48, client.right - 24, 210 };
             HBRUSH cardBrush = CreateSolidBrush(LoaderConfig::kCard);
@@ -116,21 +124,28 @@ namespace LoaderUI {
 
             SelectObject(hdc, gFontBold);
             SetTextColor(hdc, LoaderConfig::kText);
-            TextOutA(hdc, access.left + 14, access.top + 12, "Discord access required", 23);
+            TextOutA(hdc, access.left + 14, access.top + 12, "Sign in with Discord", 20);
             SelectObject(hdc, gFont);
             SetTextColor(hdc, LoaderConfig::kTextDim);
             TextOutA(hdc, access.left + 14, access.top + 34,
-                "1. Join Discord  2. Run /verify YourRobloxName  3. Verify below", 68);
+                "Join the server, run /verify YourRobloxName, then sign in below.", 63);
 
-            if (s->verified) {
+            if (s->verified && s->discordName[0]) {
                 SetTextColor(hdc, RGB(80, 200, 120));
-                char ok[96];
-                sprintf_s(ok, "Verified — UserId %d", s->robloxUserId);
+                char ok[128];
+                if (s->session.robloxUserId > 0)
+                    sprintf_s(ok, "Signed in as %s  (Roblox %d)", s->discordName, s->session.robloxUserId);
+                else
+                    sprintf_s(ok, "Signed in as %s", s->discordName);
                 TextOutA(hdc, access.left + 14, access.top + 130, ok, (int)strlen(ok));
+            } else if (s->signingIn) {
+                SetTextColor(hdc, LoaderConfig::kBrand);
+                TextOutA(hdc, access.left + 14, access.top + 130,
+                    "Waiting for Discord — complete sign-in in your browser…", 54);
             } else {
                 SetTextColor(hdc, LoaderConfig::kBrand);
                 TextOutA(hdc, access.left + 14, access.top + 130,
-                    "Not verified — join Discord and run /verify first", 49);
+                    "Not signed in", 13);
             }
         }
 
@@ -225,56 +240,70 @@ namespace LoaderUI {
             if (!s->kernelAvailable)
                 s->kernelAvailable = LoaderUpdate::ProbeKernelAvailable();
             if (gWnd) {
-                ShowWindow(GetDlgItem(gWnd, ID_BTN_DISCORD), s->accessRequired ? SW_SHOW : SW_HIDE);
-                ShowWindow(GetDlgItem(gWnd, ID_EDIT_USER), s->accessRequired ? SW_SHOW : SW_HIDE);
-                ShowWindow(GetDlgItem(gWnd, ID_BTN_VERIFY), s->accessRequired ? SW_SHOW : SW_HIDE);
-                RefreshLaunchButton(s);
+                RefreshAuthButtons(s);
                 InvalidateRect(gWnd, nullptr, FALSE);
             }
             s->checking = false;
         }).detach();
     }
 
-    inline void RunVerify(State* s)
+    inline void RefreshSessionAsync(State* s)
     {
-        if (s->verifying) return;
-        char username[64]{};
-        GetWindowTextA(GetDlgItem(gWnd, ID_EDIT_USER), username, 64);
-        if (!username[0]) {
-            SetStatus(s, "Enter your Roblox username");
-            return;
-        }
-        s->verifying = true;
-        SetStatus(s, "Verifying…");
-        std::thread([s, username]() {
-            int userId = 0;
+        if (!s->session.token[0]) return;
+        std::thread([s]() {
             std::string err;
-            if (!LoaderAuth::ResolveRobloxUserId(username, userId, err)) {
-                SetStatus(s, err.c_str());
-                s->verifying = false;
-                return;
+            if (LoaderOAuth::RefreshSession(s->session, err)) {
+                SyncVerified(s);
+                SetStatus(s, "Signed in with Discord");
+            } else {
+                s->session.verified = false;
+                s->session.allowed = false;
+                SyncVerified(s);
             }
-            bool allowed = false;
-            bool verifyRequired = true;
-            if (!LoaderAuth::CheckAccess(userId, allowed, verifyRequired, err)) {
-                SetStatus(s, err.c_str());
-                s->verifying = false;
-                return;
-            }
-            s->robloxUserId = userId;
-            strncpy_s(s->robloxUsername, username, _TRUNCATE);
-            s->verified = allowed || !verifyRequired;
-            LoaderAuth::SaveAuth(userId, username, s->verified);
-            if (s->verified)
-                SetStatus(s, "Access granted — you can launch");
-            else
-                SetStatus(s, "Not whitelisted — join Discord and run /verify YourRobloxName");
             if (gWnd) {
-                RefreshLaunchButton(s);
+                RefreshAuthButtons(s);
                 InvalidateRect(gWnd, nullptr, FALSE);
             }
-            s->verifying = false;
         }).detach();
+    }
+
+    inline void RunSignIn(State* s)
+    {
+        if (s->signingIn) return;
+        s->signingIn = true;
+        SetStatus(s, "Opening Discord sign-in…");
+        RefreshAuthButtons(s);
+        InvalidateRect(gWnd, nullptr, FALSE);
+        std::thread([s]() {
+            LoaderOAuth::Session session{};
+            std::string err;
+            bool ok = LoaderOAuth::SignIn(session, err);
+            s->session = session;
+            SyncVerified(s);
+            if (ok) {
+                SetStatus(s, "Signed in — you can launch");
+            } else {
+                s->session.verified = false;
+                s->session.allowed = false;
+                SyncVerified(s);
+                SetStatus(s, err.c_str());
+            }
+            s->signingIn = false;
+            if (gWnd) {
+                RefreshAuthButtons(s);
+                InvalidateRect(gWnd, nullptr, FALSE);
+            }
+        }).detach();
+    }
+
+    inline void RunSignOut(State* s)
+    {
+        LoaderOAuth::ClearSession();
+        memset(&s->session, 0, sizeof(s->session));
+        SyncVerified(s);
+        SetStatus(s, "Signed out");
+        RefreshAuthButtons(s);
+        InvalidateRect(gWnd, nullptr, FALSE);
     }
 
     inline void RunUpdate(State* s)
@@ -288,7 +317,7 @@ namespace LoaderUI {
         s->updating = true;
         s->progress = 0.f;
         SetStatus(s, "Updating…");
-        RefreshLaunchButton(s);
+        RefreshAuthButtons(s);
         LoaderUpdate::Manifest m = s->manifest;
         std::thread([s, m]() {
             std::string err;
@@ -309,7 +338,7 @@ namespace LoaderUI {
             }
             s->progress = 0.f;
             s->updating = false;
-            if (gWnd) RefreshLaunchButton(s);
+            if (gWnd) RefreshAuthButtons(s);
         }).detach();
     }
 
@@ -318,17 +347,12 @@ namespace LoaderUI {
         State* s = gState;
         switch (msg) {
         case WM_CREATE: {
-            CreateWindowW(L"BUTTON", L"Join Discord",
+            CreateWindowW(L"BUTTON", L"Sign in with Discord",
                 WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-                38, 88, 120, 28, hwnd, (HMENU)ID_BTN_DISCORD, nullptr, nullptr);
-            CreateWindowW(L"EDIT", L"",
-                WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL,
-                168, 90, 180, 24, hwnd, (HMENU)ID_EDIT_USER, nullptr, nullptr);
-            SendMessageW(GetDlgItem(hwnd, ID_EDIT_USER), EM_SETCUEBANNER, TRUE,
-                (LPARAM)L"Roblox username");
-            CreateWindowW(L"BUTTON", L"Verify",
-                WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-                358, 88, 100, 28, hwnd, (HMENU)ID_BTN_VERIFY, nullptr, nullptr);
+                38, 88, 200, 32, hwnd, (HMENU)ID_BTN_SIGNIN, nullptr, nullptr);
+            CreateWindowW(L"BUTTON", L"Sign out",
+                WS_CHILD | BS_PUSHBUTTON,
+                248, 88, 100, 32, hwnd, (HMENU)ID_BTN_SIGNOUT, nullptr, nullptr);
             CreateWindowW(L"BUTTON", L"Update Files",
                 WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
                 24, 500, 140, 32, hwnd, (HMENU)ID_BTN_UPDATE, nullptr, nullptr);
@@ -338,10 +362,11 @@ namespace LoaderUI {
             CreateWindowW(L"BUTTON", L"Releases",
                 WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
                 328, 500, 140, 32, hwnd, (HMENU)ID_BTN_RELEASES, nullptr, nullptr);
-            if (s->robloxUsername[0])
-                SetWindowTextA(GetDlgItem(hwnd, ID_EDIT_USER), s->robloxUsername);
-            RefreshLaunchButton(s);
+            SyncVerified(s);
+            RefreshAuthButtons(s);
             CheckAsync(s);
+            if (s->session.token[0])
+                RefreshSessionAsync(s);
             return 0;
         }
         case WM_CTLCOLORBTN:
@@ -349,12 +374,6 @@ namespace LoaderUI {
             SetBkMode((HDC)wp, TRANSPARENT);
             SetTextColor((HDC)wp, LoaderConfig::kText);
             return (LRESULT)gBgBrush;
-        case WM_CTLCOLOREDIT: {
-            SetBkColor((HDC)wp, LoaderConfig::kCard);
-            static HBRUSH editBrush = CreateSolidBrush(LoaderConfig::kCard);
-            SetTextColor((HDC)wp, LoaderConfig::kText);
-            return (LRESULT)editBrush;
-        }
         case WM_PAINT: {
             PAINTSTRUCT ps{};
             HDC hdc = BeginPaint(hwnd, &ps);
@@ -379,14 +398,11 @@ namespace LoaderUI {
         }
         case WM_COMMAND: {
             switch (LOWORD(wp)) {
-            case ID_BTN_DISCORD: {
-                const char* url = s->discordInvite[0] ? s->discordInvite : LoaderConfig::kDiscordInvite;
-                ShellExecuteA(nullptr, "open", url, nullptr, nullptr, SW_SHOWNORMAL);
-                SetStatus(s, "Opened Discord — join, then run /verify YourRobloxName");
+            case ID_BTN_SIGNIN:
+                RunSignIn(s);
                 break;
-            }
-            case ID_BTN_VERIFY:
-                RunVerify(s);
+            case ID_BTN_SIGNOUT:
+                RunSignOut(s);
                 break;
             case ID_BTN_UPDATE:
                 if (!s->checking) {
@@ -399,7 +415,7 @@ namespace LoaderUI {
             case ID_BTN_LAUNCH: {
                 if (s->accessRequired && !s->verified) {
                     MessageBoxW(hwnd,
-                        L"Join Discord and verify first.\n\n1. Join the server\n2. Run /verify YourRobloxName\n3. Click Verify in the loader",
+                        L"Sign in with Discord first.\n\n1. Join the server\n2. Run /verify YourRobloxName\n3. Click Sign in with Discord",
                         LoaderConfig::kAppName, MB_OK | MB_ICONINFORMATION);
                     break;
                 }
@@ -432,8 +448,8 @@ namespace LoaderUI {
         state.selectedMode = LoaderUpdate::LoadSavedMode();
         state.kernelAvailable = LoaderUpdate::ProbeKernelAvailable();
         strncpy_s(state.discordInvite, LoaderConfig::kDiscordInvite, _TRUNCATE);
-        LoaderAuth::LoadSavedAuth(state.robloxUserId, state.robloxUsername,
-            sizeof(state.robloxUsername), state.verified);
+        LoaderOAuth::LoadSession(state.session);
+        SyncVerified(&state);
         gState = &state;
 
         gBgBrush = CreateSolidBrush(LoaderConfig::kBg);

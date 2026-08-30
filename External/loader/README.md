@@ -13,12 +13,12 @@ Pre-launch updater, Discord gate, and mode picker for FRONTIER.
 ## Discord access flow
 
 1. Run `FrontierLoader.exe`
-2. Click **Join Discord** → https://discord.gg/zHGKqd92Pz
-3. In Discord, run: `/verify YourRobloxUsername`
-4. Back in the loader, enter the same Roblox username and click **Verify**
-5. Once verified, **Launch** unlocks
+2. Join the Discord server (link opens during sign-in if needed)
+3. In Discord, run: `/verify YourRobloxUsername` — links your Discord account to Roblox
+4. Click **Sign in with Discord** in the loader
+5. Complete OAuth in your browser — once verified, **Launch** unlocks
 
-Verification hits `https://trace-host.vercel.app/api/trace-auth?userId=…` — the same whitelist used by TRACE scripts. Set `"access_required": false` in the manifest only if you want to disable the gate for a private build.
+OAuth is handled server-side at `https://trace-host.vercel.app/api/discord-oauth`. The loader uses PKCE + a local callback on `http://127.0.0.1:38473/callback`. Your Discord account must be in the server and linked via `/verify`.
 
 ## Build
 

@@ -141,6 +141,72 @@ namespace LoaderUpdate {
         return !outBody.empty();
     }
 
+    inline bool HttpPost(const char* url, const char* contentType, const std::string& body,
+        std::string& outBody, std::string& outErr)
+    {
+        outBody.clear();
+        std::wstring wurl = ToWide(url);
+        if (wurl.empty()) { outErr = "Bad URL"; return false; }
+
+        URL_COMPONENTS uc{};
+        uc.dwStructSize = sizeof(uc);
+        wchar_t host[256]{}, path[2048]{};
+        uc.lpszHostName = host;
+        uc.dwHostNameLength = (DWORD)_countof(host);
+        uc.lpszUrlPath = path;
+        uc.dwUrlPathLength = (DWORD)_countof(path);
+        if (!WinHttpCrackUrl(wurl.c_str(), 0, 0, &uc)) {
+            outErr = "Bad URL";
+            return false;
+        }
+
+        HINTERNET ses = WinHttpOpen(L"FRONTIER-Loader/1.0",
+            WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+        if (!ses) { outErr = "WinHttpOpen failed"; return false; }
+
+        bool https = uc.nScheme == INTERNET_SCHEME_HTTPS;
+        HINTERNET con = WinHttpConnect(ses, host, uc.nPort, 0);
+        if (!con) { WinHttpCloseHandle(ses); outErr = "Connect failed"; return false; }
+
+        DWORD flags = https ? WINHTTP_FLAG_SECURE : 0;
+        HINTERNET req = WinHttpOpenRequest(con, L"POST", path, nullptr,
+            WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, flags);
+        if (!req) {
+            WinHttpCloseHandle(con);
+            WinHttpCloseHandle(ses);
+            outErr = "OpenRequest failed";
+            return false;
+        }
+
+        std::string hdrs = std::string("Content-Type: ") + contentType + "\r\n";
+        std::wstring whdrs = ToWide(hdrs.c_str());
+        BOOL ok = WinHttpSendRequest(req, whdrs.c_str(), (DWORD)-1L,
+            (LPVOID)body.data(), (DWORD)body.size(), (DWORD)body.size(), 0);
+        if (ok) ok = WinHttpReceiveResponse(req, nullptr);
+        if (!ok) {
+            WinHttpCloseHandle(req);
+            WinHttpCloseHandle(con);
+            WinHttpCloseHandle(ses);
+            outErr = "Request failed";
+            return false;
+        }
+
+        DWORD avail = 0;
+        do {
+            if (!WinHttpQueryDataAvailable(req, &avail)) break;
+            if (avail == 0) break;
+            std::vector<char> chunk(avail);
+            DWORD read = 0;
+            if (!WinHttpReadData(req, chunk.data(), avail, &read)) break;
+            outBody.append(chunk.data(), read);
+        } while (avail > 0);
+
+        WinHttpCloseHandle(req);
+        WinHttpCloseHandle(con);
+        WinHttpCloseHandle(ses);
+        return !outBody.empty();
+    }
+
     inline bool HttpDownloadFile(const char* url, const std::wstring& dest, std::string& outErr)
     {
         std::string body;

@@ -50,7 +50,7 @@ Output: `External\x64\Release\Frontier.exe`
 
 1. Download **FrontierLoader.exe** from [GitHub Releases](https://github.com/binx-ux/frontier/releases) (or build from `External/loader/`)
 2. Join [Discord](https://discord.gg/zHGKqd92Pz) and run `/verify YourRobloxUsername`
-3. Open the loader → **Verify** with the same username → pick **Usermode** or **Kernel** → **Launch**
+3. Open the loader → **Sign in with Discord** → pick **Usermode** or **Kernel** → **Launch**
 
 The loader auto-updates `usermode\Frontier.exe` from the release manifest. See [External/loader/README.md](External/loader/README.md) for manifest and build details.
 

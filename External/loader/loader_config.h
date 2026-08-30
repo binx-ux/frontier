@@ -15,6 +15,11 @@ namespace LoaderConfig {
         "https://discord.gg/zHGKqd92Pz";
     inline constexpr const char* kAccessApi =
         "https://trace-host.vercel.app/api/trace-auth";
+    inline constexpr const char* kDiscordOAuthApi =
+        "https://trace-host.vercel.app/api/discord-oauth";
+    inline constexpr const char* kOAuthRedirectUri =
+        "http://127.0.0.1:38473/callback";
+    inline constexpr int kOAuthPort = 38473;
 
     inline constexpr int kWindowW = 500;
     inline constexpr int kWindowH = 640;
