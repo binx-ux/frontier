@@ -56,9 +56,6 @@ namespace FrontierTheme {
     }
 
     inline const char* LayoutLabel() {
-        switch (variables::Theme::layoutMode) {
-        case 1: return "Rail";
-        default: return "Standard";
-        }
+        return "Universal";
     }
 }

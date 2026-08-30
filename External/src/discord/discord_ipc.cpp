@@ -2,16 +2,17 @@
 #include <Windows.h>
 #include <cstdio>
 #include <cstring>
+#include <mutex>
 #include <string>
-#include <random>
 
 namespace {
 
+    std::mutex gMutex;
     HANDLE gPipe = INVALID_HANDLE_VALUE;
     char gAppId[32]{};
     int gNonce = 1;
 
-    bool WriteFrame(int opcode, const std::string& json)
+    bool WriteFrameLocked(int opcode, const std::string& json)
     {
         if (gPipe == INVALID_HANDLE_VALUE)
             return false;
@@ -30,12 +31,38 @@ namespace {
         return true;
     }
 
-    bool TryConnectPipe()
+    bool ReadFrameLocked(int& opcode, std::string& json)
+    {
+        if (gPipe == INVALID_HANDLE_VALUE)
+            return false;
+
+        uint32_t op = 0;
+        uint32_t len = 0;
+        DWORD read = 0;
+        if (!ReadFile(gPipe, &op, sizeof(op), &read, nullptr) || read != sizeof(op))
+            return false;
+        if (!ReadFile(gPipe, &len, sizeof(len), &read, nullptr) || read != sizeof(len))
+            return false;
+        if (len > 65536)
+            return false;
+
+        opcode = (int)op;
+        json.clear();
+        if (len == 0)
+            return true;
+
+        json.resize(len);
+        if (!ReadFile(gPipe, json.data(), len, &read, nullptr) || read != len)
+            return false;
+        return true;
+    }
+
+    bool TryConnectPipeLocked()
     {
         for (int i = 0; i < 10; ++i) {
             char path[64];
             sprintf_s(path, "\\\\.\\pipe\\discord-ipc-%d", i);
-            gPipe = CreateFileA(
+            HANDLE pipe = CreateFileA(
                 path,
                 GENERIC_READ | GENERIC_WRITE,
                 0,
@@ -43,8 +70,17 @@ namespace {
                 OPEN_EXISTING,
                 0,
                 nullptr);
-            if (gPipe != INVALID_HANDLE_VALUE)
-                return true;
+            if (pipe == INVALID_HANDLE_VALUE)
+                continue;
+
+            DWORD mode = PIPE_READMODE_BYTE | PIPE_WAIT;
+            if (!SetNamedPipeHandleState(pipe, &mode, nullptr, nullptr)) {
+                CloseHandle(pipe);
+                continue;
+            }
+
+            gPipe = pipe;
+            return true;
         }
         return false;
     }
@@ -86,6 +122,27 @@ namespace {
         json += '"';
     }
 
+    bool WaitForReadyLocked()
+    {
+        for (int i = 0; i < 24; ++i) {
+            DWORD avail = 0;
+            if (!PeekNamedPipe(gPipe, nullptr, 0, nullptr, &avail, nullptr))
+                return false;
+            if (avail >= 8) {
+                int op = 0;
+                std::string json;
+                if (!ReadFrameLocked(op, json))
+                    return false;
+                if (json.find("\"READY\"") != std::string::npos)
+                    return true;
+                if (json.find("\"ERROR\"") != std::string::npos)
+                    return false;
+            }
+            Sleep(50);
+        }
+        return true;
+    }
+
 }
 
 namespace DiscordIPC {
@@ -94,17 +151,26 @@ namespace DiscordIPC {
     {
         if (!applicationId || !applicationId[0])
             return false;
-        if (IsConnected())
+
+        std::lock_guard<std::mutex> lock(gMutex);
+        if (gPipe != INVALID_HANDLE_VALUE)
             return true;
 
         strncpy_s(gAppId, applicationId, _TRUNCATE);
-        if (!TryConnectPipe())
+        if (!TryConnectPipeLocked())
             return false;
 
         char handshake[128];
         sprintf_s(handshake, R"({"v":1,"client_id":"%s"})", gAppId);
-        if (!WriteFrame(0, handshake)) {
-            Disconnect();
+        if (!WriteFrameLocked(0, handshake)) {
+            CloseHandle(gPipe);
+            gPipe = INVALID_HANDLE_VALUE;
+            return false;
+        }
+
+        if (!WaitForReadyLocked()) {
+            CloseHandle(gPipe);
+            gPipe = INVALID_HANDLE_VALUE;
             return false;
         }
         return true;
@@ -112,6 +178,7 @@ namespace DiscordIPC {
 
     void Disconnect()
     {
+        std::lock_guard<std::mutex> lock(gMutex);
         if (gPipe != INVALID_HANDLE_VALUE) {
             CloseHandle(gPipe);
             gPipe = INVALID_HANDLE_VALUE;
@@ -121,12 +188,14 @@ namespace DiscordIPC {
 
     bool IsConnected()
     {
+        std::lock_guard<std::mutex> lock(gMutex);
         return gPipe != INVALID_HANDLE_VALUE;
     }
 
     bool SetActivity(const Activity& activity)
     {
-        if (!IsConnected())
+        std::lock_guard<std::mutex> lock(gMutex);
+        if (gPipe == INVALID_HANDLE_VALUE)
             return false;
 
         std::string act = "{";
@@ -169,30 +238,38 @@ namespace DiscordIPC {
 
         act += '}';
 
-        char payload[1024];
-        sprintf_s(payload,
-            R"({"cmd":"SET_ACTIVITY","args":{"pid":%lu,"activity":%s},"nonce":"%d"})",
-            GetCurrentProcessId(),
-            act.c_str(),
-            gNonce++);
+        std::string payload;
+        payload.reserve(act.size() + 96);
+        char header[128];
+        sprintf_s(header,
+            R"({"cmd":"SET_ACTIVITY","args":{"pid":%lu,"activity":)",
+            GetCurrentProcessId());
+        payload += header;
+        payload += act;
+        sprintf_s(header, R"(},"nonce":"%d"})", gNonce++);
+        payload += header;
 
-        return WriteFrame(1, payload);
+        return WriteFrameLocked(1, payload);
     }
 
-    void Pump()
+    void Pump(int maxFrames)
     {
+        std::lock_guard<std::mutex> lock(gMutex);
         if (gPipe == INVALID_HANDLE_VALUE)
             return;
 
-        DWORD avail = 0;
-        if (!PeekNamedPipe(gPipe, nullptr, 0, nullptr, &avail, nullptr))
-            return;
-        if (avail == 0)
-            return;
+        for (int i = 0; i < maxFrames; ++i) {
+            DWORD avail = 0;
+            if (!PeekNamedPipe(gPipe, nullptr, 0, nullptr, &avail, nullptr))
+                break;
+            if (avail < 8)
+                break;
 
-        std::string buf(avail, '\0');
-        DWORD read = 0;
-        ReadFile(gPipe, buf.data(), avail, &read, nullptr);
+            int op = 0;
+            std::string json;
+            if (!ReadFrameLocked(op, json))
+                break;
+        }
     }
 
 }

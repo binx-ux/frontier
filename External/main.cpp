@@ -25,6 +25,7 @@
 #include "src/core/features/combat_fx.h"
 #include "src/render/render.h"
 #include "src/discord/frontier_presence.h"
+#include "src/core/features/aimbot/visibility.h"
 
 namespace
 {
@@ -35,59 +36,6 @@ namespace
 	inline bool GameKeyDown(int vk)
 	{
 		return WindowManager::IsRobloxFocused() && (GetAsyncKeyState(vk) & 0x8000) != 0;
-	}
-
-	inline void EnforceBloxStrikeProfile()
-	{
-		if (!Games::IsBloxStrike()) return;
-
-		variables::Rage::enabled = false;
-		variables::Trigger::enabled = false;
-		variables::Hitbox::enabled = false;
-		variables::Local::hitboxEnabled = false;
-		variables::Local::autoTp = false;
-		variables::Local::speedEnabled = false;
-		variables::Local::flyEnabled = false;
-		variables::Local::flyActive = false;
-		variables::Local::jumpEnabled = false;
-		variables::Local::infJump = false;
-		variables::Local::noclip = false;
-		variables::Local::clickTp = false;
-		variables::Local::walkFling = false;
-		variables::Local::godMode = false;
-		variables::Local::antiFling = false;
-		variables::Local::bhopEnabled = false;
-		variables::Local::floatEnabled = false;
-		variables::Local::tpWalk = false;
-		variables::Local::orbitPlayer = false;
-		variables::Local::freeze = false;
-		variables::Local::spin = false;
-		variables::Local::gravityEnabled = false;
-		variables::Local::autoClicker = false;
-		variables::Local::vehicleBoost = false;
-		variables::Local::antiVoid = false;
-		variables::Local::sitSpam = false;
-
-		variables::GunMods::fastReload = false;
-		variables::GunMods::fastFire = false;
-		variables::GunMods::rapidPlus = false;
-		variables::GunMods::alwaysAuto = false;
-		variables::GunMods::noSpread = false;
-		variables::GunMods::noRecoil = false;
-		variables::GunMods::noSway = false;
-		variables::GunMods::infiniteAmmo = false;
-		variables::GunMods::autoReload = false;
-		variables::GunMods::damageBoost = false;
-		variables::GunMods::longRange = false;
-		variables::GunMods::wallbangHint = false;
-		variables::GunMods::instantEquip = false;
-
-		// Camera-locked FPS: silent mouse spoof is primary; hybrid mouse-move still runs in aimbot
-		variables::Aimbot::aimType = 1;
-		variables::Aimbot::silentAim = true;
-		variables::Aimbot::targetMethod = 1;
-		// Wall meshes are unreliable here — keep aim usable even if UI left it on
-		variables::Aimbot::requireVisible = false;
 	}
 
 	void SetLoad(float p, const char* status)
@@ -148,6 +96,46 @@ namespace
 		auto prim = rootPart.GetPrimitivePtr();
 		if (prim == 0) return;
 		memory->write<RBX::Vec3>(prim + Offsets::Primitive::AssemblyLinearVelocity, vel);
+	}
+
+	inline bool IsCollidablePartClass(const std::string& cls)
+	{
+		return cls == "Part" || cls == "MeshPart" || cls == "UnionOperation" ||
+			cls == "WedgePart" || cls == "CornerWedgePart" || cls == "TrussPart" ||
+			cls == "SpawnLocation";
+	}
+
+	void ApplyCharacterPartFlags(RBX::RbxInstance character, bool noCollide, bool noTouch)
+	{
+		static std::unordered_map<uintptr_t, uint8_t> flagOrig;
+		static uintptr_t lastChar = 0;
+		if (character.Addr != lastChar) {
+			flagOrig.clear();
+			lastChar = character.Addr;
+		}
+
+		if (!noCollide && !noTouch) {
+			for (auto& kv : flagOrig) {
+				RBX::RbxInstance part(kv.first);
+				auto prim = part.GetPrimitivePtr();
+				if (prim)
+					memory->write<uint8_t>(prim + Offsets::Primitive::Flags, kv.second);
+			}
+			flagOrig.clear();
+			return;
+		}
+
+		for (auto& ch : character.GetChildList()) {
+			if (!IsCollidablePartClass(ch.GetClass())) continue;
+			auto prim = ch.GetPrimitivePtr();
+			if (!prim) continue;
+			if (flagOrig.find(ch.Addr) == flagOrig.end())
+				flagOrig[ch.Addr] = memory->read<uint8_t>(prim + Offsets::Primitive::Flags);
+			uint8_t f = flagOrig[ch.Addr];
+			if (noCollide) f = (uint8_t)(f & ~Offsets::PrimitiveFlags::CanCollide);
+			if (noTouch) f = (uint8_t)(f & ~Offsets::PrimitiveFlags::CanTouch);
+			memory->write<uint8_t>(prim + Offsets::Primitive::Flags, f);
+		}
 	}
 
 	void localThread()
@@ -373,32 +361,8 @@ namespace
 			variables::Local::hitboxSize = variables::Hitbox::size;
 			variables::Local::visualizeHitbox = variables::Hitbox::visualize;
 
-			// MiscGunTest:X ΓÇö hitbox expand is a ban risk; force off + keep toast visible once
-			static bool mgtHitboxWarned = false;
-			if (Games::Detect() == Games::Kind::MiscGunTest) {
-				if (variables::Hitbox::enabled || variables::Local::hitboxEnabled) {
-					variables::Hitbox::enabled = false;
-					variables::Local::hitboxEnabled = false;
-					if (!mgtHitboxWarned) {
-						mgtHitboxWarned = true;
-						variables::Toast::show = true;
-						variables::Toast::warning = true;
-						variables::Toast::timer = 8.0f;
-						strcpy_s(variables::Toast::title, "Hitbox blocked");
-						strcpy_s(variables::Toast::body, "MiscGunTest:X ΓÇö do not expand");
-						strcpy_s(variables::Toast::footer, "Ban risk ΓÇö keep Hitbox OFF");
-					}
-				}
-			} else {
-				mgtHitboxWarned = false;
-			}
-
-			EnforceBloxStrikeProfile();
-
-			variables::Local::desyncEnabled = variables::Desync::enabled;
-
 			static bool hitboxKeyLatch = false;
-			if (!Games::IsBloxStrike() && variables::Hitbox::key > 0) {
+			if (variables::Hitbox::key > 0) {
 				bool hk = GameKeyDown(variables::Hitbox::key);
 				if (hk && !hitboxKeyLatch) {
 					variables::Hitbox::enabled = !variables::Hitbox::enabled;
@@ -409,7 +373,7 @@ namespace
 			}
 
 			static bool rageKeyLatch = false;
-			if (!Games::IsBloxStrike() && variables::Rage::key > 0) {
+			if (variables::Rage::key > 0) {
 				bool rk = GameKeyDown(variables::Rage::key);
 				if (rk && !rageKeyLatch) {
 					variables::Rage::enabled = !variables::Rage::enabled;
@@ -561,9 +525,16 @@ namespace
 
 					for (auto& plr : PlayerCache::snapshotPlayers()) {
 						if (!plr.isValid || plr.health <= 0.f || !plr.rootPartAddr) continue;
-						float dx = plr.position.X - myPos.X;
-						float dy = plr.position.Y - myPos.Y;
-						float dz = plr.position.Z - myPos.Z;
+						RBX::Vec3 theirPos = plr.position;
+						if (plr.rootPartAddr) {
+							RBX::RbxInstance tgtRoot(plr.rootPartAddr);
+							RBX::Vec3 live = tgtRoot.GetPos();
+							if (live.X != 0.f || live.Y != 0.f || live.Z != 0.f)
+								theirPos = live;
+						}
+						float dx = theirPos.X - myPos.X;
+						float dy = theirPos.Y - myPos.Y;
+						float dz = theirPos.Z - myPos.Z;
 						float d = sqrtf(dx * dx + dy * dy + dz * dz);
 						if (d > touchR || d < 0.05f) continue;
 
@@ -623,19 +594,8 @@ namespace
 				}
 			}
 
-			// Anti-fling — kill spin + touch, only damp true fling spikes (never your walk/fly speed)
+			// Anti-fling — kill spin + damp true fling spikes (touch handled via part flags below)
 			if (variables::Local::antiFling) {
-				for (auto& ch : character.GetChildList()) {
-					std::string cls = ch.GetClass();
-					if (cls == "Part" || cls == "MeshPart" || cls == "UnionOperation") {
-						auto p = ch.GetPrimitivePtr();
-						if (!p) continue;
-						uint8_t flags = memory->read<uint8_t>(p + Offsets::Primitive::Flags);
-						flags = (uint8_t)(flags & ~Offsets::PrimitiveFlags::CanTouch);
-						memory->write<uint8_t>(p + Offsets::Primitive::Flags, flags);
-					}
-				}
-
 				auto prim = rootPart.GetPrimitivePtr();
 				if (prim) {
 					memory->write<RBX::Vec3>(prim + Offsets::Primitive::AssemblyAngularVelocity, { 0, 0, 0 });
@@ -662,21 +622,6 @@ namespace
 							if (crazyVert)
 								hy = (v.Y > 0.f ? 1.f : -1.f) * (std::min)(fabsf(v.Y), 70.f);
 							WriteLocalVelocity(rootPart, { hx, hy, hz });
-						}
-					}
-				}
-			}
-
-			// No-clip best-effort
-			if (variables::Local::noclip) {
-				for (auto& ch : character.GetChildList()) {
-					std::string cls = ch.GetClass();
-					if (cls == "Part" || cls == "MeshPart" || cls == "UnionOperation") {
-						auto prim = ch.GetPrimitivePtr();
-						if (prim) {
-							uint8_t flags = memory->read<uint8_t>(prim + Offsets::Primitive::Flags);
-							flags = (uint8_t)(flags & ~Offsets::PrimitiveFlags::CanCollide);
-							memory->write<uint8_t>(prim + Offsets::Primitive::Flags, flags);
 						}
 					}
 				}
@@ -849,18 +794,9 @@ namespace
 					rootPart.SetPos(dest);
 					WriteLocalVelocity(rootPart, { 0, 0, 0 });
 					rootPart.SetPos(dest);
-
-					// Soft noclip while glued to them
-					for (auto& ch : character.GetChildList()) {
-						std::string cls = ch.GetClass();
-						if (cls == "Part" || cls == "MeshPart" || cls == "UnionOperation") {
-							auto p = ch.GetPrimitivePtr();
-							if (!p) continue;
-							uint8_t flags = memory->read<uint8_t>(p + Offsets::Primitive::Flags);
-							flags = (uint8_t)(flags & ~Offsets::PrimitiveFlags::CanCollide);
-							memory->write<uint8_t>(p + Offsets::Primitive::Flags, flags);
-						}
-					}
+					auto prim = rootPart.GetPrimitivePtr();
+					if (prim)
+						memory->write<RBX::Vec3>(prim + Offsets::Primitive::AssemblyAngularVelocity, { 0, 0, 0 });
 
 					if (variables::Rage::unkillable && humanoid.Addr) {
 						float maxHp = memory->read<float>(humanoid.Addr + Offsets::Humanoid::MaxHealth);
@@ -871,7 +807,13 @@ namespace
 			}
 
 			// Fly keybind
+			static bool flyHumanoidSet = false;
 			{
+				static uintptr_t lastFlyChar = 0;
+				if (character.Addr != lastFlyChar) {
+					flyHumanoidSet = false;
+					lastFlyChar = character.Addr;
+				}
 				int fk = variables::Local::flyKey;
 				if (fk <= 0) fk = 'F';
 				bool flyHeld = GameKeyDown(fk);
@@ -888,6 +830,11 @@ namespace
 			}
 
 			if (variables::Local::flyActive && Globals::camera.Addr != 0) {
+				if (humanoid.Addr) {
+					memory->write<uint8_t>(humanoid.Addr + Offsets::Humanoid::PlatformStand, 1);
+					memory->write<uint8_t>(humanoid.Addr + Offsets::Humanoid::AutoRotate, 0);
+					flyHumanoidSet = true;
+				}
 				auto cf = Globals::camera.GetCameraCFrame();
 				RBX::Vec3 look = cf.GetLookVector();
 				look.X = -look.X; look.Y = -look.Y; look.Z = -look.Z;
@@ -922,7 +869,17 @@ namespace
 				if (prim)
 					memory->write<RBX::Vec3>(prim + Offsets::Primitive::AssemblyAngularVelocity, { 0, 0, 0 });
 			}
-			else if (variables::Local::bhopEnabled && GameKeyDown(VK_SPACE) && Globals::camera.Addr != 0) {
+			else if (flyHumanoidSet && humanoid.Addr) {
+				memory->write<uint8_t>(humanoid.Addr + Offsets::Humanoid::PlatformStand, 0);
+				memory->write<uint8_t>(humanoid.Addr + Offsets::Humanoid::AutoRotate, 1);
+				flyHumanoidSet = false;
+			}
+
+			const bool wantNoCol = variables::Local::noclip || variables::Local::flyActive ||
+				(variables::Rage::enabled && variables::Rage::teleport);
+			ApplyCharacterPartFlags(character, wantNoCol, variables::Local::antiFling);
+
+			if (variables::Local::bhopEnabled && !variables::Local::flyActive && GameKeyDown(VK_SPACE) && Globals::camera.Addr != 0) {
 				auto cf = Globals::camera.GetCameraCFrame();
 				RBX::Vec3 look = cf.GetLookVector();
 				look.X = -look.X; look.Z = -look.Z;
@@ -1088,14 +1045,39 @@ namespace
 			}
 
 			// Hip height
-			if (variables::Local::hipHeightEnabled && humanoid.Addr)
+			static float hipOrig = 0.f;
+			static bool hipWasOn = false;
+			if (variables::Local::hipHeightEnabled && humanoid.Addr) {
+				if (!hipWasOn) {
+					hipOrig = memory->read<float>(humanoid.Addr + Offsets::Humanoid::HipHeight);
+					hipWasOn = true;
+				}
 				memory->write<float>(humanoid.Addr + Offsets::Humanoid::HipHeight, variables::Local::hipHeight);
+			}
+			else if (hipWasOn && humanoid.Addr) {
+				memory->write<float>(humanoid.Addr + Offsets::Humanoid::HipHeight, hipOrig);
+				hipWasOn = false;
+			}
 
 			// Custom gravity (workspace)
+			static float gravOrig = 196.2f;
+			static bool gravWasOn = false;
 			if (variables::Local::gravityEnabled && Globals::dataModel.Addr) {
 				auto ws = Globals::dataModel.FindChildByClass("Workspace");
-				if (ws.Addr)
+				if (ws.Addr) {
+					if (!gravWasOn) {
+						gravOrig = memory->read<float>(ws.Addr + Offsets::World::Gravity);
+						if (gravOrig < 0.01f) gravOrig = 196.2f;
+						gravWasOn = true;
+					}
 					memory->write<float>(ws.Addr + Offsets::World::Gravity, variables::Local::gravity);
+				}
+			}
+			else if (gravWasOn && Globals::dataModel.Addr) {
+				auto ws = Globals::dataModel.FindChildByClass("Workspace");
+				if (ws.Addr)
+					memory->write<float>(ws.Addr + Offsets::World::Gravity, gravOrig);
+				gravWasOn = false;
 			}
 
 			// God mode ΓÇö stick health near max
@@ -1118,6 +1100,7 @@ namespace
 			if (variables::Local::tpWalk && Globals::camera.Addr) {
 				auto cf = Globals::camera.GetCameraCFrame();
 				RBX::Vec3 look = cf.GetLookVector();
+				look.X = -look.X; look.Z = -look.Z;
 				look.Y = 0;
 				float flat = sqrtf(look.X * look.X + look.Z * look.Z);
 				if (flat > 0.001f) { look.X /= flat; look.Z /= flat; }
@@ -1132,6 +1115,7 @@ namespace
 					auto pos = rootPart.GetPos();
 					pos.X += step.X; pos.Z += step.Z;
 					rootPart.SetPos(pos);
+					WriteLocalVelocity(rootPart, { 0, 0, 0 });
 				}
 			}
 
@@ -1178,13 +1162,14 @@ namespace
 				}
 				if (have) {
 					static float orbitAng = 0.f;
-					orbitAng += variables::Local::orbitSpeed * 0.016f;
+					orbitAng += variables::Local::orbitSpeed * dt;
 					float r = variables::Local::orbitRadius;
 					RBX::Vec3 pos = rootPart.GetPos();
 					pos.X = tpos.X + cosf(orbitAng) * r;
 					pos.Z = tpos.Z + sinf(orbitAng) * r;
 					pos.Y = tpos.Y + 1.5f;
 					rootPart.SetPos(pos);
+					WriteLocalVelocity(rootPart, { 0, 0, 0 });
 				}
 			}
 
@@ -1304,10 +1289,6 @@ namespace
 		if (!character)
 			return false;
 
-		// Supported FPS places only (Arsenal, BloxStrike, MiscGunTest, Baseplate)
-		if (!Arsenal::IsSupportedPlace())
-			return false;
-
 		return true;
 	}
 
@@ -1326,7 +1307,7 @@ namespace
 		int tries = 0;
 		while (!memory->find_process_id(app)) {
 			if (++tries > 40)
-				return FailAttach("Roblox not found. Open Roblox, join a supported game, then restart.");
+				return FailAttach("Roblox not found. Open Roblox, join a game, then restart.");
 			SetLoad(0.10f + (tries % 20) * 0.01f, "Waiting for Roblox");
 			std::this_thread::sleep_for(std::chrono::milliseconds(200));
 		}
@@ -1354,23 +1335,16 @@ namespace
 		Globals::camera = Globals::workspace.FindChildByClass("Camera");
 
 		if (Globals::players.Addr == 0)
-			return FailAttach("Players service missing. Join a supported game first.");
+			return FailAttach("Players service missing. Join a game first.");
 
-		SetLoad(0.55f, "Waiting for supported game");
+		SetLoad(0.55f, "Waiting for game");
 		tries = 0;
 		while (!IsInActiveGame()) {
 			if (!memory->find_process_id(app))
-				return FailAttach("Roblox closed while waiting for a supported game.");
-
-			const int64_t placeId = Globals::dataModel.Addr
-				? memory->read<int64_t>(Globals::dataModel.Addr + Offsets::DataModel::PlaceId) : 0;
-			const uint8_t loaded = Globals::dataModel.Addr
-				? memory->read<uint8_t>(Globals::dataModel.Addr + Offsets::DataModel::GameLoaded) : 0;
-			if (placeId > 0 && loaded != 0 && !Arsenal::IsSupportedPlace())
-				return FailAttach("Unsupported game. Join Arsenal, BloxStrike, MiscGunTest:X, or Baseplate, then restart.");
+				return FailAttach("Roblox closed while waiting for a game.");
 
 			if (++tries > 600)
-				return FailAttach("Timed out. Join a supported game, spawn in, then restart.");
+				return FailAttach("Timed out. Join a game, spawn in, then restart.");
 			if ((tries % 10) == 0) {
 				Globals::workspace = Globals::dataModel.FindChildByClass("Workspace");
 				Globals::players = Globals::dataModel.FindChildByClass("Players");
@@ -1390,7 +1364,7 @@ namespace
 			}
 			float pulse = 0.55f + 0.25f * ((tries % 20) / 20.0f);
 			char waitMsg[96];
-			sprintf_s(waitMsg, "Join %s", Games::SupportedListShort());
+			sprintf_s(waitMsg, "Waiting — join %s", Games::SupportedListShort());
 			SetLoad(pulse, waitMsg);
 			std::this_thread::sleep_for(std::chrono::milliseconds(200));
 		}
@@ -1489,24 +1463,19 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 					} else {
 						variables::menuOpen = true;
 					}
-					if (Games::Detect() == Games::Kind::MiscGunTest) {
-						variables::Hitbox::enabled = false;
-						variables::Local::hitboxEnabled = false;
-						variables::Toast::show = true;
-						variables::Toast::warning = true;
-						variables::Toast::timer = 10.0f;
-						strcpy_s(variables::Toast::title, "MiscGunTest:X warning");
-						strcpy_s(variables::Toast::body, "Do NOT use Hitbox Extender");
-						strcpy_s(variables::Toast::footer, "You will be banned");
-					}
-					if (Games::IsBloxStrike()) {
-						EnforceBloxStrikeProfile();
-						GunMods::DisableAll();
-					}
-					if (variables::Misc::discordRpc && Globals::dataModel.Addr) {
-						const int64_t placeId = memory->read<int64_t>(
-							Globals::dataModel.Addr + Offsets::DataModel::PlaceId);
-						FrontierPresence::SetInGame(Games::Name(), placeId, 0, 0);
+					variables::ESP::enabled = true;
+					variables::Aimbot::enabled = true;
+					variables::Aimbot::requireVisible = false;
+					variables::Trigger::requireVisible = false;
+					Visibility::EnsureWorker();
+					Visibility::RequestRebuild();
+					if (variables::Misc::discordRpc) {
+						FrontierPresence::gEnabled.store(true);
+						if (Globals::dataModel.Addr) {
+							const int64_t placeId = memory->read<int64_t>(
+								Globals::dataModel.Addr + Offsets::DataModel::PlaceId);
+							FrontierPresence::SetInGame(Games::Name(), placeId, 0, 0);
+						}
 					}
 				}
 			});
@@ -1540,24 +1509,26 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 			continue;
 		}
 
-		static auto lastPresence = std::chrono::steady_clock::now();
-		if (variables::Misc::discordRpc && attachSucceeded.load()) {
+		if (variables::Misc::discordRpc) {
 			FrontierPresence::gEnabled.store(true);
-			auto nowRpc = std::chrono::steady_clock::now();
-			if (std::chrono::duration<float>(nowRpc - lastPresence).count() >= 8.f) {
-				lastPresence = nowRpc;
-				if (Globals::dataModel.Addr && Arsenal::IsSupportedPlace()) {
-					const int64_t placeId = memory->read<int64_t>(
-						Globals::dataModel.Addr + Offsets::DataModel::PlaceId);
-					int players = 0;
-					if (Globals::renderEngine.Addr != 0) {
-						for (auto& p : PlayerCache::snapshotPlayers()) {
-							if (p.isValid && p.health > 0.f) ++players;
+			static auto lastPresence = std::chrono::steady_clock::now();
+			if (attachSucceeded.load()) {
+				auto nowRpc = std::chrono::steady_clock::now();
+				if (std::chrono::duration<float>(nowRpc - lastPresence).count() >= 8.f) {
+					lastPresence = nowRpc;
+					if (Globals::dataModel.Addr && Games::IsSupported()) {
+						const int64_t placeId = memory->read<int64_t>(
+							Globals::dataModel.Addr + Offsets::DataModel::PlaceId);
+						int players = 0;
+						if (Globals::renderEngine.Addr != 0) {
+							for (auto& p : PlayerCache::snapshotPlayers()) {
+								if (p.isValid && p.health > 0.f) ++players;
+							}
 						}
+						FrontierPresence::SetInGame(Games::Name(), placeId, players, 0);
+					} else {
+						FrontierPresence::SetWaiting();
 					}
-					FrontierPresence::SetInGame(Games::Name(), placeId, players, 0);
-				} else {
-					FrontierPresence::SetWaiting();
 				}
 			}
 		} else {
@@ -1576,9 +1547,8 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		overlay.render(drawList);
 
 		if (Globals::renderEngine.Addr != 0) {
-			// Soft-gate: if they leave a supported game mid-session, stop cheats cleanly
 			static bool warnedLeave = false;
-			if (!Arsenal::IsSupportedPlace()) {
+			if (!IsInActiveGame()) {
 				if (!warnedLeave) {
 					GunMods::DisableAll();
 					Aimbot::lockedPlayerAddr = 0;

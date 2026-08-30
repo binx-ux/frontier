@@ -5,34 +5,28 @@
 #include "../../memory/memory.h"
 #include <cstdint>
 
-// Supported FPS experiences for FRONTIER.
+// Game detection for optional compatibility tuning — not a whitelist.
 namespace Games {
 
-    // https://www.roblox.com/games/286090429/Arsenal
     constexpr int64_t kArsenalPlaceId = 286090429LL;
-    constexpr int64_t kArsenalUniverseId = 111958650LL; // game.GameId
+    constexpr int64_t kArsenalUniverseId = 111958650LL;
 
-    // https://www.roblox.com/games/9157605735/MiscGunTest-X
-    // PlaceId 9157605735 → UniverseId (GameId) 3437409320
     constexpr int64_t kMiscGunTestUniverseId = 3437409320LL;
     constexpr int64_t kMiscGunTestRootPlaceId = 9157605735LL;
-    // Known MiscGunTest:X places under the same universe
     constexpr int64_t kMiscGunTestPlaces[] = {
-        9157605735LL,   // root
-        11575563846LL,  // VC Server
-        11671999447LL,  // Zombies
+        9157605735LL,
+        11575563846LL,
+        11671999447LL,
     };
 
-    // https://www.roblox.com/games/95206881/Baseplate — Studio template / sandbox
     constexpr int64_t kBaseplatePlaceId = 95206881LL;
 
-    // https://www.roblox.com/games/114234929420007/BloxStrike
-    // PlaceId 114234929420007 → UniverseId (GameId) 7633926880
     constexpr int64_t kBloxStrikePlaceId = 114234929420007LL;
     constexpr int64_t kBloxStrikeUniverseId = 7633926880LL;
 
     enum class Kind : int {
         None = 0,
+        Generic,
         Arsenal,
         MiscGunTest,
         Baseplate,
@@ -51,6 +45,12 @@ namespace Games {
         return memory->read<int64_t>(Globals::dataModel.Addr + Offsets::DataModel::GameId);
     }
 
+    inline bool IsGameLoaded()
+    {
+        if (!Globals::dataModel.Addr) return false;
+        return memory->read<uint8_t>(Globals::dataModel.Addr + Offsets::DataModel::GameLoaded) != 0;
+    }
+
     inline bool HasWeaponsFolder()
     {
         if (!Globals::dataModel.Addr) return false;
@@ -58,7 +58,6 @@ namespace Games {
         if (!rs.Addr) rs = Globals::dataModel.FindChild("ReplicatedStorage");
         if (!rs.Addr) return false;
         if (rs.FindChild("Weapons").Addr != 0) return true;
-        // MiscGunTest variants sometimes nest under Gun / Guns
         if (rs.FindChild("Gun").Addr != 0) return true;
         if (rs.FindChild("Guns").Addr != 0) return true;
         return false;
@@ -96,16 +95,18 @@ namespace Games {
     {
         const int64_t place = ReadPlaceId();
         const int64_t gameId = ReadGameId();
+        if (place <= 0) return Kind::None;
         if (IsArsenalPlace(place, gameId)) return Kind::Arsenal;
         if (IsMiscGunTestPlace(place, gameId)) return Kind::MiscGunTest;
         if (IsBloxStrikePlace(place, gameId)) return Kind::BloxStrike;
         if (IsBaseplatePlace(place, gameId)) return Kind::Baseplate;
-        return Kind::None;
+        return Kind::Generic;
     }
 
+    // Universal — any loaded Roblox experience with a valid place id.
     inline bool IsSupported()
     {
-        return Detect() != Kind::None;
+        return ReadPlaceId() > 0 && IsGameLoaded();
     }
 
     inline bool IsBloxStrike()
@@ -120,17 +121,17 @@ namespace Games {
         case Kind::MiscGunTest: return "MiscGunTest:X";
         case Kind::BloxStrike: return "BloxStrike";
         case Kind::Baseplate: return "Baseplate";
-        default: return "Unsupported";
+        case Kind::Generic: return "Roblox";
+        default: return "Roblox";
         }
     }
 
     inline const char* SupportedListShort()
     {
-        return "Arsenal, BloxStrike, MiscGunTest:X, or Baseplate";
+        return "any Roblox game";
     }
 }
 
-// Back-compat aliases used across the codebase
 namespace Arsenal {
     constexpr int64_t kPlaceId = Games::kArsenalPlaceId;
     constexpr int64_t kUniverseId = Games::kArsenalUniverseId;
@@ -144,7 +145,6 @@ namespace Arsenal {
         return Games::Detect() == Games::Kind::Arsenal;
     }
 
-    // Prefer this for attach / feature gates
     inline bool IsSupportedPlace()
     {
         return Games::IsSupported();

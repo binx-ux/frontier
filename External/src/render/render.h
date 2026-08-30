@@ -55,18 +55,18 @@ namespace UI {
 
     inline void ApplyStyle() {
         ImGuiStyle& s = ImGui::GetStyle();
-        s.WindowRounding = 14.0f;
-        s.ChildRounding = 11.0f;
+        s.WindowRounding = 12.0f;
+        s.ChildRounding = 10.0f;
         s.FrameRounding = 8.0f;
         s.GrabRounding = 8.0f;
         s.PopupRounding = 10.0f;
-        s.ScrollbarRounding = 8.0f;
+        s.ScrollbarRounding = 6.0f;
         s.TabRounding = 8.0f;
-        s.WindowPadding = ImVec2(14, 12);
+        s.WindowPadding = ImVec2(12, 10);
         s.FramePadding = ImVec2(10, 6);
-        s.ItemSpacing = ImVec2(10, 8);
-        s.ItemInnerSpacing = ImVec2(8, 5);
-        s.ScrollbarSize = 8.0f;
+        s.ItemSpacing = ImVec2(8, 6);
+        s.ItemInnerSpacing = ImVec2(8, 4);
+        s.ScrollbarSize = 6.0f;
         s.GrabMinSize = 12.0f;
         s.WindowBorderSize = 1.0f;
         s.ChildBorderSize = 1.0f;
@@ -291,15 +291,21 @@ public:
         ImVec2 ds = ImGui::GetIO().DisplaySize;
         ImDrawList* dl = ImGui::GetBackgroundDrawList();
 
-        float t = (float)ImGui::GetTime();
-        float progress = variables::Loading::failed ? 0.f
-            : (0.08f + 0.72f * (0.5f + 0.5f * sinf(t * 1.1f)));
-        UIFx::DrawLoadingFX(dl, ds, progress);
+        static float displayProgress = 0.f;
+        float target = variables::Loading::failed ? 0.f : variables::Loading::progress;
+        float dt = ImGui::GetIO().DeltaTime;
+        displayProgress += (target - displayProgress) * (dt * 5.f);
+        if (target >= 0.995f || target <= displayProgress + 0.002f)
+            displayProgress = target;
+        if (variables::Loading::failed)
+            displayProgress = 0.f;
+        UIFx::DrawLoadingFX(dl, ds, displayProgress);
 
         char loadLine[96];
         if (variables::Loading::failed)
             sprintf_s(loadLine, "%s", variables::Loading::error[0] ? variables::Loading::error : "Session failed");
         else {
+            float t = (float)ImGui::GetTime();
             int dots = ((int)(t * 2.2f) % 3) + 1;
             char dbuf[4] = "...";
             dbuf[dots] = 0;
@@ -327,9 +333,27 @@ public:
             ImGui::SetWindowFontScale(1.0f);
         }
 
+        if (!variables::Loading::failed) {
+            char pct[8];
+            sprintf_s(pct, "%d%%", (int)(displayProgress * 100.f + 0.5f));
+            ImVec2 ps = ImGui::CalcTextSize(pct);
+            ImGui::SetCursorPos(ImVec2(cx - ps.x * 0.5f, cy - ps.y * 0.5f));
+            ImGui::TextColored(FrontierUI::V4(variables::Theme::text), "%s", pct);
+        }
+
         {
+            const float barW = 280.f;
+            const float barH = 4.f;
+            ImVec2 barMin(cx - barW * 0.5f, cy + 88.f);
+            ImVec2 barMax(barMin.x + barW, barMin.y + barH);
+            dl->AddRectFilled(barMin, barMax, IM_COL32(28, 28, 34, 220), 2.f);
+            if (displayProgress > 0.001f) {
+                ImVec2 fillMax(barMin.x + barW * displayProgress, barMax.y);
+                dl->AddRectFilled(barMin, fillMax, FrontierUI::U32(variables::Theme::brand, 0.95f), 2.f);
+            }
+
             ImVec2 ts = ImGui::CalcTextSize(loadLine);
-            ImGui::SetCursorPos(ImVec2(cx - ts.x * 0.5f, cy + 108.f));
+            ImGui::SetCursorPos(ImVec2(cx - ts.x * 0.5f, cy + 102.f));
             if (variables::Loading::failed)
                 ImGui::TextColored(ImVec4(1.f, 0.45f, 0.42f, 0.95f), "%s", loadLine);
             else
@@ -402,7 +426,7 @@ public:
             }
             break;
         case 2: w = 700.f; h = 520.f; break;
-        case 3: w = 760.f; h = Games::IsBloxStrike() ? 220.f : maxH; break;
+        case 3: w = 760.f; h = maxH; break;
         case 4: w = 660.f; h = 600.f; break;
         case 5: w = 780.f; h = maxH; break; // Explorer — own scroll panes
         case 6: w = 660.f; h = 600.f; break;
@@ -640,13 +664,13 @@ public:
         if (uiScale < 0.85f) uiScale = 0.85f;
         if (uiScale > 1.15f) uiScale = 1.15f;
         float scale = (0.88f + 0.12f * ease) * uiScale;
-        float baseW = 640.f * uiScale, baseH = 760.f * uiScale;
+        float baseW = 960.f * uiScale, baseH = 620.f * uiScale;
         float winW = baseW * scale;
         float winH = baseH * scale;
         float rise = (1.f - ease) * 28.f;
 
         ImGui::SetNextWindowSize(ImVec2(winW, winH), ImGuiCond_Always);
-        ImGui::SetNextWindowSizeConstraints(ImVec2(520, 560), ImVec2(720, 1000));
+        ImGui::SetNextWindowSizeConstraints(ImVec2(780, 520), ImVec2(1200, 900));
         // Appearing only ? Never Always (that centered every frame and blocked drag).
         {
             static bool haveDragPos = false;
@@ -660,9 +684,9 @@ public:
 
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ease);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 14.0f);
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, FrontierUI::V4(variables::Theme::bg));
-        ImGui::PushStyleColor(ImGuiCol_Border, FrontierUI::V4(variables::Theme::border));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 12.0f);
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.055f, 0.055f, 0.059f, 0.98f));
+        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1.f, 1.f, 1.f, 0.08f));
         ImGui::Begin("##mw", &variables::menuOpen,
             ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize);
 
@@ -670,13 +694,11 @@ public:
         ImVec2 wp = ImGui::GetWindowPos();
         float ww = ImGui::GetWindowSize().x;
         float wh = ImGui::GetWindowSize().y;
-        const float TOP_H = FrontierShell::kTopH;
-        const float FOOT_H = FrontierShell::kFootH;
 
         FrontierShell::DrawHeader(wdl, wp, ww, wh, &variables::selectedTab);
 
         ImGui::SetCursorPos(ImVec2(0, 0));
-        ImGui::InvisibleButton("##mwdrag", ImVec2(ww, TOP_H));
+        ImGui::InvisibleButton("##mwdrag", ImVec2(FrontierShell::kSidebarW, FrontierShell::kBrandH));
         if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
             ImVec2 d = ImGui::GetIO().MouseDelta;
             ImGui::SetWindowPos(ImVec2(wp.x + d.x, wp.y + d.y));
@@ -779,10 +801,7 @@ public:
         ImGui::Dummy(ImVec2(0, 6));
         ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + 390);
         ImGui::TextColored(ImVec4(0.62f, 0.62f, 0.68f, 1),
-            "FRONTIER is open source. This build does not send telemetry or launch pings.");
-        ImGui::Spacing();
-        ImGui::TextColored(ImVec4(0.52f, 0.52f, 0.58f, 1),
-            "Source: github.com/binx-ux/frontier");
+            "This build does not collect telemetry or send launch data.");
         ImGui::PopTextWrapPos();
         ImGui::Dummy(ImVec2(0, 14));
 

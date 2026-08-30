@@ -20,6 +20,6 @@ namespace DiscordIPC {
     bool IsConnected();
 
     bool SetActivity(const Activity& activity);
-    void Pump();
+    void Pump(int maxFrames = 8);
 
 }

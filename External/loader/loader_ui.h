@@ -11,6 +11,7 @@
 #include <Shellapi.h>
 
 #pragma comment(lib, "comctl32.lib")
+#pragma comment(lib, "gdi32.lib")
 
 namespace LoaderUI {
 
@@ -20,6 +21,7 @@ namespace LoaderUI {
         ID_BTN_UPDATE = 1002,
         ID_BTN_LAUNCH = 1003,
         ID_BTN_RELEASES = 1004,
+        ID_BTN_JOIN = 1005,
     };
 
     struct State {
@@ -31,6 +33,7 @@ namespace LoaderUI {
         bool updateAvailable = false;
         bool accessRequired = true;
         bool verified = false;
+        bool signedIn = false;
         int localVersion = LoaderConfig::kLocalVersion;
         int remoteVersion = 0;
         char status[256] = "Ready";
@@ -46,15 +49,21 @@ namespace LoaderUI {
     inline HWND gWnd = nullptr;
     inline HFONT gFont = nullptr;
     inline HFONT gFontBold = nullptr;
+    inline HFONT gFontTitle = nullptr;
     inline HBRUSH gBgBrush = nullptr;
+
+    inline RECT AuthCardRect()
+    {
+        return RECT{ 20, 52, LoaderConfig::kWindowW - 20, 228 };
+    }
 
     inline RECT ModeCardRect(int index)
     {
         RECT rc{};
-        rc.left = 24;
-        rc.right = LoaderConfig::kWindowW - 24;
-        rc.top = 228 + index * 92;
-        rc.bottom = rc.top + 78;
+        rc.left = 20;
+        rc.right = LoaderConfig::kWindowW - 20;
+        rc.top = 248 + index * 88;
+        rc.bottom = rc.top + 76;
         return rc;
     }
 
@@ -66,6 +75,7 @@ namespace LoaderUI {
 
     inline void SyncVerified(State* s)
     {
+        s->signedIn = s->session.token[0] != 0;
         s->verified = s->session.verified && s->session.allowed;
         if (s->session.globalName[0])
             strncpy_s(s->discordName, s->session.globalName, _TRUNCATE);
@@ -77,10 +87,48 @@ namespace LoaderUI {
     {
         HWND signIn = GetDlgItem(gWnd, ID_BTN_SIGNIN);
         HWND signOut = GetDlgItem(gWnd, ID_BTN_SIGNOUT);
+        HWND join = GetDlgItem(gWnd, ID_BTN_JOIN);
         HWND launch = GetDlgItem(gWnd, ID_BTN_LAUNCH);
-        if (signIn) ShowWindow(signIn, s->accessRequired && !s->verified ? SW_SHOW : SW_HIDE);
-        if (signOut) ShowWindow(signOut, s->accessRequired && s->verified ? SW_SHOW : SW_HIDE);
+        if (signIn) ShowWindow(signIn, s->accessRequired && !s->signedIn ? SW_SHOW : SW_HIDE);
+        if (signOut) ShowWindow(signOut, s->accessRequired && s->signedIn ? SW_SHOW : SW_HIDE);
+        if (join) ShowWindow(join, s->accessRequired && !s->verified ? SW_SHOW : SW_HIDE);
         if (launch) EnableWindow(launch, (!s->accessRequired || s->verified) && !s->updating && !s->signingIn);
+        if (signIn) EnableWindow(signIn, !s->signingIn);
+    }
+
+    inline void FillRoundRect(HDC hdc, const RECT& rc, COLORREF fill, COLORREF border, int radius = 10)
+    {
+        HBRUSH brush = CreateSolidBrush(fill);
+        HPEN pen = CreatePen(PS_SOLID, 1, border);
+        HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, brush);
+        HPEN oldPen = (HPEN)SelectObject(hdc, pen);
+        RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom, radius, radius);
+        SelectObject(hdc, oldBrush);
+        SelectObject(hdc, oldPen);
+        DeleteObject(brush);
+        DeleteObject(pen);
+    }
+
+    inline void DrawStep(HDC hdc, int x, int y, int num, const char* label, bool done, bool active)
+    {
+        COLORREF dot = done ? RGB(80, 200, 120) : (active ? LoaderConfig::kBrand : RGB(56, 56, 64));
+        HBRUSH b = CreateSolidBrush(dot);
+        HGDIOBJ ob = SelectObject(hdc, b);
+        Ellipse(hdc, x, y, x + 18, y + 18);
+        SelectObject(hdc, ob);
+        DeleteObject(b);
+
+        SelectObject(hdc, gFontBold);
+        SetTextColor(hdc, LoaderConfig::kText);
+        char numBuf[4];
+        sprintf_s(numBuf, "%d", num);
+        SIZE ns{};
+        GetTextExtentPoint32A(hdc, numBuf, (int)strlen(numBuf), &ns);
+        TextOutA(hdc, x + (18 - ns.cx) / 2, y + 2, numBuf, (int)strlen(numBuf));
+
+        SelectObject(hdc, gFont);
+        SetTextColor(hdc, active ? LoaderConfig::kText : LoaderConfig::kTextDim);
+        TextOutA(hdc, x + 26, y + 2, label, (int)strlen(label));
     }
 
     inline void Paint(HDC hdc, State* s)
@@ -91,67 +139,76 @@ namespace LoaderUI {
 
         SetBkMode(hdc, TRANSPARENT);
 
+        RECT header{ 0, 0, client.right, 44 };
+        HBRUSH headerBrush = CreateSolidBrush(RGB(16, 16, 18));
+        FillRect(hdc, &header, headerBrush);
+        DeleteObject(headerBrush);
+
         RECT stripe{ 0, 0, 3, client.bottom };
         HBRUSH brand = CreateSolidBrush(LoaderConfig::kBrand);
         FillRect(hdc, &stripe, brand);
         DeleteObject(brand);
 
-        SelectObject(hdc, gFontBold);
-        SetTextColor(hdc, LoaderConfig::kBrand);
-        TextOutA(hdc, 24, 18, "FRONTIER", 8);
+        SelectObject(hdc, gFontTitle);
+        SetTextColor(hdc, LoaderConfig::kText);
+        TextOutA(hdc, 18, 10, "FRONTIER", 8);
         SelectObject(hdc, gFont);
         SetTextColor(hdc, LoaderConfig::kTextDim);
-        TextOutA(hdc, 108, 20, "Loader", 6);
+        TextOutA(hdc, 118, 14, "Loader", 6);
 
-        char ver[64];
+        char ver[32];
         sprintf_s(ver, "v%d", s->localVersion);
-        TextOutA(hdc, client.right - 56, 20, ver, (int)strlen(ver));
+        SIZE vs{};
+        GetTextExtentPoint32A(hdc, ver, (int)strlen(ver), &vs);
+        SetTextColor(hdc, LoaderConfig::kTextDim);
+        TextOutA(hdc, client.right - vs.cx - 18, 14, ver, (int)strlen(ver));
 
         if (s->accessRequired) {
-            RECT access{ 24, 48, client.right - 24, 210 };
-            HBRUSH cardBrush = CreateSolidBrush(LoaderConfig::kCard);
-            FillRect(hdc, &access, cardBrush);
-            DeleteObject(cardBrush);
-
-            HPEN pen = CreatePen(PS_SOLID, 1, LoaderConfig::kBorder);
-            HPEN oldPen = (HPEN)SelectObject(hdc, pen);
-            HBRUSH nullBrush = (HBRUSH)GetStockObject(HOLLOW_BRUSH);
-            HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, nullBrush);
-            RoundRect(hdc, access.left, access.top, access.right, access.bottom, 10, 10);
-            SelectObject(hdc, oldBrush);
-            SelectObject(hdc, oldPen);
-            DeleteObject(pen);
+            RECT access = AuthCardRect();
+            FillRoundRect(hdc, access, LoaderConfig::kCard, LoaderConfig::kBorder);
 
             SelectObject(hdc, gFontBold);
             SetTextColor(hdc, LoaderConfig::kText);
-            TextOutA(hdc, access.left + 14, access.top + 12, "Sign in with Discord", 20);
+            TextOutA(hdc, access.left + 16, access.top + 14, "Discord access", 14);
+
             SelectObject(hdc, gFont);
             SetTextColor(hdc, LoaderConfig::kTextDim);
-            TextOutA(hdc, access.left + 14, access.top + 34,
-                "Join the server, run /verify YourRobloxName, then sign in below.", 63);
+            TextOutA(hdc, access.left + 16, access.top + 36,
+                "Join the server, verify with /verify, then sign in.", 48);
 
-            if (s->verified && s->discordName[0]) {
+            bool step1 = true;
+            bool step2 = s->signedIn || s->verified;
+            bool step3 = s->verified;
+            DrawStep(hdc, access.left + 16, access.top + 62, 1, "Join Discord", true, !s->signedIn);
+            DrawStep(hdc, access.left + 16, access.top + 86, 2, "Run /verify YourRobloxName", step2, s->signedIn && !s->verified);
+            DrawStep(hdc, access.left + 16, access.top + 110, 3, "Sign in below", step3, s->signedIn);
+
+            if (s->signingIn) {
+                SetTextColor(hdc, LoaderConfig::kDiscord);
+                TextOutA(hdc, access.left + 16, access.top + 140,
+                    "Waiting for browser — complete Discord sign-in…", 47);
+            } else if (s->verified && s->discordName[0]) {
                 SetTextColor(hdc, RGB(80, 200, 120));
-                char ok[128];
+                char ok[160];
                 if (s->session.robloxUserId > 0)
-                    sprintf_s(ok, "Signed in as %s  (Roblox %d)", s->discordName, s->session.robloxUserId);
+                    sprintf_s(ok, "Ready — %s  ·  Roblox %d", s->discordName, s->session.robloxUserId);
                 else
-                    sprintf_s(ok, "Signed in as %s", s->discordName);
-                TextOutA(hdc, access.left + 14, access.top + 130, ok, (int)strlen(ok));
-            } else if (s->signingIn) {
-                SetTextColor(hdc, LoaderConfig::kBrand);
-                TextOutA(hdc, access.left + 14, access.top + 130,
-                    "Waiting for Discord — complete sign-in in your browser…", 54);
+                    sprintf_s(ok, "Ready — %s", s->discordName);
+                TextOutA(hdc, access.left + 16, access.top + 140, ok, (int)strlen(ok));
+            } else if (s->signedIn && s->discordName[0]) {
+                SetTextColor(hdc, RGB(255, 190, 90));
+                char pending[160];
+                sprintf_s(pending, "Signed in as %s — finish /verify to launch", s->discordName);
+                TextOutA(hdc, access.left + 16, access.top + 140, pending, (int)strlen(pending));
             } else {
-                SetTextColor(hdc, LoaderConfig::kBrand);
-                TextOutA(hdc, access.left + 14, access.top + 130,
-                    "Not signed in", 13);
+                SetTextColor(hdc, LoaderConfig::kTextDim);
+                TextOutA(hdc, access.left + 16, access.top + 140, "Not signed in", 13);
             }
         }
 
         SetTextColor(hdc, LoaderConfig::kText);
         SelectObject(hdc, gFontBold);
-        TextOutA(hdc, 24, s->accessRequired ? 222 : 52, "Select mode", 11);
+        TextOutA(hdc, 20, s->accessRequired ? 238 : 52, "Launch mode", 11);
         SelectObject(hdc, gFont);
 
         const char* labels[] = { "Usermode", "Kernel" };
@@ -165,50 +222,43 @@ namespace LoaderUI {
             bool sel = (s->selectedMode == i);
             bool disabled = (i == 1 && !s->kernelAvailable);
 
-            HBRUSH cardBrush = CreateSolidBrush(disabled ? RGB(16, 16, 16) : LoaderConfig::kCard);
-            FillRect(hdc, &card, cardBrush);
-            DeleteObject(cardBrush);
-
-            HPEN pen = CreatePen(PS_SOLID, sel ? 2 : 1,
+            FillRoundRect(hdc, card,
+                disabled ? RGB(14, 14, 16) : LoaderConfig::kCard,
                 sel ? LoaderConfig::kBrand : LoaderConfig::kBorder);
-            HPEN oldPen = (HPEN)SelectObject(hdc, pen);
-            HBRUSH nullBrush = (HBRUSH)GetStockObject(HOLLOW_BRUSH);
-            HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, nullBrush);
-            RoundRect(hdc, card.left, card.top, card.right, card.bottom, 10, 10);
-            SelectObject(hdc, oldBrush);
-            SelectObject(hdc, oldPen);
-            DeleteObject(pen);
 
-            SetTextColor(hdc, disabled ? LoaderConfig::kTextDim : (sel ? LoaderConfig::kText : LoaderConfig::kTextDim));
+            SetTextColor(hdc, disabled ? LoaderConfig::kTextDim : LoaderConfig::kText);
             SelectObject(hdc, gFontBold);
             TextOutA(hdc, card.left + 14, card.top + 12, labels[i], (int)strlen(labels[i]));
             SelectObject(hdc, gFont);
+            SetTextColor(hdc, LoaderConfig::kTextDim);
             TextOutA(hdc, card.left + 14, card.top + 34, descs[i], (int)strlen(descs[i]));
 
             if (i == 1 && !s->kernelAvailable) {
                 SetTextColor(hdc, LoaderConfig::kBrand);
-                TextOutA(hdc, card.left + 14, card.top + 54, "Not installed — update or add kernel\\Frontier.exe + driver", 56);
+                TextOutA(hdc, card.left + 14, card.top + 54, "Not installed", 13);
             }
         }
 
         if (s->updating || s->progress > 0.f) {
-            RECT barBg{ 24, 420, client.right - 24, 432 };
-            FillRect(hdc, &barBg, (HBRUSH)GetStockObject(DKGRAY_BRUSH));
+            RECT barBg{ 20, 430, client.right - 20, 438 };
+            FillRoundRect(hdc, barBg, RGB(28, 28, 34), RGB(28, 28, 34), 4);
             RECT barFg = barBg;
             barFg.right = barBg.left + (LONG)((barBg.right - barBg.left) * s->progress);
-            HBRUSH fg = CreateSolidBrush(LoaderConfig::kBrand);
-            FillRect(hdc, &barFg, fg);
-            DeleteObject(fg);
+            if (barFg.right > barFg.left) {
+                HBRUSH fg = CreateSolidBrush(LoaderConfig::kBrand);
+                FillRect(hdc, &barFg, fg);
+                DeleteObject(fg);
+            }
         }
 
         SetTextColor(hdc, LoaderConfig::kTextDim);
-        TextOutA(hdc, 24, 444, s->status, (int)strlen(s->status));
+        TextOutA(hdc, 20, 452, s->status, (int)strlen(s->status));
 
         if (s->updateAvailable && s->remoteDisplay[0]) {
             char upd[128];
             sprintf_s(upd, "Update available: %s", s->remoteDisplay);
             SetTextColor(hdc, LoaderConfig::kBrand);
-            TextOutA(hdc, 24, 466, upd, (int)strlen(upd));
+            TextOutA(hdc, 20, 472, upd, (int)strlen(upd));
         }
     }
 
@@ -254,11 +304,14 @@ namespace LoaderUI {
             std::string err;
             if (LoaderOAuth::RefreshSession(s->session, err)) {
                 SyncVerified(s);
-                SetStatus(s, "Signed in with Discord");
+                SetStatus(s, s->verified ? "Signed in — you can launch" : "Complete /verify in Discord");
             } else {
-                s->session.verified = false;
-                s->session.allowed = false;
+                if (!s->session.token[0]) {
+                    s->session.verified = false;
+                    s->session.allowed = false;
+                }
                 SyncVerified(s);
+                if (err[0]) SetStatus(s, err.c_str());
             }
             if (gWnd) {
                 RefreshAuthButtons(s);
@@ -275,19 +328,17 @@ namespace LoaderUI {
         RefreshAuthButtons(s);
         InvalidateRect(gWnd, nullptr, FALSE);
         std::thread([s]() {
-            LoaderOAuth::Session session{};
+            LoaderOAuth::Session session = s->session;
             std::string err;
             bool ok = LoaderOAuth::SignIn(session, err);
             s->session = session;
             SyncVerified(s);
-            if (ok) {
+            if (ok && s->verified)
                 SetStatus(s, "Signed in — you can launch");
-            } else {
-                s->session.verified = false;
-                s->session.allowed = false;
-                SyncVerified(s);
-                SetStatus(s, err.c_str());
-            }
+            else if (ok && s->signedIn)
+                SetStatus(s, err.empty() ? "Discord linked — run /verify in the server" : err.c_str());
+            else
+                SetStatus(s, err.empty() ? "Discord sign-in failed" : err.c_str());
             s->signingIn = false;
             if (gWnd) {
                 RefreshAuthButtons(s);
@@ -349,19 +400,22 @@ namespace LoaderUI {
         case WM_CREATE: {
             CreateWindowW(L"BUTTON", L"Sign in with Discord",
                 WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-                38, 88, 200, 32, hwnd, (HMENU)ID_BTN_SIGNIN, nullptr, nullptr);
+                36, 178, 210, 34, hwnd, (HMENU)ID_BTN_SIGNIN, nullptr, nullptr);
             CreateWindowW(L"BUTTON", L"Sign out",
                 WS_CHILD | BS_PUSHBUTTON,
-                248, 88, 100, 32, hwnd, (HMENU)ID_BTN_SIGNOUT, nullptr, nullptr);
+                256, 178, 90, 34, hwnd, (HMENU)ID_BTN_SIGNOUT, nullptr, nullptr);
+            CreateWindowW(L"BUTTON", L"Join Discord",
+                WS_CHILD | BS_PUSHBUTTON,
+                36, 178, 120, 34, hwnd, (HMENU)ID_BTN_JOIN, nullptr, nullptr);
             CreateWindowW(L"BUTTON", L"Update Files",
                 WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-                24, 500, 140, 32, hwnd, (HMENU)ID_BTN_UPDATE, nullptr, nullptr);
+                20, 500, 130, 34, hwnd, (HMENU)ID_BTN_UPDATE, nullptr, nullptr);
             CreateWindowW(L"BUTTON", L"Launch",
                 WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
-                176, 500, 140, 32, hwnd, (HMENU)ID_BTN_LAUNCH, nullptr, nullptr);
+                162, 500, 130, 34, hwnd, (HMENU)ID_BTN_LAUNCH, nullptr, nullptr);
             CreateWindowW(L"BUTTON", L"Releases",
                 WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-                328, 500, 140, 32, hwnd, (HMENU)ID_BTN_RELEASES, nullptr, nullptr);
+                304, 500, 130, 34, hwnd, (HMENU)ID_BTN_RELEASES, nullptr, nullptr);
             SyncVerified(s);
             RefreshAuthButtons(s);
             CheckAsync(s);
@@ -404,6 +458,12 @@ namespace LoaderUI {
             case ID_BTN_SIGNOUT:
                 RunSignOut(s);
                 break;
+            case ID_BTN_JOIN:
+                ShellExecuteA(nullptr, "open",
+                    s->discordInvite[0] ? s->discordInvite : LoaderConfig::kDiscordInvite,
+                    nullptr, nullptr, SW_SHOWNORMAL);
+                SetStatus(s, "Opened Discord invite");
+                break;
             case ID_BTN_UPDATE:
                 if (!s->checking) {
                     if (!s->updateAvailable && !s->manifest.usermodeUrl[0])
@@ -415,7 +475,7 @@ namespace LoaderUI {
             case ID_BTN_LAUNCH: {
                 if (s->accessRequired && !s->verified) {
                     MessageBoxW(hwnd,
-                        L"Sign in with Discord first.\n\n1. Join the server\n2. Run /verify YourRobloxName\n3. Click Sign in with Discord",
+                        L"Complete Discord access first:\n\n1. Join the Discord server\n2. Run /verify YourRobloxName\n3. Sign in with Discord",
                         LoaderConfig::kAppName, MB_OK | MB_ICONINFORMATION);
                     break;
                 }
@@ -453,10 +513,13 @@ namespace LoaderUI {
         gState = &state;
 
         gBgBrush = CreateSolidBrush(LoaderConfig::kBg);
-        gFont = CreateFontW(-16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+        gFont = CreateFontW(-15, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
-        gFontBold = CreateFontW(-17, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
+        gFontBold = CreateFontW(-15, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+            CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
+        gFontTitle = CreateFontW(-22, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
 
@@ -480,6 +543,12 @@ namespace LoaderUI {
             nullptr, nullptr, wc.hInstance, nullptr);
 
         if (!gWnd) return 1;
+
+        EnumChildWindows(gWnd, [](HWND child, LPARAM font) {
+            SendMessageW(child, WM_SETFONT, font, TRUE);
+            return TRUE;
+        }, (LPARAM)gFont);
+
         ShowWindow(gWnd, SW_SHOW);
         UpdateWindow(gWnd);
 
@@ -491,6 +560,7 @@ namespace LoaderUI {
 
         DeleteObject(gFont);
         DeleteObject(gFontBold);
+        DeleteObject(gFontTitle);
         DeleteObject(gBgBrush);
         return (int)msg.wParam;
     }

@@ -3,7 +3,6 @@
 #include "frontier_theme.h"
 #include "../core/cache/cache.h"
 #include "../core/globals/globals.h"
-#include "../core/features/aimbot/visibility.h"
 #include "../core/features/exploits/gun_mods.h"
 #include "../core/games/arsenal.h"
 #include "../core/servers/server_browser.h"
@@ -110,164 +109,82 @@ namespace FrontierMenu {
     }
 
     inline void DrawCombat() {
-        const bool bloxStrike = Games::IsBloxStrike();
-        static const char* subsFull[] = { "Aimbot", "Hitbox", "Desync", "Guns" };
-        static const char* subsBS[] = { "Aimbot" };
-        if (bloxStrike) {
-            variables::selectedSub = 0;
-            FrontierUI::SubTabs(subsBS, 1, &variables::selectedSub);
-        } else {
-            FrontierUI::SubTabs(subsFull, 4, &variables::selectedSub);
-        }
+        static const char* subs[] = { "Aimbot", "Hitbox", "Guns" };
+        FrontierUI::SubTabs(subs, 3, &variables::selectedSub);
 
         if (variables::selectedSub == 0) {
-            static int aimPanel = 0;
-            static const char* aimPanels[] = { "Aimbot", "Tuning", "FOV" };
-            static const char* aimPanelsBS[] = { "Aimbot", "Tuning" };
-
             FrontierUI::BeginTwoCol("##c0");
-            if (FrontierUI::BeginCard(nullptr, true)) {
-                if (bloxStrike)
-                    FrontierUI::SubTabs(aimPanelsBS, 2, &aimPanel);
-                else
-                    FrontierUI::SubTabs(aimPanels, 3, &aimPanel);
+            if (FrontierUI::BeginCard("Aimbot", true)) {
+                FrontierUI::Checkbox("Enabled", &variables::Aimbot::enabled, nullptr, &variables::Aimbot::aimbotKey);
+                FrontierUI::Checkbox("Show FOV", &variables::Aimbot::showFOV, variables::Aimbot::fovColor);
+                FrontierUI::SliderFloat("FOV Size", &variables::Aimbot::uiFov, 0.f, 100.f, "%.0f");
+                FrontierUI::SliderFloat("Smoothness", &variables::Aimbot::uiSmoothness, 0.f, 100.f, "%.0f");
 
-                if (aimPanel == 0) {
-                    FrontierUI::Checkbox("Enabled", &variables::Aimbot::enabled, nullptr, &variables::Aimbot::aimbotKey);
+                const char* aims[] = { "Mouse Move", "Silent Aim" };
+                FrontierUI::Combo("Aim Style", &variables::Aimbot::aimType, aims, 2);
+                variables::Aimbot::silentAim = (variables::Aimbot::aimType == 1);
+                variables::Aimbot::targetMethod = variables::Aimbot::aimType;
+                const char* parts[] = { "Head", "Body", "L Leg", "R Leg", "L Arm", "R Arm", "Closest" };
+                FrontierUI::Combo("Aim Bone", &variables::Aimbot::aimTarget, parts, 7);
+
+                if (FrontierUI::BeginSettings("Advanced", true)) {
                     FrontierUI::Checkbox("Always On", &variables::Aimbot::alwaysOn);
                     FrontierUI::Checkbox("Toggle Mode", &variables::Aimbot::toggleMode);
-                    if (bloxStrike) {
-                        variables::Aimbot::requireVisible = false;
-                        ImGui::TextDisabled("Wall Check: off on BloxStrike (meshes break aim)");
-                    } else {
-                        FrontierUI::Checkbox("Wall Check", &variables::Aimbot::requireVisible);
-                        if (variables::Aimbot::requireVisible && Visibility::boxCount.load() == 0) {
-                            ImGui::TextColored(ImVec4(1.f, 0.45f, 0.35f, 1.f), "Building walls…");
-                            if (ImGui::SmallButton("Rebuild Walls"))
-                                Visibility::ForceRebuild();
-                        }
-                    }
                     FrontierUI::Checkbox("Sticky Aim", &variables::Aimbot::stickyAim);
                     FrontierUI::Checkbox("Predict Movement", &variables::Aimbot::prediction);
-                    FrontierUI::Checkbox("Humanize", &variables::Extra::humanizeAim);
-                    if (variables::Extra::humanizeAim)
-                        FrontierUI::SliderFloat("Humanize Amt", &variables::Extra::humanizeAmount, 0.05f, 1.f, "%.2f");
-                    FrontierUI::Checkbox("Aim On Shot", &variables::Extra::aimOnShot);
-                    FrontierUI::Checkbox("Random Bone", &variables::Extra::randomBone);
+                    variables::Aimbot::requireVisible = false;
+                    ImGui::TextDisabled("Visibility check runs automatically");
                     FrontierUI::Checkbox("Team Check", &variables::teamCheck);
-                    if (variables::teamCheck != variables::ESP::teamCheck)
-                        variables::ESP::teamCheck = variables::teamCheck;
+                    variables::ESP::teamCheck = variables::teamCheck;
                     FrontierUI::Checkbox("Skip Dead", &variables::healthCheck);
-                    if (bloxStrike) {
-                        variables::Aimbot::aimType = 1;
-                        variables::Aimbot::silentAim = true;
-                        variables::Aimbot::targetMethod = 1;
-                        ImGui::TextDisabled("Aim Style: Silent Aim (required on BloxStrike)");
-                    } else {
-                        const char* aims[] = { "Mouse Move", "Silent Aim" };
-                        FrontierUI::Combo("Aim Style", &variables::Aimbot::aimType, aims, 2);
-                        variables::Aimbot::silentAim = (variables::Aimbot::aimType == 1);
-                        variables::Aimbot::targetMethod = variables::Aimbot::aimType;
-                        const char* parts[] = { "Head", "Body", "L Leg", "R Leg", "L Arm", "R Arm", "Closest" };
-                        FrontierUI::Combo("Aim Bone", &variables::Aimbot::aimTarget, parts, 7);
-                        const char* prios[] = { "Crosshair", "Lowest HP", "Closest" };
-                        FrontierUI::Combo("Priority", &variables::Aimbot::targetPriority, prios, 3);
-                        const char* profiles[] = { "Custom", "Legit", "Smooth", "Rage" };
-                        if (FrontierUI::Combo("Preset", &variables::Aimbot::smoothProfile, profiles, 4)) {
-                            if (variables::Aimbot::smoothProfile == 1) {
-                                variables::Aimbot::uiSmoothness = 70.f; variables::Aimbot::uiFov = 18.f;
-                            } else if (variables::Aimbot::smoothProfile == 2) {
-                                variables::Aimbot::uiSmoothness = 45.f; variables::Aimbot::uiFov = 30.f;
-                            } else if (variables::Aimbot::smoothProfile == 3) {
-                                variables::Aimbot::uiSmoothness = 8.f; variables::Aimbot::uiFov = 70.f;
-                                variables::Aimbot::aimType = 1; variables::Aimbot::silentAim = true;
-                            }
+                    FrontierUI::SliderFloat("Stability", &variables::Aimbot::uiStability, 0.f, 100.f, "%.0f");
+                    FrontierUI::SliderFloat("Range", &variables::Aimbot::uiRange, 0.f, 100.f, "%.0f");
+                    const char* profiles[] = { "Custom", "Legit", "Smooth", "Rage" };
+                    if (FrontierUI::Combo("Preset", &variables::Aimbot::smoothProfile, profiles, 4)) {
+                        if (variables::Aimbot::smoothProfile == 1) {
+                            variables::Aimbot::uiSmoothness = 70.f; variables::Aimbot::uiFov = 18.f;
+                        } else if (variables::Aimbot::smoothProfile == 2) {
+                            variables::Aimbot::uiSmoothness = 45.f; variables::Aimbot::uiFov = 30.f;
+                        } else if (variables::Aimbot::smoothProfile == 3) {
+                            variables::Aimbot::uiSmoothness = 8.f; variables::Aimbot::uiFov = 70.f;
+                            variables::Aimbot::aimType = 1; variables::Aimbot::silentAim = true;
                         }
                     }
-                } else if (aimPanel == 1) {
-                    FrontierUI::SliderFloat("Smoothness", &variables::Aimbot::uiSmoothness, 0.f, 100.f, "%.0f");
-                    if (!bloxStrike) {
-                        FrontierUI::SliderFloat("Stability", &variables::Aimbot::uiStability, 0.f, 100.f, "%.0f");
-                        FrontierUI::SliderFloat("Lock Zone", &variables::Aimbot::uiLockZone, 0.f, 100.f, "%.0f");
-                        FrontierUI::SliderFloat("Sticky FOV", &variables::Aimbot::uiStickyFov, 0.f, 100.f, "%.0f");
-                        FrontierUI::SliderFloat("Aim Speed", &variables::Aimbot::uiAimSpeed, 0.f, 100.f, "%.0f");
-                        FrontierUI::SliderFloat("Range", &variables::Aimbot::uiRange, 0.f, 100.f, "%.0f");
-                    }
-                    FrontierUI::SliderFloat("FOV Size", &variables::Aimbot::uiFov, 0.f, 100.f, "%.0f");
-                } else {
-                    FrontierUI::Checkbox("Show FOV", &variables::Aimbot::showFOV, variables::Aimbot::fovColor);
-                    FrontierUI::Checkbox("FOV Fill", &variables::Aimbot::fovFilled);
-                    FrontierUI::Checkbox("FOV Glow", &variables::Aimbot::fovGlow);
-                    FrontierUI::Checkbox("FOV Rainbow", &variables::Extra::fovRainbow);
-                    FrontierUI::SliderFloat("FOV Opacity", &variables::Aimbot::fovOpacity, 0.05f, 1.f, "%.2f");
+                    FrontierUI::EndSettings();
                 }
             }
             FrontierUI::EndCard();
 
-            if (!bloxStrike) {
-                FrontierUI::NextCol();
-                if (FrontierUI::BeginCard("Trigger Bot", true)) {
-                    FrontierUI::Checkbox("Enabled", &variables::Trigger::enabled, nullptr, &variables::Trigger::key);
-                    FrontierUI::Checkbox("Visible Check", &variables::Trigger::requireVisible);
-                    FrontierUI::Checkbox("Team Check", &variables::teamCheck);
-                    FrontierUI::SliderFloat("Hitbox Mul", &variables::Trigger::hitRadius, 4.f, 60.f, "%.2f");
+            FrontierUI::NextCol();
+            if (FrontierUI::BeginCard("Trigger & Rage", true)) {
+                FrontierUI::Checkbox("Trigger Bot", &variables::Trigger::enabled, nullptr, &variables::Trigger::key);
+                if (variables::Trigger::enabled) {
                     FrontierUI::SliderFloat("Delay (ms)", &variables::Trigger::delayMs, 0, 200, "%.0f");
-                    FrontierUI::SliderFloat("Release (ms)", &variables::Trigger::releaseMs, 1, 80, "%.0f");
                     FrontierUI::Checkbox("Head Only", &variables::Trigger::headOnly);
-                    FrontierUI::Checkbox("Burst Fire", &variables::Extra::burstTrigger);
-                    if (variables::Extra::burstTrigger)
-                        FrontierUI::SliderInt("Burst Count", &variables::Extra::burstCount, 2, 8);
                 }
-                FrontierUI::EndCard();
-
-                if (FrontierUI::BeginCard("Misc", true)) {
-                    FrontierUI::Checkbox("Melee Aura", &variables::Extra::meleeAura);
-                    if (variables::Extra::meleeAura)
-                        FrontierUI::SliderFloat("Melee Range", &variables::Extra::meleeRange, 4.f, 30.f, "%.0f");
-                    FrontierUI::Checkbox("Rage", &variables::Rage::enabled, nullptr, &variables::Rage::key);
-                    if (variables::Rage::enabled) {
-                        FrontierUI::Checkbox("Auto Shoot", &variables::Rage::shoot);
-                        FrontierUI::Checkbox("Teleport", &variables::Rage::teleport);
-                        if (variables::Rage::teleport) {
-                            FrontierUI::Checkbox("Unkillable TP", &variables::Rage::unkillable);
-                            FrontierUI::SliderFloat("TP Distance", &variables::Rage::tpDistance, 0.5f, 12.f, "%.1f");
-                        }
-                    }
+                ImGui::Spacing();
+                FrontierUI::Checkbox("Rage", &variables::Rage::enabled, nullptr, &variables::Rage::key);
+                if (variables::Rage::enabled) {
+                    FrontierUI::Checkbox("Auto Shoot", &variables::Rage::shoot);
+                    FrontierUI::Checkbox("Teleport", &variables::Rage::teleport);
                 }
-                FrontierUI::EndCard();
             }
+            FrontierUI::EndCard();
             FrontierUI::EndTwoCol();
             ApplyAimSliders();
         }
         else if (variables::selectedSub == 1) {
             if (FrontierUI::BeginCard("Hitbox Extender", true)) {
-                if (Games::Detect() == Games::Kind::MiscGunTest) {
-                    ImGui::TextColored(ImVec4(1.f, 0.42f, 0.35f, 1.f), "Disabled on MiscGunTest:X (ban risk)");
-                    variables::Hitbox::enabled = false;
-                    variables::Local::hitboxEnabled = false;
+                FrontierUI::Checkbox("Enabled", &variables::Hitbox::enabled, nullptr, &variables::Hitbox::key);
+                if (FrontierUI::BeginSettings("Hitbox", true)) {
+                    FrontierUI::Checkbox("Visualize", &variables::Hitbox::visualize);
+                    FrontierUI::Checkbox("Aim Assist", &variables::Hitbox::aimAssist);
+                    FrontierUI::SliderFloat("Size", &variables::Hitbox::size, 2, 50, "%.0f");
+                    const char* ht[] = { "HRP Only", "Multi-Part" };
+                    FrontierUI::Combo("Type", &variables::Hitbox::type, ht, 2);
+                    ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim), "Aim Assist is required to register hits.");
+                    FrontierUI::EndSettings();
                 }
-                else {
-                    FrontierUI::Checkbox("Enabled", &variables::Hitbox::enabled, nullptr, &variables::Hitbox::key);
-                    if (FrontierUI::BeginSettings("Hitbox", true)) {
-                        FrontierUI::Checkbox("Visualize", &variables::Hitbox::visualize);
-                        FrontierUI::Checkbox("Aim Assist", &variables::Hitbox::aimAssist);
-                        FrontierUI::SliderFloat("Size", &variables::Hitbox::size, 2, 50, "%.0f");
-                        const char* ht[] = { "HRP Only", "Multi-Part" };
-                        FrontierUI::Combo("Type", &variables::Hitbox::type, ht, 2);
-                        ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim), "Aim Assist is required to register hits.");
-                        FrontierUI::EndSettings();
-                    }
-                }
-            }
-            FrontierUI::EndCard();
-            PushHitboxToLocal();
-        }
-        else if (variables::selectedSub == 2) {
-            if (FrontierUI::BeginCard("Desync", false)) {
-                ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim),
-                    "Desync needs a live physics bandwidth offset — currently unavailable for this build.");
-                FrontierUI::Checkbox("Enabled (unavailable)", &variables::Desync::enabled, nullptr, &variables::Desync::key);
-                FrontierUI::Checkbox("Reset When Off", &variables::Desync::resetOnOff);
             }
             FrontierUI::EndCard();
             PushHitboxToLocal();
@@ -322,34 +239,29 @@ namespace FrontierMenu {
     }
 
     inline void DrawVisuals() {
-        static const char* subs[] = { "ESP", "Style", "Crosshair", "Offscreen" };
-        FrontierUI::SubTabs(subs, 4, &variables::selectedSub);
+        static const char* subs[] = { "ESP", "HUD", "Style" };
+        FrontierUI::SubTabs(subs, 3, &variables::selectedSub);
 
         if (variables::selectedSub == 0) {
             FrontierUI::BeginTwoCol("##v0");
             if (FrontierUI::BeginCard("ESP", true)) {
                 FrontierUI::Checkbox("Enabled", &variables::ESP::enabled);
-                if (FrontierUI::BeginSettings("ESP", true)) {
-                    FrontierUI::Checkbox("Boxes", &variables::ESP::boxes, variables::ESP::boxColor);
+                FrontierUI::Checkbox("Boxes", &variables::ESP::boxes, variables::ESP::boxColor);
+                FrontierUI::Checkbox("Names", &variables::ESP::names, variables::ESP::nameColor);
+                FrontierUI::Checkbox("Health Bar", &variables::ESP::healthBar, variables::ESP::healthColor);
+                FrontierUI::Checkbox("Distance", &variables::ESP::distance);
+                FrontierUI::Checkbox("Skeleton", &variables::ESP::skeleton);
+                FrontierUI::SliderFloat("Max Distance", &variables::ESP::maxDistance, 100, 3000, "%.0f");
+
+                if (FrontierUI::BeginSettings("More ESP", true)) {
                     FrontierUI::Checkbox("Fill", &variables::ESP::fillBox, variables::ESP::boxFillColor);
-                    FrontierUI::Checkbox("Box Glow", &variables::ESP::boxGlow);
-                    FrontierUI::Checkbox("Names", &variables::ESP::names, variables::ESP::nameColor);
-                    FrontierUI::Checkbox("Health Bar", &variables::ESP::healthBar, variables::ESP::healthColor);
-                    FrontierUI::Checkbox("Health Text", &variables::ESP::healthText);
-                    FrontierUI::Checkbox("Armor Bar", &variables::ESP::armorBar);
-                    FrontierUI::Checkbox("Distance", &variables::ESP::distance);
-                    FrontierUI::Checkbox("Skeleton", &variables::ESP::skeleton);
-                    FrontierUI::Checkbox("Wireframe", &variables::ESP::wireframePlayers);
                     FrontierUI::Checkbox("Head Dot", &variables::ESP::headDot, variables::ESP::headDotColor);
-                    FrontierUI::Checkbox("China Hat", &variables::ESP::chinaHat);
-                    FrontierUI::Checkbox("Look Direction", &variables::ESP::lookDir);
-                    FrontierUI::Checkbox("Flags", &variables::ESP::flags);
                     FrontierUI::Checkbox("Tracers", &variables::ESP::snaplines, variables::ESP::snapColor);
                     FrontierUI::Checkbox("Weapon", &variables::ESP::equippedItem);
-                    FrontierUI::Checkbox("Profile Pics", &variables::ESP::profilePicture);
-                    FrontierUI::Checkbox("Rainbow", &variables::ESP::rainbow);
-                    FrontierUI::Checkbox("Team Colors", &variables::ESP::teamColors);
-                    FrontierUI::SliderFloat("Max Distance", &variables::ESP::maxDistance, 100, 3000, "%.0f");
+                    FrontierUI::Checkbox("Team Check", &variables::ESP::teamCheck);
+                    variables::teamCheck = variables::ESP::teamCheck;
+                    FrontierUI::Checkbox("Skip Dead", &variables::ESP::deadCheck);
+                    FrontierUI::Checkbox("Visible Only", &variables::ESP::visibleOnly);
                     const char* bt[] = { "2D Box", "Cube", "Corners" };
                     FrontierUI::Combo("Box Type", &variables::ESP::boxType, bt, 3);
                     FrontierUI::EndSettings();
@@ -358,90 +270,40 @@ namespace FrontierMenu {
             FrontierUI::EndCard();
 
             FrontierUI::NextCol();
-            if (FrontierUI::BeginCard("Chams", true)) {
-                FrontierUI::Checkbox("Enabled", &variables::ESP::chamsEnabled, variables::ESP::chamsColor);
-                if (FrontierUI::BeginSettings("Chams", true)) {
-                    const char* cm[] = { "Soft Body", "Glow" };
-                    FrontierUI::Combo("Style", &variables::ESP::chamsMode, cm, 2);
-                    FrontierUI::Checkbox("Filled", &variables::ESP::chamsFilled);
-                    FrontierUI::EndSettings();
-                }
-            }
-            FrontierUI::EndCard();
-
-            if (FrontierUI::BeginCard("Filters", true)) {
-                FrontierUI::Checkbox("Team Check", &variables::ESP::teamCheck);
-                if (variables::ESP::teamCheck != variables::teamCheck)
-                    variables::teamCheck = variables::ESP::teamCheck;
-                FrontierUI::Checkbox("Visible Only", &variables::ESP::visibleOnly);
-                FrontierUI::Checkbox("Target Highlight", &variables::ESP::targetHighlight);
-                FrontierUI::Checkbox("Skip Dead", &variables::ESP::deadCheck);
-            }
-            FrontierUI::EndCard();
-
-            if (FrontierUI::BeginCard("HUD", true)) {
-                FrontierUI::Checkbox("Hit Markers", &variables::Misc::hitMarker);
-                FrontierUI::Checkbox("Damage Numbers", &variables::Misc::damageNumbers);
-                FrontierUI::Checkbox("Enemy Counter", &variables::Misc::enemyCounter);
-                FrontierUI::Checkbox("Target HUD", &variables::Misc::targetHud);
-                FrontierUI::Checkbox("Spectator List", &variables::Extra::spectatorList);
+            if (FrontierUI::BeginCard("Chams & OOF", true)) {
+                FrontierUI::Checkbox("Chams", &variables::ESP::chamsEnabled, variables::ESP::chamsColor);
+                FrontierUI::Checkbox("OOF Arrows", &variables::ESP::oofArrows, variables::ESP::oofColor);
+                if (variables::ESP::oofArrows)
+                    FrontierUI::SliderFloat("OOF Radius", &variables::ESP::oofRadius, 40, 300, "%.0f");
             }
             FrontierUI::EndCard();
             FrontierUI::EndTwoCol();
         }
         else if (variables::selectedSub == 1) {
-            if (FrontierUI::BeginCard("ESP Style", true)) {
-                FrontierUI::SliderFloat("Box Thickness", &variables::ESP::boxThickness, 1.f, 5.f, "%.1f");
-                FrontierUI::SliderFloat("Skeleton Thickness", &variables::ESP::skeletonThickness, 1.f, 4.f, "%.1f");
-                FrontierUI::Checkbox("Skeleton Outline", &variables::ESP::skeletonOutline);
-                FrontierUI::Checkbox("Head Dot Glow", &variables::ESP::headDotGlow);
-                const char* nt[] = { "Username", "Display Name" };
-                FrontierUI::Combo("Name Type", &variables::ESP::nameType, nt, 2);
-            }
-            FrontierUI::EndCard();
-        }
-        else if (variables::selectedSub == 2) {
-            if (FrontierUI::BeginCard("Crosshair", true)) {
-                FrontierUI::Checkbox("Enabled", &variables::Crosshair::enabled, variables::Crosshair::color);
-                if (FrontierUI::BeginSettings("Crosshair", true)) {
-                    FrontierUI::SliderFloat("Length", &variables::Crosshair::length, 4, 60, "%.0f");
-                    FrontierUI::SliderFloat("Gap", &variables::Crosshair::gap, 0, 30, "%.0f");
-                    FrontierUI::SliderFloat("Thickness", &variables::Crosshair::thickness, 1, 8, "%.1f");
-                    FrontierUI::Checkbox("Outline", &variables::Crosshair::outline);
-                    FrontierUI::Checkbox("Center Dot", &variables::Crosshair::centerDot);
-                    FrontierUI::Checkbox("Follow Target", &variables::Crosshair::followTarget);
-                    const char* cs[] = { "Static", "Spin" };
-                    FrontierUI::Combo("Style", &variables::Crosshair::style, cs, 2);
-                    FrontierUI::EndSettings();
-                }
+            if (FrontierUI::BeginCard("HUD Overlays", true)) {
+                FrontierUI::Checkbox("Enemy Counter", &variables::Misc::enemyCounter);
+                FrontierUI::Checkbox("Target HUD", &variables::Misc::targetHud);
+                FrontierUI::Checkbox("Hit Markers", &variables::Misc::hitMarker);
+                FrontierUI::Checkbox("Damage Numbers", &variables::Misc::damageNumbers);
+                FrontierUI::Checkbox("Spectator List", &variables::Extra::spectatorList);
             }
             FrontierUI::EndCard();
         }
         else {
-            if (FrontierUI::BeginCard("Offscreen", true)) {
-                FrontierUI::Checkbox("OOF Arrows", &variables::ESP::oofArrows, variables::ESP::oofColor);
-                if (variables::ESP::oofArrows) {
-                    if (FrontierUI::BeginSettings("OOF", true)) {
-                        FrontierUI::Checkbox("OOF Profile Pics", &variables::ESP::oofShowPfp);
-                        FrontierUI::SliderFloat("Radius", &variables::ESP::oofRadius, 40, 300, "%.0f");
-                        FrontierUI::SliderFloat("Arrow Size", &variables::ESP::oofSize, 4, 48, "%.1f");
-                        FrontierUI::SliderFloat("Max Dist", &variables::ESP::oofDistance, 50, 2000, "%.0f");
-                        FrontierUI::EndSettings();
-                    }
+            if (FrontierUI::BeginCard("Crosshair", true)) {
+                FrontierUI::Checkbox("Enabled", &variables::Crosshair::enabled, variables::Crosshair::color);
+                if (variables::Crosshair::enabled) {
+                    FrontierUI::SliderFloat("Length", &variables::Crosshair::length, 4, 60, "%.0f");
+                    FrontierUI::SliderFloat("Gap", &variables::Crosshair::gap, 0, 30, "%.0f");
+                    FrontierUI::SliderFloat("Thickness", &variables::Crosshair::thickness, 1, 8, "%.1f");
                 }
-                FrontierUI::Checkbox("Radar", &variables::Radar::enabled);
-                if (variables::Radar::enabled) {
-                    if (FrontierUI::BeginSettings("Radar", true)) {
-                        FrontierUI::SliderFloat("Radar Size", &variables::Radar::size, 100, 320, "%.0f");
-                        FrontierUI::SliderFloat("Radar Range", &variables::Radar::range, 50, 1000, "%.0f");
-                        FrontierUI::Checkbox("Show Names", &variables::Radar::showNames);
-                        FrontierUI::Checkbox("Show Distance", &variables::Radar::showDistance);
-                        FrontierUI::Checkbox("Rotate w/ Camera", &variables::Radar::rotateWithCamera);
-                        const char* rt[] = { "2D", "3D" };
-                        FrontierUI::Combo("Radar Type", &variables::Radar::type, rt, 2);
-                        FrontierUI::EndSettings();
-                    }
-                }
+            }
+            FrontierUI::EndCard();
+            if (FrontierUI::BeginCard("ESP Style", true)) {
+                FrontierUI::SliderFloat("Box Thickness", &variables::ESP::boxThickness, 1.f, 5.f, "%.1f");
+                FrontierUI::SliderFloat("Skeleton Thickness", &variables::ESP::skeletonThickness, 1.f, 4.f, "%.1f");
+                const char* nt[] = { "Username", "Display Name" };
+                FrontierUI::Combo("Name Type", &variables::ESP::nameType, nt, 2);
             }
             FrontierUI::EndCard();
         }
@@ -526,15 +388,6 @@ namespace FrontierMenu {
     }
 
     inline void DrawCharacter() {
-        if (Games::IsBloxStrike()) {
-            if (FrontierUI::BeginCard("Movement", true)) {
-                ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim),
-                    "Movement, fly, speed, TP, and gun mods are disabled in BloxStrike.");
-            }
-            FrontierUI::EndCard();
-            return;
-        }
-
         static const char* subs[] = { "Move", "Extras", "Anim" };
         FrontierUI::SubTabs(subs, 3, &variables::selectedSub);
 
@@ -685,16 +538,17 @@ namespace FrontierMenu {
 
     inline void DrawOptions() {
         FrontierUI::BeginTwoCol("##opt");
-        if (FrontierUI::BeginCard("Options", true)) {
-            FrontierUI::Checkbox("Streamproof", &variables::Misc::streamProof);
-            FrontierUI::Checkbox("Streamer Mode", &variables::Misc::streamerMode);
-            FrontierUI::Checkbox("Streamer Mode+", &variables::Misc::streamerModePlus);
+        if (FrontierUI::BeginCard("General", true)) {
             FrontierUI::Checkbox("Discord Rich Presence", &variables::Misc::discordRpc);
+            FrontierUI::Checkbox("Streamproof", &variables::Misc::streamProof);
+            if (FrontierUI::BeginSettings("Streaming", true)) {
+                FrontierUI::Checkbox("Streamer Mode", &variables::Misc::streamerMode);
+                FrontierUI::Checkbox("Streamer Mode+", &variables::Misc::streamerModePlus);
+                FrontierUI::EndSettings();
+            }
             FrontierUI::Checkbox("Anti-AFK", &variables::Misc::antiAfk);
-            FrontierUI::Checkbox("AFK Assist", &variables::Misc::afkAssist);
-            FrontierUI::Checkbox("Panic Key", &variables::Misc::panicKey, nullptr, &variables::Misc::panicVk);
             FrontierUI::Checkbox("Watermark / FPS", &variables::Misc::showFps);
-            FrontierUI::Checkbox("Keybind List", &variables::Misc::showKeybinds);
+            FrontierUI::Checkbox("Panic Key", &variables::Misc::panicKey, nullptr, &variables::Misc::panicVk);
             FrontierUI::Checkbox("VSync", &variables::Perf::vsync);
             FrontierUI::SliderInt("FPS Cap", &variables::Perf::targetFps, 0, 240);
         }
@@ -720,7 +574,6 @@ namespace FrontierMenu {
             if (FrontierUI::SliderFloat("Menu Scale", &variables::Theme::menuScale, 0.85f, 1.15f, "%.2f"))
                 FrontierTheme::MarkDirty();
             FrontierUI::SliderFloat("Float Bar Y", &variables::Theme::headerY, 8.f, 80.f, "%.0f");
-            FrontierUI::Checkbox("Footer Link", &variables::Theme::showFooterLink);
         }
         FrontierUI::EndCard();
 
@@ -797,22 +650,15 @@ namespace FrontierMenu {
         CopyField("Place ID", variables::Status::placeId);
         CopyField("Game ID", variables::Status::gameId);
         {
-            const char* gameLbl = "Game: unsupported";
+            char gameLbl[64];
             ImVec4 gameCol = ImVec4(1.f, 0.45f, 0.35f, 1.f);
-            if (Arsenal::IsSupportedPlace()) {
+            if (Games::IsSupported()) {
                 gameCol = ImVec4(0.45f, 0.9f, 0.55f, 1.f);
-                switch (Games::Detect()) {
-                case Games::Kind::MiscGunTest: gameLbl = "Game: MiscGunTest:X"; break;
-                case Games::Kind::BloxStrike: gameLbl = "Game: BloxStrike"; break;
-                case Games::Kind::Baseplate: gameLbl = "Game: Baseplate"; break;
-                case Games::Kind::Arsenal: gameLbl = "Game: Arsenal"; break;
-                default: gameLbl = "Game: supported"; break;
-                }
+                sprintf_s(gameLbl, "Game: %s", Games::Name());
+            } else {
+                sprintf_s(gameLbl, "Game: waiting");
             }
             ImGui::TextColored(gameCol, "%s", gameLbl);
-        }
-        if (Games::Detect() == Games::Kind::MiscGunTest) {
-            ImGui::TextColored(ImVec4(1.f, 0.42f, 0.35f, 1.f), "Do not use Hitbox Extender — ban risk");
         }
         }
         FrontierUI::EndCard();
@@ -877,6 +723,19 @@ namespace FrontierMenu {
         ImGui::PopStyleVar();
 
         ImGui::Spacing();
+        ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim), "Quick jump");
+        ImGui::SameLine(0, 8);
+        if (ImGui::SmallButton("Workspace")) InstanceExplorer::JumpToService("Workspace");
+        ImGui::SameLine(0, 4);
+        if (ImGui::SmallButton("Players")) InstanceExplorer::JumpToService("Players");
+        ImGui::SameLine(0, 4);
+        if (ImGui::SmallButton("ReplicatedStorage")) InstanceExplorer::JumpToService("ReplicatedStorage");
+        ImGui::SameLine(0, 4);
+        if (ImGui::SmallButton("Lighting")) InstanceExplorer::JumpToService("Lighting");
+        ImGui::SameLine(0, 4);
+        if (ImGui::SmallButton("StarterGui")) InstanceExplorer::JumpToService("StarterGui");
+
+        ImGui::Spacing();
         if (ImGui::BeginTable("##exptools", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoSavedSettings)) {
             ImGui::TableSetupColumn("save", ImGuiTableColumnFlags_WidthStretch, 0.45f);
             ImGui::TableSetupColumn("filter", ImGuiTableColumnFlags_WidthStretch, 0.55f);
@@ -909,8 +768,8 @@ namespace FrontierMenu {
             ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoSavedSettings,
             ImVec2(0, splitH)))
         {
-            ImGui::TableSetupColumn("Instances", ImGuiTableColumnFlags_WidthStretch, 0.64f);
-            ImGui::TableSetupColumn("Inspector", ImGuiTableColumnFlags_WidthStretch, 0.36f);
+            ImGui::TableSetupColumn("Hierarchy", ImGuiTableColumnFlags_WidthStretch, 0.58f);
+            ImGui::TableSetupColumn("Inspector", ImGuiTableColumnFlags_WidthStretch, 0.42f);
             ImGui::TableHeadersRow();
 
             ImGui::TableNextRow();
@@ -938,59 +797,7 @@ namespace FrontierMenu {
             ImGui::TableNextColumn();
             ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.07f, 0.075f, 0.085f, 1.f));
             ImGui::BeginChild("##expprops", ImVec2(0, 0), ImGuiChildFlags_Borders);
-            ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim), "Inspector");
-            ImGui::Separator();
-            if (!InstanceExplorer::selectedAddr) {
-                ImGui::Dummy(ImVec2(0, 24));
-                ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim), "Select an instance");
-            }
-            else {
-                ImGui::Spacing();
-                InstanceExplorer::DrawSelectedIcon(26.f);
-                ImGui::SameLine(0, 10);
-                ImGui::BeginGroup();
-                ImGui::TextUnformatted(InstanceExplorer::selectedName.c_str());
-                ImGui::TextColored(InstanceExplorer::ClassColorV4(InstanceExplorer::selectedClass),
-                    "%s", InstanceExplorer::selectedClass.c_str());
-                ImGui::EndGroup();
-
-                ImGui::Spacing();
-                ImGui::Separator();
-                ImGui::Spacing();
-
-                ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim), "Path");
-                ImGui::PushTextWrapPos(0);
-                ImGui::TextUnformatted(InstanceExplorer::selectedPath.c_str());
-                ImGui::PopTextWrapPos();
-
-                ImGui::Spacing();
-                ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim), "Address");
-                ImGui::Text("0x%llX", (unsigned long long)InstanceExplorer::selectedAddr);
-
-                ImGui::Spacing();
-                if (ImGui::Button("Copy Path", ImVec2(-1, 28)))
-                    ImGui::SetClipboardText(InstanceExplorer::selectedPath.c_str());
-                if (ImGui::Button("Copy Address", ImVec2(-1, 28))) {
-                    char buf[32];
-                    sprintf_s(buf, "0x%llX", (unsigned long long)InstanceExplorer::selectedAddr);
-                    ImGui::SetClipboardText(buf);
-                }
-                ImGui::BeginDisabled(busy);
-                if (ImGui::Button("Save This Branch", ImVec2(-1, 28)))
-                    InstanceExplorer::SaveSelected();
-                ImGui::EndDisabled();
-            }
-            if (InstanceExplorer::lastSavePath[0]) {
-                ImGui::Spacing();
-                ImGui::Separator();
-                ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim), "Last save");
-                ImGui::PushTextWrapPos(0);
-                ImGui::TextColored(FrontierUI::V4(variables::Theme::accent), "%s",
-                    InstanceExplorer::lastSavePath);
-                ImGui::PopTextWrapPos();
-            }
-            ImGui::Spacing();
-            ImGui::TextWrapped("Hierarchy dump (names/classes). Not a .rbxl place file.");
+            InstanceExplorer::DrawInspectorPanel(busy);
             ImGui::EndChild();
             ImGui::PopStyleColor();
 

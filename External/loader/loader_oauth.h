@@ -47,6 +47,42 @@ namespace LoaderOAuth {
         return out;
     }
 
+    inline std::string UrlDecode(const std::string& in)
+    {
+        std::string out;
+        out.reserve(in.size());
+        for (size_t i = 0; i < in.size(); i++) {
+            char c = in[i];
+            if (c == '%' && i + 2 < in.size()) {
+                char hex[3] = { in[i + 1], in[i + 2], 0 };
+                out.push_back((char)strtol(hex, nullptr, 16));
+                i += 2;
+            } else if (c == '+') {
+                out.push_back(' ');
+            } else {
+                out.push_back(c);
+            }
+        }
+        return out;
+    }
+
+    inline std::string JsonEscape(const std::string& in)
+    {
+        std::string out;
+        out.reserve(in.size() + 8);
+        for (char c : in) {
+            switch (c) {
+            case '\\': out += "\\\\"; break;
+            case '"': out += "\\\""; break;
+            case '\n': out += "\\n"; break;
+            case '\r': out += "\\r"; break;
+            case '\t': out += "\\t"; break;
+            default: out.push_back(c); break;
+            }
+        }
+        return out;
+    }
+
     inline std::string Base64UrlEncode(const unsigned char* data, size_t len)
     {
         static const char* b64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -219,9 +255,15 @@ namespace LoaderOAuth {
 
         const char* okPage =
             "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n"
-            "<html><body style='background:#0c0c0c;color:#eee;font-family:Segoe UI;text-align:center;padding:48px'>"
-            "<h2 style='color:#eb3847'>FRONTIER</h2><p>Signed in — you can close this tab and return to the loader.</p>"
-            "</body></html>";
+            "<!DOCTYPE html><html><head><meta charset=utf-8><title>FRONTIER</title></head>"
+            "<body style=\"margin:0;background:#0c0c0c;color:#eee;font-family:Segoe UI,sans-serif;"
+            "display:flex;align-items:center;justify-content:center;min-height:100vh\">"
+            "<div style=\"text-align:center;max-width:420px;padding:32px\">"
+            "<div style=\"width:56px;height:56px;border-radius:14px;background:#eb3847;"
+            "margin:0 auto 20px;line-height:56px;font-weight:700;font-size:22px\">F</div>"
+            "<h2 style=\"margin:0 0 12px;font-weight:600\">Signed in</h2>"
+            "<p style=\"color:#999;margin:0\">Return to the FRONTIER loader. You can close this tab.</p>"
+            "</div></body></html>";
         send(client, okPage, (int)strlen(okPage), 0);
         closesocket(client);
         WSACleanup();
@@ -253,6 +295,7 @@ namespace LoaderOAuth {
             p += needle.size();
             size_t e = query.find('&', p);
             std::string val = query.substr(p, e == std::string::npos ? std::string::npos : e - p);
+            val = UrlDecode(val);
             strncpy_s(out, sz, val.c_str(), _TRUNCATE);
             return out[0] != 0;
         };
@@ -271,12 +314,13 @@ namespace LoaderOAuth {
         return true;
     }
 
+    inline void SaveSession(const Session& session);
+
     inline bool ExchangeCode(const char* code, const char* verifier, const char* redirectUri, Session& session, std::string& err)
     {
-        char body[1024];
-        sprintf_s(body,
-            "{\"code\":\"%s\",\"codeVerifier\":\"%s\",\"redirectUri\":\"%s\"}",
-            code, verifier, redirectUri);
+        std::string body = std::string("{\"code\":\"") + JsonEscape(code) +
+            "\",\"codeVerifier\":\"" + JsonEscape(verifier) +
+            "\",\"redirectUri\":\"" + JsonEscape(redirectUri) + "\"}";
         std::string resp;
         if (!LoaderUpdate::HttpPost(LoaderConfig::kDiscordOAuthApi, "application/json", body, resp, err))
             return false;
@@ -298,9 +342,11 @@ namespace LoaderOAuth {
         if (!ParseJsonStr(resp, "message", session.message, sizeof(session.message)))
             session.message[0] = 0;
 
+        SaveSession(session);
+
         if (!session.allowed) {
             err = session.message[0] ? session.message : "Run /verify YourRobloxName in Discord";
-            return false;
+            return true;
         }
         return true;
     }
@@ -418,7 +464,6 @@ namespace LoaderOAuth {
 
         if (!ExchangeCode(code, verifier.c_str(), redirectUri, session, err))
             return false;
-        SaveSession(session);
         return true;
     }
 

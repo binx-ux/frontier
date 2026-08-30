@@ -6,8 +6,8 @@
 // Open-source builds: no auto-update ping. Check GitHub Releases manually.
 namespace Updater {
 
-    inline constexpr int kLocalVersion = 36;
-    inline constexpr const char* kLocalDisplay = "FRONTIER dev";
+    inline constexpr int kLocalVersion = 0;
+    inline constexpr const char* kLocalDisplay = "v0";
     inline constexpr const char* kDownloadUrl = "https://github.com/binx-ux/frontier/releases";
 
     inline std::atomic<bool> checked{ false };

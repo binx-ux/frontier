@@ -136,83 +136,106 @@ namespace FrontierUI {
         return changed;
     }
 
+    inline bool ToggleSwitch(const char* id, bool* v, float w = 38.f, float h = 18.f) {
+        ImGui::PushID(id);
+        ImVec2 p = ImGui::GetCursorScreenPos();
+        bool pressed = ImGui::InvisibleButton("##tog", ImVec2(w, h));
+        if (pressed) *v = !*v;
+        bool hovered = ImGui::IsItemHovered();
+
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        ImU32 track = *v ? IM_COL32(245, 245, 248, 255)
+            : IM_COL32(hovered ? 52 : 42, hovered ? 52 : 42, hovered ? 58 : 48, 255);
+        dl->AddRectFilled(p, ImVec2(p.x + w, p.y + h), track, h * 0.5f);
+
+        float pad = 2.f;
+        float thumb = h - pad * 2.f;
+        float tx = *v ? (p.x + w - thumb - pad) : (p.x + pad);
+        ImU32 thumbCol = *v ? IM_COL32(18, 18, 20, 255) : IM_COL32(160, 160, 168, 255);
+        dl->AddCircleFilled(ImVec2(tx + thumb * 0.5f, p.y + h * 0.5f), thumb * 0.5f, thumbCol);
+
+        ImGui::PopID();
+        return pressed;
+    }
+
     inline bool Checkbox(const char* label, bool* v, float* color = nullptr, int* key = nullptr) {
         ImGui::PushID(label);
         ImGui::BeginGroup();
 
         float avail = ImGui::GetContentRegionAvail().x;
-        float rightW = 0.f;
+        float rightW = 42.f;
         if (color) rightW += 24.f;
         if (key) rightW += 78.f;
-        const float box = 14.f;
-        rightW += box + 8.f;
         float leftW = avail - rightW - 4.f;
         if (leftW < 48.f) leftW = 48.f;
 
         ImVec2 p = ImGui::GetCursorScreenPos();
-        bool pressed = ImGui::InvisibleButton("##cb", ImVec2(avail, 22.f));
-        if (pressed) *v = !*v;
-        bool hovered = ImGui::IsItemHovered();
-
         ImDrawList* dl = ImGui::GetWindowDrawList();
         ImVec4 tc = *v ? V4(variables::Theme::text) : V4(variables::Theme::textDim);
-        dl->AddText(ImVec2(p.x, p.y + 2), ImGui::ColorConvertFloat4ToU32(tc), label);
+        dl->AddText(ImVec2(p.x, p.y + 1), ImGui::ColorConvertFloat4ToU32(tc), label);
 
-        float bx = p.x + leftW + 8.f;
-        float by = p.y + 2.f;
-        ImU32 border = *v ? U32(variables::Theme::brand, 0.9f)
-            : IM_COL32(hovered ? 70 : 52, hovered ? 70 : 52, hovered ? 76 : 58, 255);
-        dl->AddRectFilled(ImVec2(bx, by), ImVec2(bx + box, by + box), IM_COL32(22, 22, 24, 255), 3.f);
-        dl->AddRect(ImVec2(bx, by), ImVec2(bx + box, by + box), border, 3.f);
-        if (*v) {
-            dl->AddRectFilled(ImVec2(bx + 3, by + 3), ImVec2(bx + box - 3, by + box - 3),
-                U32(variables::Theme::brand, 1.f), 2.f);
-        }
+        float rx = p.x + avail - rightW + 4.f;
+        ImGui::SetCursorScreenPos(ImVec2(rx, p.y));
+        bool pressed = ToggleSwitch("##sw", v);
 
-        float rx = bx + box + 8.f;
+        rx += 44.f;
         if (color) {
-            ImGui::SetCursorScreenPos(ImVec2(rx, by - 1));
+            ImGui::SetCursorScreenPos(ImVec2(rx, p.y - 1));
             ColorSquare("##col", color);
             rx += 24.f;
         }
         if (key) {
-            ImGui::SetCursorScreenPos(ImVec2(rx, by - 3));
+            ImGui::SetCursorScreenPos(ImVec2(rx, p.y - 3));
             KeybindChip("##kb", key);
         }
 
         ImGui::EndGroup();
-        ImGui::Dummy(ImVec2(0, 2));
+        ImGui::Dummy(ImVec2(0, 6));
         ImGui::PopID();
         return pressed;
     }
 
     inline bool SliderFloat(const char* label, float* v, float mn, float mx, const char* fmt = "%.2f") {
         ImGui::PushID(label);
-        ImGui::BeginGroup();
-        ImGui::TextColored(V4(variables::Theme::textDim), "%s", label);
-        char buf[32]; sprintf_s(buf, fmt, *v);
-        float vw = ImGui::CalcTextSize(buf).x;
-        ImGui::SameLine();
-        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - vw);
-        ImGui::TextColored(V4(variables::Theme::text), "%s", buf);
-        ImGui::EndGroup();
+        float avail = ImGui::GetContentRegionAvail().x;
 
+        char buf[32]; sprintf_s(buf, fmt, *v);
+        ImVec2 valSz = ImGui::CalcTextSize(buf);
+        float valBoxW = valSz.x + 16.f;
+        if (valBoxW < 44.f) valBoxW = 44.f;
+
+        ImVec2 rowP = ImGui::GetCursorScreenPos();
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        dl->AddText(ImVec2(rowP.x, rowP.y + 2), ImGui::ColorConvertFloat4ToU32(V4(variables::Theme::textDim)), label);
+
+        float valX = rowP.x + avail - valBoxW;
+        ImVec2 boxMin(valX, rowP.y);
+        ImVec2 boxMax(valX + valBoxW, rowP.y + 20.f);
+        dl->AddRectFilled(boxMin, boxMax, IM_COL32(22, 22, 26, 255), 5.f);
+        dl->AddRect(boxMin, boxMax, IM_COL32(255, 255, 255, 18), 5.f);
+        dl->AddText(ImVec2(valX + (valBoxW - valSz.x) * 0.5f, rowP.y + 2),
+            ImGui::ColorConvertFloat4ToU32(V4(variables::Theme::text)), buf);
+
+        ImGui::Dummy(ImVec2(0, 24.f));
+
+        float trackW = avail - valBoxW - 12.f;
+        if (trackW < 60.f) trackW = 60.f;
+        ImGui::SetCursorScreenPos(ImVec2(rowP.x, rowP.y + 24.f));
         ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.09f, 0.09f, 0.11f, 1));
         ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.12f, 0.12f, 0.14f, 1));
-        ImGui::PushStyleColor(ImGuiCol_SliderGrab, V4(variables::Theme::brand));
-        ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, V4(variables::Theme::brand));
+        ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(0.92f, 0.92f, 0.94f, 1));
+        ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, ImVec4(1.f, 1.f, 1.f, 1));
         ImGui::PushStyleVar(ImGuiStyleVar_GrabRounding, 8.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 5));
-        ImGui::SetNextItemWidth(-1);
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 3));
+        ImGui::SetNextItemWidth(trackW);
 
         ImVec2 sp = ImGui::GetCursorScreenPos();
-        float aw = ImGui::CalcItemWidth();
         float t = (mx > mn) ? ((*v - mn) / (mx - mn)) : 0.f;
         if (t < 0) t = 0; if (t > 1) t = 1;
-        ImGui::GetWindowDrawList()->AddRectFilled(
-            ImVec2(sp.x, sp.y + 4), ImVec2(sp.x + aw * t, sp.y + 14),
-            U32(variables::Theme::brand, 0.55f), 4.f);
+        dl->AddRectFilled(
+            ImVec2(sp.x, sp.y + 4), ImVec2(sp.x + trackW * t, sp.y + 10),
+            IM_COL32(245, 245, 248, 140), 3.f);
 
         bool ch = ImGui::SliderFloat("##s", v, mn, mx, "");
         ImGui::PopStyleVar(3);
@@ -278,21 +301,17 @@ namespace FrontierUI {
 
     inline bool BeginCard(const char* title, bool /*defaultOpen*/ = true) {
         ImGui::PushID(title ? title : "section");
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, V4(variables::Theme::card));
-        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1, 1, 1, 0.05f));
-        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.f);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12, 10));
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.075f, 0.075f, 0.078f, 1.f));
+        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1, 1, 1, 0.06f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 10.f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14, 12));
 
         ImGui::BeginChild("##sec", ImVec2(0, 0),
             ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Borders, ImGuiWindowFlags_None);
 
         if (title && title[0]) {
-            ImDrawList* cdl = ImGui::GetWindowDrawList();
-            ImVec2 cp = ImGui::GetCursorScreenPos();
-            cdl->AddRectFilled(ImVec2(cp.x - 12, cp.y - 2), ImVec2(cp.x - 9, cp.y + 16),
-                U32(variables::Theme::brand, 0.7f), 1.f);
             ImGui::TextColored(V4(variables::Theme::text), "%s", title);
-            ImGui::Dummy(ImVec2(0, 2));
+            ImGui::Dummy(ImVec2(0, 4));
         }
 
         if (g_dropDepth < 24)
@@ -349,37 +368,23 @@ namespace FrontierUI {
     }
 
     inline void SubTabs(const char* const names[], int count, int* selected) {
-        const bool pills = variables::Theme::subTabStyle != 0;
         for (int i = 0; i < count; i++) {
-            if (i) ImGui::SameLine(0, pills ? 6 : 14);
+            if (i) ImGui::SameLine(0, 6);
             bool on = (*selected == i);
-            if (pills) {
-                ImGui::PushStyleColor(ImGuiCol_Button, on ? ImVec4(0.12f, 0.12f, 0.14f, 1) : ImVec4(0.07f, 0.07f, 0.09f, 1));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.14f, 0.14f, 0.17f, 1));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.16f, 0.16f, 0.19f, 1));
-                ImGui::PushStyleColor(ImGuiCol_Border, on ? ImVec4(1, 1, 1, 0.22f) : ImVec4(1, 1, 1, 0.08f));
-                ImGui::PushStyleColor(ImGuiCol_Text, on ? V4(variables::Theme::brand) : V4(variables::Theme::textDim));
-                ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 999.f);
-                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(12, 5));
-                ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.f);
-                if (ImGui::Button(names[i]))
-                    *selected = i;
-                ImGui::PopStyleVar(3);
-                ImGui::PopStyleColor(5);
-            } else {
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1, 1, 1, 0.04f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1, 1, 1, 0.06f));
-                ImGui::PushStyleColor(ImGuiCol_Text, on ? V4(variables::Theme::brand) : V4(variables::Theme::textDim));
-                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 6));
-                ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.f);
-                if (ImGui::Button(names[i]))
-                    *selected = i;
-                ImGui::PopStyleVar(2);
-                ImGui::PopStyleColor(4);
-            }
+            ImGui::PushStyleColor(ImGuiCol_Button, on ? ImVec4(0.14f, 0.14f, 0.16f, 1) : ImVec4(0.08f, 0.08f, 0.10f, 1));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.16f, 0.16f, 0.19f, 1));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.18f, 0.18f, 0.22f, 1));
+            ImGui::PushStyleColor(ImGuiCol_Border, on ? ImVec4(1, 1, 1, 0.18f) : ImVec4(1, 1, 1, 0.06f));
+            ImGui::PushStyleColor(ImGuiCol_Text, on ? V4(variables::Theme::text) : V4(variables::Theme::textDim));
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.f);
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(14, 6));
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.f);
+            if (ImGui::Button(names[i]))
+                *selected = i;
+            ImGui::PopStyleVar(3);
+            ImGui::PopStyleColor(5);
         }
-        ImGui::Dummy(ImVec2(0, 6));
+        ImGui::Dummy(ImVec2(0, 8));
     }
 
     inline bool ThemeColorRow(const char* label, float col[4], bool syncBrand = false) {
@@ -419,28 +424,18 @@ namespace FrontierUI {
     }
 
     inline void DrawFooter(ImDrawList* dl, ImVec2 wp, float ww, float wh) {
-        const float fh = 28.f;
-        ImVec2 a(wp.x, wp.y + wh - fh);
-        ImVec2 b(wp.x + ww, wp.y + wh);
-        dl->AddRectFilled(a, b, IM_COL32(9, 9, 9, 255));
-        dl->AddLine(a, ImVec2(b.x, a.y), U32(variables::Theme::border, 0.45f));
+        const float sbW = 196.f;
+        ImVec2 a(wp.x + sbW + 14.f, wp.y + wh - 22.f);
+        ImVec2 b(wp.x + ww - 14.f, wp.y + wh - 6.f);
+        if (a.x >= b.x) return;
 
         char left[64];
         sprintf_s(left, "%s online", variables::Status::playersOnline);
-        dl->AddText(ImVec2(a.x + 14, a.y + 6), U32(variables::Theme::brand, 0.85f), left);
+        dl->AddText(a, IM_COL32(110, 110, 122, 255), left);
 
-        ImVec2 cs = ImGui::CalcTextSize(Frontier::kFooterLink);
-        if (variables::Theme::showFooterLink)
-            dl->AddText(ImVec2(a.x + (ww - cs.x) * 0.5f, a.y + 6), IM_COL32(120, 120, 132, 255), Frontier::kFooterLink);
-
-        char buildLbl[32];
-        sprintf_s(buildLbl, "Build: ");
         char buildVal[48];
-        sprintf_s(buildVal, "%s", Updater::kLocalDisplay);
-        ImVec2 bls = ImGui::CalcTextSize(buildLbl);
-        ImVec2 bvs = ImGui::CalcTextSize(buildVal);
-        float rx = b.x - bls.x - bvs.x - 14;
-        dl->AddText(ImVec2(rx, a.y + 6), IM_COL32(130, 130, 142, 255), buildLbl);
-        dl->AddText(ImVec2(rx + bls.x, a.y + 6), U32(variables::Theme::brand, 1.f), buildVal);
+        sprintf_s(buildVal, "%s %s", Frontier::kFooterText, Frontier::kVersion);
+        ImVec2 cs = ImGui::CalcTextSize(buildVal);
+        dl->AddText(ImVec2(b.x - cs.x, a.y), IM_COL32(110, 110, 122, 255), buildVal);
     }
 }

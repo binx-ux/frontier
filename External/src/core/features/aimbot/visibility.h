@@ -283,9 +283,11 @@ namespace Visibility {
             return;
         std::thread([] {
             while (Globals::running) {
-                // Always keep geometry warm when aimbot exists — wall check must work the moment it's on
-                bool need = variables::Aimbot::requireVisible || variables::Trigger::requireVisible
-                    || variables::Aimbot::enabled || variables::Misc::afkAssist || variables::Aimbot::alwaysOn;
+                // Keep wall mesh warm automatically whenever features are in use
+                bool need = variables::Aimbot::enabled || variables::Trigger::enabled
+                    || variables::ESP::enabled || variables::ESP::visibleOnly
+                    || variables::Aimbot::requireVisible || variables::Trigger::requireVisible
+                    || variables::Misc::afkAssist || variables::Aimbot::alwaysOn;
                 if (!need) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(500));
                     continue;
@@ -327,9 +329,9 @@ namespace Visibility {
 
         std::lock_guard<std::mutex> lock(boxesMutex);
 
-        // FAIL-CLOSED: no geometry → treat as blocked (never wallbang while unknown)
+        // No geometry yet → fail-open so aim/ESP/trigger still work while mesh builds
         if (!everBuilt || boxes.empty())
-            return false;
+            return true;
 
         for (const auto& b : boxes) {
             if (!b.Valid()) continue;

@@ -3,6 +3,8 @@
 #include "../../core/globals/globals.h"
 #include "../../core/variables/variables.h"
 #include "../../memory/memory.h"
+#include "explorer_syntax.h"
+#include "../../render/frontier_ui.h"
 #include "../../../ext/imgui/imgui.h"
 #include <string>
 #include <vector>
@@ -155,12 +157,15 @@ namespace InstanceExplorer {
         return false;
     }
 
+    inline void RefreshInspector();
+
     inline void Select(const Node& n, const std::string& path)
     {
         selectedAddr = n.addr;
         selectedName = n.name;
         selectedClass = n.className;
         selectedPath = path.empty() ? n.name : path;
+        RefreshInspector();
     }
 
     enum class IconKind {
@@ -582,5 +587,251 @@ namespace InstanceExplorer {
     {
         auto dir = DumpDir();
         ShellExecuteA(nullptr, "open", dir.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    }
+
+    struct InspectField {
+        char key[48];
+        char value[256];
+        ExplorerSyntax::Lang lang = ExplorerSyntax::Lang::Plain;
+    };
+
+    inline std::vector<InspectField> gInspectFields;
+    inline char gLuaPath[512] = "";
+    inline char gPreviewText[8192] = "";
+    inline ExplorerSyntax::Lang gPreviewLang = ExplorerSyntax::Lang::Plain;
+    inline int gChildCount = 0;
+
+    inline std::string ReadRobloxString(uintptr_t strObj)
+    {
+        if (!strObj) return {};
+        return memory->read_string(strObj);
+    }
+
+    inline std::string BuildLuaPath(uintptr_t addr)
+    {
+        if (!addr) return "game";
+        std::vector<std::string> parts;
+        uintptr_t cur = addr;
+        for (int i = 0; i < 32 && cur; i++) {
+            RBX::RbxInstance inst(cur);
+            std::string n = inst.GetName();
+            if (n.empty()) n = "Instance";
+            parts.push_back(n);
+            cur = memory->read<uintptr_t>(cur + Offsets::Instance::Parent);
+            if (cur == Globals::dataModel.Addr) {
+                parts.push_back("game");
+                break;
+            }
+        }
+        std::string out;
+        for (int i = (int)parts.size() - 1; i >= 0; i--) {
+            if (!out.empty()) out += ".";
+            const std::string& seg = parts[i];
+            bool safe = !seg.empty();
+            for (char c : seg) {
+                if (!isalnum((unsigned char)c) && c != '_') { safe = false; break; }
+            }
+            if (safe)
+                out += seg;
+            else
+                out += "[\"" + seg + "\"]";
+        }
+        return out.empty() ? "game" : out;
+    }
+
+    inline void AddField(const char* key, const char* val, ExplorerSyntax::Lang lang = ExplorerSyntax::Lang::Plain)
+    {
+        InspectField f{};
+        strncpy_s(f.key, key, _TRUNCATE);
+        strncpy_s(f.value, val ? val : "", _TRUNCATE);
+        f.lang = lang;
+        gInspectFields.push_back(f);
+    }
+
+    inline void RefreshInspector()
+    {
+        gInspectFields.clear();
+        gLuaPath[0] = 0;
+        gPreviewText[0] = 0;
+        gPreviewLang = ExplorerSyntax::Lang::Plain;
+        gChildCount = 0;
+
+        if (!selectedAddr) return;
+
+        RBX::RbxInstance inst(selectedAddr);
+        auto kids = inst.GetChildList();
+        gChildCount = (int)kids.size();
+
+        std::string luaPath = BuildLuaPath(selectedAddr);
+        strncpy_s(gLuaPath, luaPath.c_str(), _TRUNCATE);
+        selectedPath = luaPath;
+
+        uintptr_t parent = memory->read<uintptr_t>(selectedAddr + Offsets::Instance::Parent);
+        if (parent) {
+            RBX::RbxInstance p(parent);
+            AddField("Parent", p.GetName().c_str(), ExplorerSyntax::Lang::Path);
+        } else {
+            AddField("Parent", "nil", ExplorerSyntax::Lang::Plain);
+        }
+
+        char buf[128];
+        sprintf_s(buf, "%d", gChildCount);
+        AddField("Children", buf, ExplorerSyntax::Lang::Number);
+
+        const std::string& cls = selectedClass;
+
+        if (ClassEq(cls, "StringValue")) {
+            std::string v = ReadRobloxString(memory->read<uintptr_t>(selectedAddr + Offsets::Misc::Value));
+            AddField("Value", v.c_str(), ExplorerSyntax::Lang::Plain);
+            strncpy_s(gPreviewText, v.c_str(), _TRUNCATE);
+            gPreviewLang = ExplorerSyntax::Lang::Plain;
+        }
+        else if (ClassEq(cls, "IntValue")) {
+            int v = memory->read<int>(selectedAddr + Offsets::Misc::Value);
+            sprintf_s(buf, "%d", v);
+            AddField("Value", buf, ExplorerSyntax::Lang::Number);
+        }
+        else if (ClassEq(cls, "BoolValue")) {
+            bool v = memory->read<bool>(selectedAddr + Offsets::Misc::Value);
+            AddField("Value", v ? "true" : "false", ExplorerSyntax::Lang::Bool);
+        }
+        else if (ClassEq(cls, "NumberValue")) {
+            double v = memory->read<double>(selectedAddr + Offsets::Misc::Value);
+            sprintf_s(buf, "%.6g", v);
+            AddField("Value", buf, ExplorerSyntax::Lang::Number);
+        }
+        else if (ClassEq(cls, "ObjectValue")) {
+            uintptr_t ref = memory->read<uintptr_t>(selectedAddr + Offsets::Misc::Value);
+            if (ref) {
+                RBX::RbxInstance o(ref);
+                sprintf_s(buf, "%s (%s)", o.GetName().c_str(), o.GetClass().c_str());
+                AddField("Value", buf, ExplorerSyntax::Lang::Path);
+            } else {
+                AddField("Value", "nil", ExplorerSyntax::Lang::Plain);
+            }
+        }
+        else if (ClassEq(cls, "Part") || ClassEq(cls, "MeshPart") || ClassEq(cls, "BasePart") ||
+                 ClassEq(cls, "UnionOperation") || ClassEq(cls, "WedgePart")) {
+            RBX::RbxInstance part(selectedAddr);
+            RBX::Vec3 pos = part.GetPos();
+            sprintf_s(buf, "%.2f, %.2f, %.2f", pos.X, pos.Y, pos.Z);
+            AddField("Position", buf, ExplorerSyntax::Lang::Number);
+        }
+        else if (ClassEq(cls, "Player")) {
+            RBX::RbxInstance plr(selectedAddr);
+            AddField("DisplayName", plr.GetDisplayName().c_str(), ExplorerSyntax::Lang::Plain);
+            sprintf_s(buf, "%llu", (unsigned long long)memory->read<uint64_t>(selectedAddr + Offsets::Player::UserId));
+            AddField("UserId", buf, ExplorerSyntax::Lang::Number);
+        }
+        else if (ClassEq(cls, "Script") || ClassEq(cls, "LocalScript") || ClassEq(cls, "ModuleScript")) {
+            AddField("Type", cls.c_str(), ExplorerSyntax::Lang::Lua);
+            sprintf_s(gPreviewText,
+                "-- Script source is bytecode in memory.\n"
+                "-- Use Save Branch to export hierarchy.\n"
+                "local inst = %s\n"
+                "print(inst.ClassName, inst.Name)",
+                luaPath.c_str());
+            gPreviewLang = ClassEq(cls, "ModuleScript") ? ExplorerSyntax::Lang::Luau : ExplorerSyntax::Lang::Lua;
+        }
+
+        // Attributes sample
+        std::string team = inst.GetAttributeString("Team");
+        if (!team.empty())
+            AddField("Attr.Team", team.c_str(), ExplorerSyntax::Lang::Plain);
+    }
+
+    inline bool JumpToService(const char* serviceName)
+    {
+        if (!root.childrenLoaded)
+            LoadChildren(root);
+        for (auto& c : root.children) {
+            if (_stricmp(c.name.c_str(), serviceName) == 0) {
+                Select(c, c.name);
+                RefreshInspector();
+                c.expanded = true;
+                if (!c.childrenLoaded)
+                    LoadChildren(c);
+                return true;
+            }
+        }
+        sprintf_s(statusMsg, "Service not found: %s", serviceName);
+        return false;
+    }
+
+    inline void DrawInspectorPanel(bool busy)
+    {
+        if (!selectedAddr) {
+            ImGui::Dummy(ImVec2(0, 24));
+            ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim), "Select an instance");
+            return;
+        }
+
+        if (gLuaPath[0] == 0)
+            RefreshInspector();
+
+        ImGui::Spacing();
+        InstanceExplorer::DrawSelectedIcon(26.f);
+        ImGui::SameLine(0, 10);
+        ImGui::BeginGroup();
+        ImGui::TextUnformatted(selectedName.c_str());
+        ImGui::TextColored(ClassColorV4(selectedClass), "%s", selectedClass.c_str());
+        ImGui::EndGroup();
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim), "Lua path");
+        ExplorerSyntax::DrawBlock(ExplorerSyntax::Lang::Path, gLuaPath, 36.f);
+
+        ImGui::Spacing();
+        if (ImGui::BeginTable("##insp", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_RowBg)) {
+            ImGui::TableSetupColumn("Key", ImGuiTableColumnFlags_WidthFixed, 88.f);
+            ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+            for (const auto& f : gInspectFields) {
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim), "%s", f.key);
+                ImGui::TableNextColumn();
+                ImDrawList* dl = ImGui::GetWindowDrawList();
+                ImVec2 pos = ImGui::GetCursorScreenPos();
+                float maxX = pos.x + ImGui::GetContentRegionAvail().x;
+                ExplorerSyntax::HighlightLine(dl, pos, maxX, f.lang, f.value);
+                ImGui::Dummy(ImVec2(0, ImGui::GetTextLineHeight()));
+            }
+            ImGui::EndTable();
+        }
+
+        if (gPreviewText[0]) {
+            ImGui::Spacing();
+            const char* langLbl = "Preview";
+            if (gPreviewLang == ExplorerSyntax::Lang::Lua) langLbl = "Lua";
+            else if (gPreviewLang == ExplorerSyntax::Lang::Luau) langLbl = "Luau";
+            else if (gPreviewLang == ExplorerSyntax::Lang::Json) langLbl = "JSON";
+            ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim), "%s", langLbl);
+            ExplorerSyntax::DrawBlock(gPreviewLang, gPreviewText, 100.f);
+        }
+
+        ImGui::Spacing();
+        if (ImGui::Button("Copy Lua Path", ImVec2(-1, 28)))
+            ImGui::SetClipboardText(gLuaPath);
+        if (ImGui::Button("Copy Address", ImVec2(-1, 28))) {
+            char addrBuf[32];
+            sprintf_s(addrBuf, "0x%llX", (unsigned long long)selectedAddr);
+            ImGui::SetClipboardText(addrBuf);
+        }
+        ImGui::BeginDisabled(busy);
+        if (ImGui::Button("Save Branch", ImVec2(-1, 28)))
+            SaveSelected();
+        ImGui::EndDisabled();
+
+        if (lastSavePath[0]) {
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim), "Last save");
+            ImGui::PushTextWrapPos(0);
+            ImGui::TextColored(FrontierUI::V4(variables::Theme::accent), "%s", lastSavePath);
+            ImGui::PopTextWrapPos();
+        }
     }
 }

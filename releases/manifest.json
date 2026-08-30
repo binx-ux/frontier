@@ -1,10 +1,10 @@
 {
-  "version": 36,
-  "display": "FRONTIER v36",
+  "version": 0,
+  "display": "FRONTIER v0",
   "kernel_available": false,
   "access_required": true,
   "discord_invite": "https://discord.gg/zHGKqd92Pz",
-  "usermode_url": "https://github.com/binx-ux/frontier/releases/download/v36/Frontier.exe",
+  "usermode_url": "https://github.com/binx-ux/frontier/releases/download/v0/Frontier.exe",
   "kernel_url": "",
   "driver_url": ""
 }
