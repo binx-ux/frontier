@@ -291,8 +291,6 @@ public:
         ImVec2 ds = ImGui::GetIO().DisplaySize;
         ImDrawList* dl = ImGui::GetBackgroundDrawList();
 
-        dl->AddRectFilled(ImVec2(0, 0), ds, IM_COL32(8, 8, 10, 235));
-
         static float displayProgress = 0.f;
         float target = variables::Loading::failed ? 0.f : variables::Loading::progress;
         float dt = ImGui::GetIO().DeltaTime;
@@ -315,70 +313,37 @@ public:
         ImGui::Begin("##loading", nullptr,
             ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBackground);
 
-        float cx = ds.x * 0.5f;
-        float cy = ds.y * 0.5f;
-        const float panelW = 420.f;
-        const float panelH = 280.f;
-        ImVec2 pMin(cx - panelW * 0.5f, cy - panelH * 0.5f);
-        ImVec2 pMax(cx + panelW * 0.5f, cy + panelH * 0.5f);
-        dl->AddRectFilled(pMin, pMax, IM_COL32(18, 18, 22, 245), 16.f);
-        dl->AddRect(pMin, pMax, IM_COL32(255, 255, 255, 22), 16.f, 0, 1.2f);
+        const float leftX = 42.f;
+        const float topY = 38.f;
 
-        {
-            ImGui::SetWindowFontScale(1.85f);
-            const char* title = Frontier::kName;
-            ImVec2 ts = ImGui::CalcTextSize(title);
-            ImGui::SetCursorPos(ImVec2(cx - ts.x * 0.5f - pMin.x, cy - 108.f - pMin.y));
-            ImGui::TextColored(ImVec4(0.96f, 0.96f, 0.97f, 1.f), "%s", title);
-            ImGui::SetWindowFontScale(1.0f);
-        }
+        ImGui::SetWindowFontScale(1.75f);
+        ImGui::SetCursorPos(ImVec2(leftX, topY));
+        ImGui::TextColored(ImVec4(0.96f, 0.96f, 0.97f, 1.f), "%s", Frontier::kName);
+        ImGui::SetWindowFontScale(1.0f);
 
         char tagLine[64];
-        sprintf_s(tagLine, "%s  ·  %s", Frontier::kTagline, Frontier::kBuildTag);
-        ImVec2 tagSize = ImGui::CalcTextSize(tagLine);
-        ImGui::SetCursorPos(ImVec2(cx - tagSize.x * 0.5f - pMin.x, cy - 78.f - pMin.y));
+        sprintf_s(tagLine, "%s - %s", Frontier::kTagline, Frontier::kBuildTag);
+        ImGui::SetCursorPos(ImVec2(leftX, topY + 34.f));
         ImGui::TextColored(ImVec4(0.52f, 0.52f, 0.56f, 1.f), "%s", tagLine);
 
         if (!variables::Loading::failed) {
-            char pct[8];
+            char pct[12];
             sprintf_s(pct, "%d%%", (int)(displayProgress * 100.f + 0.5f));
-            ImGui::SetWindowFontScale(2.2f);
-            ImVec2 ps = ImGui::CalcTextSize(pct);
-            ImGui::SetCursorPos(ImVec2(cx - ps.x * 0.5f - pMin.x, cy - ps.y * 0.5f - 8.f - pMin.y));
-            ImGui::TextColored(ImVec4(0.96f, 0.96f, 0.97f, 1.f), "%s", pct);
+            ImGui::SetWindowFontScale(1.35f);
+            ImGui::SetCursorPos(ImVec2(leftX, topY + 62.f));
+            ImGui::TextColored(ImVec4(0.92f, 0.92f, 0.94f, 1.f), "%s", pct);
             ImGui::SetWindowFontScale(1.0f);
-
-            const float ringR = 58.f;
-            ImVec2 ringC(cx, cy - 8.f);
-            dl->PathClear();
-            dl->PathArcTo(ringC, ringR, -UIFx::PI * 0.5f, -UIFx::PI * 0.5f + displayProgress * UIFx::PI * 2.f, 48);
-            dl->PathStroke(IM_COL32(245, 245, 248, 200), 0, 3.f);
-            dl->AddCircle(ringC, ringR, IM_COL32(255, 255, 255, 18), 64, 2.f);
         }
 
-        {
-            const float barW = panelW - 80.f;
-            const float barH = 5.f;
-            ImVec2 barMin(cx - barW * 0.5f, cy + 72.f);
-            ImVec2 barMax(barMin.x + barW, barMin.y + barH);
-            dl->AddRectFilled(barMin, barMax, IM_COL32(32, 32, 38, 255), 3.f);
-            if (displayProgress > 0.001f && !variables::Loading::failed) {
-                ImVec2 fillMax(barMin.x + barW * displayProgress, barMax.y);
-                dl->AddRectFilled(barMin, fillMax, IM_COL32(245, 245, 248, 230), 3.f);
-            }
-
-            ImVec2 ls = ImGui::CalcTextSize(loadLine);
-            ImGui::SetCursorPos(ImVec2(cx - ls.x * 0.5f - pMin.x, cy + 92.f - pMin.y));
-            if (variables::Loading::failed)
-                ImGui::TextColored(ImVec4(1.f, 0.45f, 0.42f, 0.95f), "%s", loadLine);
-            else
-                ImGui::TextColored(ImVec4(0.62f, 0.62f, 0.68f, 0.95f), "%s", loadLine);
-        }
+        ImGui::SetCursorPos(ImVec2(leftX, topY + 92.f));
+        if (variables::Loading::failed)
+            ImGui::TextColored(ImVec4(1.f, 0.45f, 0.42f, 0.95f), "%s", loadLine);
+        else
+            ImGui::TextColored(ImVec4(0.58f, 0.58f, 0.64f, 0.95f), "%s", loadLine);
 
         if (variables::Loading::failed) {
             const char* hint = "Press Esc to exit";
-            ImVec2 hs = ImGui::CalcTextSize(hint);
-            ImGui::SetCursorPos(ImVec2(cx - hs.x * 0.5f - pMin.x, cy + 118.f - pMin.y));
+            ImGui::SetCursorPos(ImVec2(leftX, topY + 118.f));
             ImGui::TextColored(ImVec4(0.48f, 0.48f, 0.54f, 0.85f), "%s", hint);
         }
 

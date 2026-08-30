@@ -156,22 +156,14 @@ namespace PlayerCache {
 
     inline RBX::RbxInstance ResolveCharacter(RBX::RbxInstance plr)
     {
+        auto fromFolder = FindInCharactersFolder(plr);
+        if (fromFolder.Addr && CharacterLooksAlive(fromFolder))
+            return fromFolder;
+
         auto model = plr.GetModelRef();
-
-        // BloxStrike: live bodies are under Workspace.Characters — prefer that over a stale lobby ModelInstance
-        if (Games::IsBloxStrike()) {
-            auto fromFolder = FindInCharactersFolder(plr);
-            if (fromFolder.Addr)
-                return fromFolder;
-            if (CharacterLooksAlive(model))
-                return model;
-            return model;
-        }
-
         if (CharacterLooksAlive(model))
             return model;
 
-        auto fromFolder = FindInCharactersFolder(plr);
         if (fromFolder.Addr)
             return fromFolder;
         return model;
@@ -531,11 +523,21 @@ namespace PlayerCache {
     }
 
     inline void updateplayers() {
-        if (Globals::players.Addr == 0 || Globals::localPlayer.Addr == 0) {
+        if (Globals::players.Addr == 0) {
             std::lock_guard<std::mutex> lock(playersMutex);
             players.clear();
             return;
         }
+
+        Globals::RefreshLocalPlayer();
+        if (!Globals::localPlayer.Addr) {
+            std::lock_guard<std::mutex> lock(playersMutex);
+            players.clear();
+            return;
+        }
+
+        if (!Globals::camera.Addr && Globals::workspace.Addr)
+            Globals::camera = Globals::ResolveWorkspaceCamera();
 
         auto playerList = Globals::players.GetChildList();
 

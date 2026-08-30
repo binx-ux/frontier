@@ -7,8 +7,10 @@
 #include "../globals/globals.h"
 #include "../../memory/memory.h"
 #include "../../sdk/offsets.h"
+#include "../../sdk/scanner.h"
 #include "../../sdk/sdk.h"
 #include "../../sdk/window_manager.h"
+#include "../debug_log.h"
 
 namespace {
 	void reset_globals()
@@ -24,20 +26,27 @@ namespace {
 
 void Core::tp_handler::thread()
 {
+	int failStreak = 0;
 	while (Globals::running) {
 		if (!memory->IsConnected()) {
+			DebugLog::Write("tp_handler: memory disconnected");
 			Globals::running = false;
 			break;
 		}
 
 		if (!WindowManager::IsRobloxOpen() && !memory->find_process_id("RobloxPlayerBeta.exe")) {
+			DebugLog::Write("tp_handler: Roblox closed");
 			Globals::running = false;
 			break;
 		}
 
 		auto baseAddr = memory->get_module_address();
 		if (!baseAddr) {
-			reset_globals();
+			if (++failStreak >= 8) {
+				DebugLog::Write("tp_handler: module base lost");
+				reset_globals();
+				failStreak = 0;
+			}
 			std::this_thread::sleep_for(std::chrono::milliseconds(100));
 			continue;
 		}
@@ -45,7 +54,19 @@ void Core::tp_handler::thread()
 		auto fakeDataModelAddr = baseAddr + Offsets::FakeDataModel::Pointer;
 		auto fakeDataModel = memory->read<uintptr_t>(fakeDataModelAddr);
 		if (!fakeDataModel) {
-			reset_globals();
+			if (++failStreak >= 8) {
+				const auto anchors = Scanner::ResolveAnchors();
+				if (anchors.success) {
+					Globals::dataModel = RBX::RbxInstance(anchors.dataModel);
+					Globals::renderEngine = RBX::RenderEngine(anchors.visualEngine);
+					Globals::RefreshServices();
+					failStreak = 0;
+					DebugLog::Write("tp_handler: re-resolved anchors after fake DM miss");
+				} else {
+					reset_globals();
+					failStreak = 0;
+				}
+			}
 			std::this_thread::sleep_for(std::chrono::milliseconds(100));
 			continue;
 		}
@@ -54,28 +75,30 @@ void Core::tp_handler::thread()
 		auto dataModelPtr = memory->read<uintptr_t>(dataModelAddr);
 		auto visualEngineAddr = baseAddr + Offsets::VisualEngine::Pointer;
 		auto visualEngine = memory->read<uintptr_t>(visualEngineAddr);
-		if (!dataModelPtr || !visualEngine) {
-			reset_globals();
+
+		if (!dataModelPtr || !visualEngine || !Scanner::ValidateVisualEngine(visualEngine)) {
+			if (++failStreak >= 8) {
+				const auto anchors = Scanner::ResolveAnchors();
+				if (anchors.success) {
+					Globals::dataModel = RBX::RbxInstance(anchors.dataModel);
+					Globals::renderEngine = RBX::RenderEngine(anchors.visualEngine);
+					Globals::RefreshServices();
+					failStreak = 0;
+					DebugLog::Write("tp_handler: re-resolved anchors after VE/DM miss");
+				} else {
+					reset_globals();
+					failStreak = 0;
+					DebugLog::Write("tp_handler: anchor re-resolve failed");
+				}
+			}
 			std::this_thread::sleep_for(std::chrono::milliseconds(100));
 			continue;
 		}
 
+		failStreak = 0;
 		Globals::dataModel = RBX::RbxInstance(dataModelPtr);
 		Globals::renderEngine = RBX::RenderEngine(visualEngine);
-		Globals::workspace = Globals::dataModel.FindChildByClass("Workspace");
-		Globals::players = Globals::dataModel.FindChildByClass("Players");
-		Globals::camera = Globals::workspace.FindChildByClass("Camera");
-
-		if (Globals::workspace.Addr == 0 || Globals::players.Addr == 0 || Globals::camera.Addr == 0) {
-			Globals::localPlayer = RBX::RbxInstance(0);
-			std::this_thread::sleep_for(std::chrono::milliseconds(100));
-			continue;
-		}
-
-		if (Globals::players.Addr != 0) {
-			auto localPlayerAddr = memory->read<uintptr_t>(Globals::players.Addr + Offsets::Player::LocalPlayer);
-			Globals::localPlayer = RBX::RbxInstance(localPlayerAddr);
-		}
+		Globals::RefreshServices();
 
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	}

@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <string>
+#include "sdk.h"
 
 namespace Scanner
 {
@@ -18,4 +19,7 @@ namespace Scanner
 
 	// Tries hardcoded offsets first, then scans the Roblox module for valid anchors.
 	AnchorResult ResolveAnchors();
+
+	bool ValidateVisualEngine(std::uint64_t visualEngine);
+	bool ViewMatrixLooksValid(const RBX::Mat4& matrix);
 }

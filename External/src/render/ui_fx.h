@@ -176,11 +176,22 @@ namespace UIFx {
             dl->PathClear();
             dl->PathArcTo(c, 72.f, a0, a1, 80);
             dl->PathStroke(IM_COL32(ar, ag, ab, (int)(255 * fade)), 0, 3.6f);
-            // Soft glow trail
             dl->PathClear();
             dl->PathArcTo(c, 72.f, a0, a1, 80);
             dl->PathStroke(IM_COL32(ar, ag, ab, (int)(55 * fade)), 0, 7.0f);
         }
+
+        // Center emblem card
+        const float cardW = 118.f;
+        const float cardH = 148.f;
+        ImVec2 cardMin(c.x - cardW * 0.5f, c.y - cardH * 0.5f + 8.f);
+        ImVec2 cardMax(c.x + cardW * 0.5f, c.y + cardH * 0.5f + 8.f);
+        dl->AddRectFilled(cardMin, cardMax, IM_COL32(18, 18, 22, (int)(210 * fade)), 14.f);
+        dl->AddRect(cardMin, cardMax, IM_COL32(255, 255, 255, (int)(28 * fade)), 14.f, 0, 1.2f);
+        ImVec2 ic(c.x, c.y + 8.f);
+        dl->AddCircle(ic, 16.f, IM_COL32(255, 255, 255, (int)(220 * fade)), 32, 1.6f);
+        dl->AddLine(ImVec2(ic.x - 28.f, ic.y + 22.f), ImVec2(ic.x + 28.f, ic.y + 22.f),
+            IM_COL32(255, 255, 255, (int)(220 * fade)), 1.6f);
     }
 
     // Simple line icons for floating header

@@ -348,4 +348,21 @@ namespace Scanner
 		std::cout << "[!] failed to resolve DataModel / VisualEngine\n";
 		return result;
 	}
+
+	bool ValidateVisualEngine(std::uint64_t visualEngine)
+	{
+		return validate_visual_engine(visualEngine);
+	}
+
+	bool ViewMatrixLooksValid(const RBX::Mat4& matrix)
+	{
+		int nonZero = 0;
+		for (float value : matrix.data) {
+			if (!is_finite_float(value))
+				return false;
+			if (std::fabs(value) > 0.00001f)
+				++nonZero;
+		}
+		return nonZero >= 4;
+	}
 }

@@ -25,7 +25,7 @@
 #include "src/core/features/combat_fx.h"
 #include "src/render/render.h"
 #include "src/discord/frontier_presence.h"
-#include "src/core/features/aimbot/visibility.h"
+#include "src/core/debug_log.h"
 
 namespace
 {
@@ -815,28 +815,34 @@ namespace
 				}
 			}
 
-			// Fly keybind
+			// Fly — menu toggle activates immediately; F key toggles on/off while enabled
 			static bool flyHumanoidSet = false;
+			static bool prevFlyEnabled = false;
 			{
 				static uintptr_t lastFlyChar = 0;
 				if (character.Addr != lastFlyChar) {
 					flyHumanoidSet = false;
 					lastFlyChar = character.Addr;
 				}
+
+				if (variables::Local::flyEnabled && !prevFlyEnabled)
+					variables::Local::flyActive = true;
+				if (!variables::Local::flyEnabled)
+					variables::Local::flyActive = false;
+				prevFlyEnabled = variables::Local::flyEnabled;
+
 				int fk = variables::Local::flyKey;
 				if (fk <= 0) fk = 'F';
 				bool flyHeld = GameKeyDown(fk);
-				if (flyHeld && !flyKeyLatched) {
-					if (!variables::Local::flyEnabled)
-						variables::Local::flyEnabled = true;
+				if (flyHeld && !flyKeyLatched && variables::Local::flyEnabled) {
 					variables::Local::flyActive = !variables::Local::flyActive;
 					flyKeyLatched = true;
 				}
 				else if (!flyHeld) flyKeyLatched = false;
-
-				if (!variables::Local::flyEnabled)
-					variables::Local::flyActive = false;
 			}
+
+			if (!Globals::camera.Addr && Globals::workspace.Addr)
+				Globals::camera = Globals::ResolveWorkspaceCamera();
 
 			if (variables::Local::flyActive && Globals::camera.Addr != 0) {
 				if (humanoid.Addr) {
@@ -1307,11 +1313,12 @@ namespace
 			return false;
 
 		Globals::localPlayer = RBX::RbxInstance(localPlayerAddr);
-		const uintptr_t character = memory->read<uintptr_t>(localPlayerAddr + Offsets::Player::ModelInstance);
-		if (!character)
+
+		auto character = PlayerCache::ResolveCharacter(Globals::localPlayer);
+		if (!character.Addr || !PlayerCache::CharacterLooksAlive(character))
 			return false;
 
-		return true;
+		return PlayerCache::FindRootPart(character).Addr != 0;
 	}
 
 	bool FailAttach(const char* msg)
@@ -1352,9 +1359,11 @@ namespace
 
 		Globals::dataModel = RBX::RbxInstance(anchors.dataModel);
 		Globals::renderEngine = RBX::RenderEngine(anchors.visualEngine);
-		Globals::workspace = Globals::dataModel.FindChildByClass("Workspace");
-		Globals::players = Globals::dataModel.FindChildByClass("Players");
-		Globals::camera = Globals::workspace.FindChildByClass("Camera");
+		Globals::RefreshServices();
+		DebugLog::Write("Attach: anchors ok method=%s dm=%llX ve=%llX",
+			anchors.method.c_str(),
+			(unsigned long long)anchors.dataModel,
+			(unsigned long long)anchors.visualEngine);
 
 		if (Globals::players.Addr == 0)
 			return FailAttach("Players service missing. Join a game first.");
@@ -1371,7 +1380,7 @@ namespace
 				Globals::workspace = Globals::dataModel.FindChildByClass("Workspace");
 				Globals::players = Globals::dataModel.FindChildByClass("Players");
 				if (Globals::workspace.Addr)
-					Globals::camera = Globals::workspace.FindChildByClass("Camera");
+					Globals::camera = Globals::ResolveWorkspaceCamera();
 				if (!Globals::dataModel.Addr || !Globals::players.Addr) {
 					const auto again = Scanner::ResolveAnchors();
 					if (again.success) {
@@ -1380,7 +1389,7 @@ namespace
 						Globals::workspace = Globals::dataModel.FindChildByClass("Workspace");
 						Globals::players = Globals::dataModel.FindChildByClass("Players");
 						if (Globals::workspace.Addr)
-							Globals::camera = Globals::workspace.FindChildByClass("Camera");
+							Globals::camera = Globals::ResolveWorkspaceCamera();
 					}
 				}
 			}
@@ -1406,10 +1415,11 @@ namespace
 			std::this_thread::sleep_for(std::chrono::milliseconds(40));
 		}
 
-		Globals::workspace = Globals::dataModel.FindChildByClass("Workspace");
-		Globals::players = Globals::dataModel.FindChildByClass("Players");
-		if (Globals::workspace.Addr)
-			Globals::camera = Globals::workspace.FindChildByClass("Camera");
+		Globals::RefreshServices();
+		DebugLog::Write("Attach complete: %s players=%llX camera=%llX",
+			Games::Name(),
+			(unsigned long long)Globals::players.Addr,
+			(unsigned long long)Globals::camera.Addr);
 
 		SetLoad(1.0f, readyMsg);
 		std::this_thread::sleep_for(std::chrono::milliseconds(280));
@@ -1569,23 +1579,45 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		overlay.render(drawList);
 
 		if (Globals::renderEngine.Addr != 0 && IsGameSessionReady()) {
+			Globals::RefreshServices();
+
 			PlayerCache::EnsureCacheWorker();
 			PlayerCache::refreshLivePositions();
 
 			auto viewMatrix = Globals::renderEngine.GetViewMat();
-			auto players = PlayerCache::snapshotPlayers();
-			if (IsInActiveGame()) {
-				Aimbot::RunAimbot(viewMatrix, players);
-				Aimbot::RunTriggerbot(viewMatrix, players);
-				Aimbot::RunMeleeAura(players);
-			} else {
-				Aimbot::lockedPlayerAddr = 0;
+			if (!Scanner::ViewMatrixLooksValid(viewMatrix)) {
+				const auto anchors = Scanner::ResolveAnchors();
+				if (anchors.success) {
+					Globals::dataModel = RBX::RbxInstance(anchors.dataModel);
+					Globals::renderEngine = RBX::RenderEngine(anchors.visualEngine);
+					Globals::RefreshServices();
+					viewMatrix = Globals::renderEngine.GetViewMat();
+					DebugLog::Write("Render: view matrix re-resolved");
+				}
 			}
+
+			auto players = PlayerCache::snapshotPlayers();
+			static int lastLoggedCount = -1;
+			if ((int)players.size() != lastLoggedCount) {
+				lastLoggedCount = (int)players.size();
+				DebugLog::Write("Cache: %d players  camera=%llX  lp=%llX",
+					lastLoggedCount,
+					(unsigned long long)Globals::camera.Addr,
+					(unsigned long long)Globals::localPlayer.Addr);
+			}
+
+			Aimbot::RunAimbot(viewMatrix, players);
+			Aimbot::RunTriggerbot(viewMatrix, players);
+			Aimbot::RunMeleeAura(players);
+
 			if (variables::ESP::enabled)
 				Visuals::RenderESP(drawList, viewMatrix, players);
+
 			if (IsInActiveGame()) {
 				CombatFx::Tick(players, viewMatrix);
 				CombatFx::Draw(drawList, ImGui::GetIO().DeltaTime);
+			} else {
+				Aimbot::lockedPlayerAddr = 0;
 			}
 
 			// Overlay extras
