@@ -4,7 +4,7 @@
 namespace LoaderConfig {
 
     inline constexpr int kLocalVersion = 0;
-    inline constexpr const wchar_t* kAppName = L"FRONTIER Loader";
+    inline constexpr const wchar_t* kAppName = L"FRONTIER";
     inline constexpr const wchar_t* kUsermodeExe = L"Frontier.exe";
     inline constexpr const wchar_t* kKernelExe = L"Frontier.exe";
     inline constexpr const char* kManifestUrl =
@@ -21,16 +21,17 @@ namespace LoaderConfig {
         "http://127.0.0.1:38473/callback";
     inline constexpr int kOAuthPort = 38473;
 
-    inline constexpr int kWindowW = 480;
-    inline constexpr int kWindowH = 620;
+    inline constexpr int kWindowW = 520;
+    inline constexpr int kWindowH = 680;
     inline constexpr COLORREF kDiscord = RGB(88, 101, 242);
 
-    // Theme — matches in-app FRONTIER red/dark
-    inline constexpr COLORREF kBg = RGB(12, 12, 12);
-    inline constexpr COLORREF kCard = RGB(21, 21, 21);
-    inline constexpr COLORREF kBrand = RGB(235, 56, 71);
+    // Monochrome dark — matches in-app Karpiware-style UI
+    inline constexpr COLORREF kBg = RGB(14, 14, 16);
+    inline constexpr COLORREF kCard = RGB(22, 22, 26);
+    inline constexpr COLORREF kBrand = RGB(245, 245, 248);
     inline constexpr COLORREF kText = RGB(240, 240, 245);
-    inline constexpr COLORREF kTextDim = RGB(132, 132, 144);
+    inline constexpr COLORREF kTextDim = RGB(120, 120, 132);
     inline constexpr COLORREF kBorder = RGB(48, 48, 56);
+    inline constexpr COLORREF kAccent = RGB(88, 101, 242);
 
 }

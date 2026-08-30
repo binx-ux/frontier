@@ -1,6 +1,6 @@
 #include "resource.h"
 
-IDI_ICON1 ICON "assets\\matchware.ico"
+IDI_ICON1 ICON "assets\\frontier.ico"
 
 IDR_FONT_ROBOTO_REG  RCDATA "assets\\Roboto-Regular.ttf"
 IDR_FONT_ROBOTO_BOLD RCDATA "assets\\Roboto-Bold.ttf"

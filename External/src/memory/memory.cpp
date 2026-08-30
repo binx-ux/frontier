@@ -60,41 +60,67 @@ std::unique_ptr<memory_t> memory = std::make_unique<memory_t>();
 
 bool memory_t::read_raw(std::uint64_t address, void* buffer, std::size_t size)
 {
-	if (!buffer || !size || process_id == 0)
+	if (!buffer || !size)
 		return false;
 
 #ifdef FRONTIER_KERNEL
+	if (process_id == 0)
+		return false;
 	return FrontierDriver::ReadMemory(process_id, address, buffer, static_cast<ULONG>(size));
 #else
 	if (!process_handle)
 		return false;
-	Luck_ReadVirtualMemory(
+
+	ULONG bytesRead = 0;
+	const intptr_t status = Luck_ReadVirtualMemory(
 		process_handle,
 		reinterpret_cast<void*>(address),
 		buffer,
 		static_cast<ULONG>(size),
-		nullptr);
-	return true;
+		&bytesRead);
+
+	if (status >= 0 && bytesRead == size)
+		return true;
+
+	SIZE_T rpmRead = 0;
+	if (ReadProcessMemory(process_handle, reinterpret_cast<LPCVOID>(address), buffer, size, &rpmRead)
+		&& rpmRead == size)
+		return true;
+
+	return false;
 #endif
 }
 
 bool memory_t::write_raw(std::uint64_t address, const void* buffer, std::size_t size)
 {
-	if (!buffer || !size || process_id == 0)
+	if (!buffer || !size)
 		return false;
 
 #ifdef FRONTIER_KERNEL
+	if (process_id == 0)
+		return false;
 	return FrontierDriver::WriteMemory(process_id, address, buffer, static_cast<ULONG>(size));
 #else
 	if (!process_handle)
 		return false;
-	Luck_WriteVirtualMemory(
+
+	ULONG bytesWritten = 0;
+	const intptr_t status = Luck_WriteVirtualMemory(
 		process_handle,
 		reinterpret_cast<void*>(address),
 		const_cast<void*>(buffer),
 		static_cast<ULONG>(size),
-		nullptr);
-	return true;
+		&bytesWritten);
+
+	if (status >= 0 && bytesWritten == size)
+		return true;
+
+	SIZE_T rpmWritten = 0;
+	if (WriteProcessMemory(process_handle, reinterpret_cast<LPVOID>(address), buffer, size, &rpmWritten)
+		&& rpmWritten == size)
+		return true;
+
+	return false;
 #endif
 }
 
@@ -182,13 +208,20 @@ bool memory_t::attach_to_process(const std::string& process_name)
 	process_handle = reinterpret_cast<HANDLE>(static_cast<uintptr_t>(1));
 	return true;
 #else
-	HANDLE process = OpenProcess(PROCESS_ALL_ACCESS, false, find_process_id(process_name));
-
-	if (process == INVALID_HANDLE_VALUE)
-	{
+	const std::uint32_t pid = find_process_id(process_name);
+	if (!pid)
 		return false;
+
+	HANDLE process = OpenProcess(PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION |
+		PROCESS_QUERY_INFORMATION, FALSE, pid);
+	if (!process || process == INVALID_HANDLE_VALUE)
+	{
+		process = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
+		if (!process || process == INVALID_HANDLE_VALUE)
+			return false;
 	}
 
+	process_id = pid;
 	process_handle = process;
 
 	return true;

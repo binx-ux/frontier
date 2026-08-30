@@ -85,15 +85,23 @@ namespace FrontierDriver {
         if (Connect())
             return true;
 
-        const std::wstring sysPath =
-            ExeDir() + L"\\driver\\" + FRONTIER_DRIVER_FILE_NAME;
-        if (GetFileAttributesW(sysPath.c_str()) == INVALID_FILE_ATTRIBUTES)
-            return false;
+        const std::wstring exeDir = ExeDir();
+        const std::wstring candidates[] = {
+            exeDir + L"\\driver\\" + FRONTIER_DRIVER_FILE_NAME,
+            exeDir + L"\\kernel\\driver\\" + FRONTIER_DRIVER_FILE_NAME,
+            exeDir + L"\\..\\kernel\\driver\\" + FRONTIER_DRIVER_FILE_NAME,
+        };
 
-        if (!LoadDriverService(sysPath))
-            return false;
+        for (const auto& sysPath : candidates) {
+            if (GetFileAttributesW(sysPath.c_str()) == INVALID_FILE_ATTRIBUTES)
+                continue;
+            if (!LoadDriverService(sysPath))
+                continue;
+            if (Connect())
+                return true;
+        }
 
-        return Connect();
+        return false;
     }
 
     bool ReadMemory(unsigned long processId, unsigned long long address, void* buffer, unsigned long size)

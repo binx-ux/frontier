@@ -38,11 +38,13 @@
     <OutDir>$(ProjectDir)x64\$(Configuration)\</OutDir>
     <IntDir>$(ProjectDir)x64\$(Configuration)\obj\</IntDir>
     <TargetName>FrontierLoader</TargetName>
+    <ApplicationIcon>..\assets\frontier.ico</ApplicationIcon>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <OutDir>$(ProjectDir)x64\$(Configuration)\</OutDir>
     <IntDir>$(ProjectDir)x64\$(Configuration)\obj\</IntDir>
     <TargetName>FrontierLoader</TargetName>
+    <ApplicationIcon>..\assets\frontier.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>

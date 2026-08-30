@@ -32,10 +32,12 @@ namespace
 	constexpr const char* app = "RobloxPlayerBeta.exe";
 	constexpr const wchar_t* apptitle = L"Roblox";
 
-	// Feature keybinds only while Roblox is the foreground window.
+	// Feature keybinds while Roblox is focused or while the menu is open.
 	inline bool GameKeyDown(int vk)
 	{
-		return WindowManager::IsRobloxFocused() && (GetAsyncKeyState(vk) & 0x8000) != 0;
+		if ((GetAsyncKeyState(vk) & 0x8000) == 0)
+			return false;
+		return WindowManager::IsRobloxFocused() || variables::menuOpen;
 	}
 
 	void SetLoad(float p, const char* status)
@@ -343,7 +345,14 @@ namespace
 
 			GunMods::Apply();
 
-			auto character = Globals::localPlayer.GetModelRef();
+			if (Globals::players.Addr) {
+				const uintptr_t lpAddr = memory->read<uintptr_t>(
+					Globals::players.Addr + Offsets::Player::LocalPlayer);
+				if (lpAddr)
+					Globals::localPlayer = RBX::RbxInstance(lpAddr);
+			}
+
+			auto character = PlayerCache::ResolveCharacter(Globals::localPlayer);
 			if (character.Addr == 0) {
 				std::this_thread::sleep_for(std::chrono::milliseconds(20));
 				continue;
@@ -1267,6 +1276,19 @@ namespace
 		}
 	}
 
+	bool IsGameSessionReady()
+	{
+		if (!Globals::dataModel.Addr || !Globals::players.Addr)
+			return false;
+
+		const int64_t placeId = memory->read<int64_t>(Globals::dataModel.Addr + Offsets::DataModel::PlaceId);
+		if (placeId <= 0)
+			return false;
+
+		const uint8_t loaded = memory->read<uint8_t>(Globals::dataModel.Addr + Offsets::DataModel::GameLoaded);
+		return loaded != 0;
+	}
+
 	bool IsInActiveGame()
 	{
 		if (!Globals::dataModel.Addr || !Globals::players.Addr)
@@ -1339,7 +1361,7 @@ namespace
 
 		SetLoad(0.55f, "Waiting for game");
 		tries = 0;
-		while (!IsInActiveGame()) {
+		while (!IsGameSessionReady()) {
 			if (!memory->find_process_id(app))
 				return FailAttach("Roblox closed while waiting for a game.");
 
@@ -1546,49 +1568,44 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		ImDrawList* drawList = ImGui::GetBackgroundDrawList();
 		overlay.render(drawList);
 
-		if (Globals::renderEngine.Addr != 0) {
-			static bool warnedLeave = false;
-			if (!IsInActiveGame()) {
-				if (!warnedLeave) {
-					GunMods::DisableAll();
-					Aimbot::lockedPlayerAddr = 0;
-					variables::Aimbot::enabled = false;
-					variables::ESP::enabled = false;
-					warnedLeave = true;
-				}
-			} else {
-				warnedLeave = false;
-				PlayerCache::EnsureCacheWorker();
-				PlayerCache::refreshLivePositions();
+		if (Globals::renderEngine.Addr != 0 && IsGameSessionReady()) {
+			PlayerCache::EnsureCacheWorker();
+			PlayerCache::refreshLivePositions();
 
-				auto viewMatrix = Globals::renderEngine.GetViewMat();
-				auto players = PlayerCache::snapshotPlayers();
+			auto viewMatrix = Globals::renderEngine.GetViewMat();
+			auto players = PlayerCache::snapshotPlayers();
+			if (IsInActiveGame()) {
 				Aimbot::RunAimbot(viewMatrix, players);
 				Aimbot::RunTriggerbot(viewMatrix, players);
 				Aimbot::RunMeleeAura(players);
+			} else {
+				Aimbot::lockedPlayerAddr = 0;
+			}
+			if (variables::ESP::enabled)
 				Visuals::RenderESP(drawList, viewMatrix, players);
+			if (IsInActiveGame()) {
 				CombatFx::Tick(players, viewMatrix);
 				CombatFx::Draw(drawList, ImGui::GetIO().DeltaTime);
+			}
 
-				// Overlay extras
-				if (variables::Misc::enemyCounter) {
-					int enemies = 0;
-					for (auto& p : players) {
-						if (p.health > 0) enemies++;
-					}
-					char buf[48];
-					sprintf_s(buf, "Enemies %d", enemies);
-					drawList->AddText(ImVec2(18, 52), IM_COL32(240, 240, 245, 230), buf);
+			// Overlay extras
+			if (variables::Misc::enemyCounter) {
+				int enemies = 0;
+				for (auto& p : players) {
+					if (p.health > 0) enemies++;
 				}
-				if (variables::Misc::targetHud && Aimbot::lockedPlayerAddr) {
-					for (auto& p : players) {
-						if (p.playerAddr != Aimbot::lockedPlayerAddr) continue;
-						char buf[96];
-						sprintf_s(buf, "Target  %s  %.0f HP", p.name.c_str(), p.health);
-						drawList->AddRectFilled(ImVec2(14, 72), ImVec2(14 + 220, 98), IM_COL32(10, 10, 12, 180), 6.f);
-						drawList->AddText(ImVec2(22, 78), IM_COL32(240, 240, 245, 255), buf);
-						break;
-					}
+				char buf[48];
+				sprintf_s(buf, "Enemies %d", enemies);
+				drawList->AddText(ImVec2(18, 52), IM_COL32(240, 240, 245, 230), buf);
+			}
+			if (variables::Misc::targetHud && Aimbot::lockedPlayerAddr) {
+				for (auto& p : players) {
+					if (p.playerAddr != Aimbot::lockedPlayerAddr) continue;
+					char buf[96];
+					sprintf_s(buf, "Target  %s  %.0f HP", p.name.c_str(), p.health);
+					drawList->AddRectFilled(ImVec2(14, 72), ImVec2(14 + 220, 98), IM_COL32(10, 10, 12, 180), 6.f);
+					drawList->AddText(ImVec2(22, 78), IM_COL32(240, 240, 245, 255), buf);
+					break;
 				}
 			}
 		}

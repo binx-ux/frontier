@@ -285,19 +285,19 @@ namespace LoaderUpdate {
         return m.version > 0;
     }
 
-    inline bool ProbeKernelAvailable()
-    {
-        std::wstring dir = GetLoaderDir();
-        std::wstring kexe = PathJoin(PathJoin(dir, L"kernel"), LoaderConfig::kKernelExe);
-        return FileExists(kexe);
-    }
-
     inline bool ProbeKernelDriverAvailable()
     {
         std::wstring dir = GetLoaderDir();
         std::wstring sys = PathJoin(PathJoin(dir, L"kernel"), L"driver");
         sys = PathJoin(sys, L"FrontierDrv.sys");
         return FileExists(sys);
+    }
+
+    inline bool ProbeKernelAvailable()
+    {
+        std::wstring dir = GetLoaderDir();
+        std::wstring kexe = PathJoin(PathJoin(dir, L"kernel"), LoaderConfig::kKernelExe);
+        return FileExists(kexe) && ProbeKernelDriverAvailable();
     }
 
     inline bool RunPayload(int mode, std::wstring& errMsg)
@@ -317,6 +317,11 @@ namespace LoaderUpdate {
             return false;
         }
 
+        if (mode == 1 && !ProbeKernelDriverAvailable()) {
+            errMsg = L"Kernel driver missing.\nPlace kernel\\driver\\FrontierDrv.sys next to the loader.";
+            return false;
+        }
+
         std::wstring cmd = L"\"" + exe + L"\"";
         std::vector<wchar_t> buf(cmd.begin(), cmd.end());
         buf.push_back(L'\0');
@@ -333,7 +338,7 @@ namespace LoaderUpdate {
 
         SHELLEXECUTEINFOW sei{};
         sei.cbSize = sizeof(sei);
-        sei.lpVerb = L"open";
+        sei.lpVerb = (mode == 1) ? L"runas" : L"open";
         sei.lpFile = exe.c_str();
         sei.lpDirectory = work.c_str();
         sei.nShow = SW_SHOWNORMAL;

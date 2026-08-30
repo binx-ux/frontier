@@ -47,7 +47,7 @@
     <ResourceCompile Include="app.rc" />
   </ItemGroup>
   <ItemGroup>
-    <Image Include="assets\matchware.ico" />
+    <Image Include="assets\frontier.ico" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ext\imgui\imconfig.h" />
@@ -84,7 +84,7 @@
     <ProjectGuid>{d473cfd5-fc81-44f2-afa1-30f6a58e4234}</ProjectGuid>
     <RootNamespace>External</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
-    <ApplicationIcon>assets\matchware.ico</ApplicationIcon>
+    <ApplicationIcon>assets\frontier.ico</ApplicationIcon>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">

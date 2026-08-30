@@ -54,16 +54,16 @@ namespace LoaderUI {
 
     inline RECT AuthCardRect()
     {
-        return RECT{ 20, 52, LoaderConfig::kWindowW - 20, 228 };
+        return RECT{ 24, 64, LoaderConfig::kWindowW - 24, 260 };
     }
 
     inline RECT ModeCardRect(int index)
     {
         RECT rc{};
-        rc.left = 20;
-        rc.right = LoaderConfig::kWindowW - 20;
-        rc.top = 248 + index * 88;
-        rc.bottom = rc.top + 76;
+        rc.left = 24;
+        rc.right = LoaderConfig::kWindowW - 24;
+        rc.top = 280 + index * 92;
+        rc.bottom = rc.top + 80;
         return rc;
     }
 
@@ -111,7 +111,7 @@ namespace LoaderUI {
 
     inline void DrawStep(HDC hdc, int x, int y, int num, const char* label, bool done, bool active)
     {
-        COLORREF dot = done ? RGB(80, 200, 120) : (active ? LoaderConfig::kBrand : RGB(56, 56, 64));
+        COLORREF dot = done ? RGB(90, 210, 130) : (active ? LoaderConfig::kAccent : RGB(56, 56, 64));
         HBRUSH b = CreateSolidBrush(dot);
         HGDIOBJ ob = SelectObject(hdc, b);
         Ellipse(hdc, x, y, x + 18, y + 18);
@@ -139,82 +139,77 @@ namespace LoaderUI {
 
         SetBkMode(hdc, TRANSPARENT);
 
-        RECT header{ 0, 0, client.right, 44 };
-        HBRUSH headerBrush = CreateSolidBrush(RGB(16, 16, 18));
+        // Header
+        RECT header{ 0, 0, client.right, 52 };
+        HBRUSH headerBrush = CreateSolidBrush(RGB(18, 18, 20));
         FillRect(hdc, &header, headerBrush);
         DeleteObject(headerBrush);
 
-        RECT stripe{ 0, 0, 3, client.bottom };
-        HBRUSH brand = CreateSolidBrush(LoaderConfig::kBrand);
-        FillRect(hdc, &stripe, brand);
-        DeleteObject(brand);
-
         SelectObject(hdc, gFontTitle);
         SetTextColor(hdc, LoaderConfig::kText);
-        TextOutA(hdc, 18, 10, "FRONTIER", 8);
+        TextOutA(hdc, 24, 12, "FRONTIER", 8);
         SelectObject(hdc, gFont);
         SetTextColor(hdc, LoaderConfig::kTextDim);
-        TextOutA(hdc, 118, 14, "Loader", 6);
+        TextOutA(hdc, 24, 34, "Loader  ·  Universal", 20);
 
         char ver[32];
         sprintf_s(ver, "v%d", s->localVersion);
         SIZE vs{};
         GetTextExtentPoint32A(hdc, ver, (int)strlen(ver), &vs);
         SetTextColor(hdc, LoaderConfig::kTextDim);
-        TextOutA(hdc, client.right - vs.cx - 18, 14, ver, (int)strlen(ver));
+        TextOutA(hdc, client.right - vs.cx - 24, 18, ver, (int)strlen(ver));
 
         if (s->accessRequired) {
             RECT access = AuthCardRect();
-            FillRoundRect(hdc, access, LoaderConfig::kCard, LoaderConfig::kBorder);
+            FillRoundRect(hdc, access, LoaderConfig::kCard, LoaderConfig::kBorder, 12);
 
             SelectObject(hdc, gFontBold);
             SetTextColor(hdc, LoaderConfig::kText);
-            TextOutA(hdc, access.left + 16, access.top + 14, "Discord access", 14);
+            TextOutA(hdc, access.left + 18, access.top + 16, "Discord Access", 14);
 
             SelectObject(hdc, gFont);
             SetTextColor(hdc, LoaderConfig::kTextDim);
-            TextOutA(hdc, access.left + 16, access.top + 36,
-                "Join the server, verify with /verify, then sign in.", 48);
+            TextOutA(hdc, access.left + 18, access.top + 38,
+                "Join, verify with /verify, then sign in.", 40);
 
-            bool step1 = true;
             bool step2 = s->signedIn || s->verified;
             bool step3 = s->verified;
-            DrawStep(hdc, access.left + 16, access.top + 62, 1, "Join Discord", true, !s->signedIn);
-            DrawStep(hdc, access.left + 16, access.top + 86, 2, "Run /verify YourRobloxName", step2, s->signedIn && !s->verified);
-            DrawStep(hdc, access.left + 16, access.top + 110, 3, "Sign in below", step3, s->signedIn);
+            DrawStep(hdc, access.left + 18, access.top + 68, 1, "Join Discord server", true, !s->signedIn);
+            DrawStep(hdc, access.left + 18, access.top + 94, 2, "/verify YourRobloxName", step2, s->signedIn && !s->verified);
+            DrawStep(hdc, access.left + 18, access.top + 120, 3, "Sign in with Discord", step3, s->signedIn);
 
             if (s->signingIn) {
-                SetTextColor(hdc, LoaderConfig::kDiscord);
-                TextOutA(hdc, access.left + 16, access.top + 140,
-                    "Waiting for browser — complete Discord sign-in…", 47);
+                SetTextColor(hdc, LoaderConfig::kAccent);
+                TextOutA(hdc, access.left + 18, access.top + 154,
+                    "Waiting for browser…", 22);
             } else if (s->verified && s->discordName[0]) {
-                SetTextColor(hdc, RGB(80, 200, 120));
+                SetTextColor(hdc, RGB(90, 210, 130));
                 char ok[160];
                 if (s->session.robloxUserId > 0)
-                    sprintf_s(ok, "Ready — %s  ·  Roblox %d", s->discordName, s->session.robloxUserId);
+                    sprintf_s(ok, "Verified — %s  ·  Roblox %d", s->discordName, s->session.robloxUserId);
                 else
-                    sprintf_s(ok, "Ready — %s", s->discordName);
-                TextOutA(hdc, access.left + 16, access.top + 140, ok, (int)strlen(ok));
+                    sprintf_s(ok, "Verified — %s", s->discordName);
+                TextOutA(hdc, access.left + 18, access.top + 154, ok, (int)strlen(ok));
             } else if (s->signedIn && s->discordName[0]) {
                 SetTextColor(hdc, RGB(255, 190, 90));
                 char pending[160];
                 sprintf_s(pending, "Signed in as %s — finish /verify to launch", s->discordName);
-                TextOutA(hdc, access.left + 16, access.top + 140, pending, (int)strlen(pending));
+                TextOutA(hdc, access.left + 18, access.top + 154, pending, (int)strlen(pending));
             } else {
                 SetTextColor(hdc, LoaderConfig::kTextDim);
-                TextOutA(hdc, access.left + 16, access.top + 140, "Not signed in", 13);
+                TextOutA(hdc, access.left + 18, access.top + 154, "Not signed in yet", 17);
             }
         }
 
         SetTextColor(hdc, LoaderConfig::kText);
         SelectObject(hdc, gFontBold);
-        TextOutA(hdc, 20, s->accessRequired ? 238 : 52, "Launch mode", 11);
+        TextOutA(hdc, 24, s->accessRequired ? 270 : 64, "Launch mode", 11);
         SelectObject(hdc, gFont);
 
         const char* labels[] = { "Usermode", "Kernel" };
         const char* descs[] = {
-            "Standard external overlay — no driver required.",
-            "Kernel-assisted build — requires driver bundle."
+            "Standard overlay — no driver required.",
+            "Kernel build — needs FrontierDrv.sys + Admin."
         };
 
         for (int i = 0; i < 2; i++) {
@@ -223,24 +218,27 @@ namespace LoaderUI {
             bool disabled = (i == 1 && !s->kernelAvailable);
 
             FillRoundRect(hdc, card,
-                disabled ? RGB(14, 14, 16) : LoaderConfig::kCard,
-                sel ? LoaderConfig::kBrand : LoaderConfig::kBorder);
+                disabled ? RGB(16, 16, 18) : LoaderConfig::kCard,
+                sel ? LoaderConfig::kBrand : LoaderConfig::kBorder, 12);
 
             SetTextColor(hdc, disabled ? LoaderConfig::kTextDim : LoaderConfig::kText);
             SelectObject(hdc, gFontBold);
-            TextOutA(hdc, card.left + 14, card.top + 12, labels[i], (int)strlen(labels[i]));
+            TextOutA(hdc, card.left + 16, card.top + 14, labels[i], (int)strlen(labels[i]));
             SelectObject(hdc, gFont);
             SetTextColor(hdc, LoaderConfig::kTextDim);
-            TextOutA(hdc, card.left + 14, card.top + 34, descs[i], (int)strlen(descs[i]));
+            TextOutA(hdc, card.left + 16, card.top + 36, descs[i], (int)strlen(descs[i]));
 
             if (i == 1 && !s->kernelAvailable) {
+                SetTextColor(hdc, RGB(255, 120, 100));
+                TextOutA(hdc, card.left + 16, card.top + 56, "Driver bundle not installed", 27);
+            } else if (sel) {
                 SetTextColor(hdc, LoaderConfig::kBrand);
-                TextOutA(hdc, card.left + 14, card.top + 54, "Not installed", 13);
+                TextOutA(hdc, card.right - 90, card.top + 30, "Selected", 8);
             }
         }
 
         if (s->updating || s->progress > 0.f) {
-            RECT barBg{ 20, 430, client.right - 20, 438 };
+            RECT barBg{ 24, 560, client.right - 24, 570 };
             FillRoundRect(hdc, barBg, RGB(28, 28, 34), RGB(28, 28, 34), 4);
             RECT barFg = barBg;
             barFg.right = barBg.left + (LONG)((barBg.right - barBg.left) * s->progress);
@@ -252,13 +250,13 @@ namespace LoaderUI {
         }
 
         SetTextColor(hdc, LoaderConfig::kTextDim);
-        TextOutA(hdc, 20, 452, s->status, (int)strlen(s->status));
+        TextOutA(hdc, 24, 582, s->status, (int)strlen(s->status));
 
         if (s->updateAvailable && s->remoteDisplay[0]) {
             char upd[128];
             sprintf_s(upd, "Update available: %s", s->remoteDisplay);
             SetTextColor(hdc, LoaderConfig::kBrand);
-            TextOutA(hdc, 20, 472, upd, (int)strlen(upd));
+            TextOutA(hdc, 24, 604, upd, (int)strlen(upd));
         }
     }
 
@@ -400,22 +398,22 @@ namespace LoaderUI {
         case WM_CREATE: {
             CreateWindowW(L"BUTTON", L"Sign in with Discord",
                 WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-                36, 178, 210, 34, hwnd, (HMENU)ID_BTN_SIGNIN, nullptr, nullptr);
+                42, 196, 220, 36, hwnd, (HMENU)ID_BTN_SIGNIN, nullptr, nullptr);
             CreateWindowW(L"BUTTON", L"Sign out",
                 WS_CHILD | BS_PUSHBUTTON,
-                256, 178, 90, 34, hwnd, (HMENU)ID_BTN_SIGNOUT, nullptr, nullptr);
+                272, 196, 90, 36, hwnd, (HMENU)ID_BTN_SIGNOUT, nullptr, nullptr);
             CreateWindowW(L"BUTTON", L"Join Discord",
                 WS_CHILD | BS_PUSHBUTTON,
-                36, 178, 120, 34, hwnd, (HMENU)ID_BTN_JOIN, nullptr, nullptr);
+                42, 196, 130, 36, hwnd, (HMENU)ID_BTN_JOIN, nullptr, nullptr);
             CreateWindowW(L"BUTTON", L"Update Files",
                 WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-                20, 500, 130, 34, hwnd, (HMENU)ID_BTN_UPDATE, nullptr, nullptr);
+                24, 628, 140, 36, hwnd, (HMENU)ID_BTN_UPDATE, nullptr, nullptr);
             CreateWindowW(L"BUTTON", L"Launch",
                 WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
-                162, 500, 130, 34, hwnd, (HMENU)ID_BTN_LAUNCH, nullptr, nullptr);
+                176, 628, 140, 36, hwnd, (HMENU)ID_BTN_LAUNCH, nullptr, nullptr);
             CreateWindowW(L"BUTTON", L"Releases",
                 WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-                304, 500, 130, 34, hwnd, (HMENU)ID_BTN_RELEASES, nullptr, nullptr);
+                328, 628, 140, 36, hwnd, (HMENU)ID_BTN_RELEASES, nullptr, nullptr);
             SyncVerified(s);
             RefreshAuthButtons(s);
             CheckAsync(s);
@@ -527,6 +525,7 @@ namespace LoaderUI {
         wc.cbSize = sizeof(wc);
         wc.lpfnWndProc = WndProc;
         wc.hInstance = GetModuleHandleW(nullptr);
+        wc.hIcon = LoadIconW(wc.hInstance, MAKEINTRESOURCEW(IDI_ICON1));
         wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
         wc.hbrBackground = gBgBrush;
         wc.lpszClassName = L"FrontierLoaderWnd";
@@ -543,6 +542,8 @@ namespace LoaderUI {
             nullptr, nullptr, wc.hInstance, nullptr);
 
         if (!gWnd) return 1;
+        SendMessageW(gWnd, WM_SETICON, ICON_BIG, (LPARAM)wc.hIcon);
+        SendMessageW(gWnd, WM_SETICON, ICON_SMALL, (LPARAM)wc.hIcon);
 
         EnumChildWindows(gWnd, [](HWND child, LPARAM font) {
             SendMessageW(child, WM_SETFONT, font, TRUE);
