@@ -5,6 +5,11 @@
 #include <string>
 #include <memory>
 
+#ifdef FRONTIER_KERNEL
+#include "driver_link.h"
+#endif
+
+#ifndef FRONTIER_KERNEL
 extern "C" intptr_t
 Luck_ReadVirtualMemory
 (
@@ -24,6 +29,7 @@ Luck_WriteVirtualMemory
 	ULONG NumberOfBytesToWrite,
 	PULONG NumberOfBytesWritten
 );
+#endif
 
 class memory_t final
 {
@@ -50,6 +56,9 @@ public:
 	std::uint64_t get_module_size();
 	HANDLE get_process_handle();
 private:
+	bool read_raw(std::uint64_t address, void* buffer, std::size_t size);
+	bool write_raw(std::uint64_t address, const void* buffer, std::size_t size);
+
 	std::uint32_t process_id = 0;
 	std::uint64_t base_address = 0;
 	std::uint64_t module_size = 0;
@@ -60,16 +69,14 @@ template <typename T>
 T memory_t::read(uint64_t address)
 {
 	T buffer{};
-
-	Luck_ReadVirtualMemory(process_handle, reinterpret_cast<void*>(address), &buffer, sizeof(T), nullptr);
-
+	read_raw(address, &buffer, sizeof(T));
 	return buffer;
 }
 
 template <typename T>
 void memory_t::write(uint64_t address, T value)
 {
-	Luck_WriteVirtualMemory(process_handle, reinterpret_cast<void*>(address), &value, sizeof(T), nullptr);
+	write_raw(address, &value, sizeof(T));
 }
 
 extern std::unique_ptr<memory_t> memory;

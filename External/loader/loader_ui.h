@@ -187,7 +187,7 @@ namespace LoaderUI {
 
             if (i == 1 && !s->kernelAvailable) {
                 SetTextColor(hdc, LoaderConfig::kBrand);
-                TextOutA(hdc, card.left + 14, card.top + 54, "Not installed — update or add kernel\\Frontier.exe", 47);
+                TextOutA(hdc, card.left + 14, card.top + 54, "Not installed — update or add kernel\\Frontier.exe + driver", 56);
             }
         }
 

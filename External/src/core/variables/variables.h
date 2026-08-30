@@ -424,6 +424,7 @@ namespace variables {
         inline bool autoRejoin = false;
         inline bool fpsBoost = false;
         inline bool hideGui = false;
+        inline bool discordRpc = true;
     }
 
     // Extra combat / utility packs

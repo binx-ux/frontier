@@ -689,6 +689,7 @@ namespace FrontierMenu {
             FrontierUI::Checkbox("Streamproof", &variables::Misc::streamProof);
             FrontierUI::Checkbox("Streamer Mode", &variables::Misc::streamerMode);
             FrontierUI::Checkbox("Streamer Mode+", &variables::Misc::streamerModePlus);
+            FrontierUI::Checkbox("Discord Rich Presence", &variables::Misc::discordRpc);
             FrontierUI::Checkbox("Anti-AFK", &variables::Misc::antiAfk);
             FrontierUI::Checkbox("AFK Assist", &variables::Misc::afkAssist);
             FrontierUI::Checkbox("Panic Key", &variables::Misc::panicKey, nullptr, &variables::Misc::panicVk);

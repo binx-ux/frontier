@@ -5,6 +5,23 @@
 #include <string>
 #include <cstdint>
 #include <memory>
+#include <cstring>
+
+#ifndef FRONTIER_KERNEL
+extern "C" intptr_t Luck_ReadVirtualMemory(
+	HANDLE ProcessHandle,
+	PVOID BaseAddress,
+	PVOID Buffer,
+	ULONG NumberOfBytesToRead,
+	PULONG NumberOfBytesRead);
+
+extern "C" intptr_t Luck_WriteVirtualMemory(
+	HANDLE Processhandle,
+	PVOID BaseAddress,
+	PVOID Buffer,
+	ULONG NumberOfBytesToWrite,
+	PULONG NumberOfBytesWritten);
+#endif
 
 namespace
 {
@@ -41,6 +58,46 @@ namespace
 
 std::unique_ptr<memory_t> memory = std::make_unique<memory_t>();
 
+bool memory_t::read_raw(std::uint64_t address, void* buffer, std::size_t size)
+{
+	if (!buffer || !size || process_id == 0)
+		return false;
+
+#ifdef FRONTIER_KERNEL
+	return FrontierDriver::ReadMemory(process_id, address, buffer, static_cast<ULONG>(size));
+#else
+	if (!process_handle)
+		return false;
+	Luck_ReadVirtualMemory(
+		process_handle,
+		reinterpret_cast<void*>(address),
+		buffer,
+		static_cast<ULONG>(size),
+		nullptr);
+	return true;
+#endif
+}
+
+bool memory_t::write_raw(std::uint64_t address, const void* buffer, std::size_t size)
+{
+	if (!buffer || !size || process_id == 0)
+		return false;
+
+#ifdef FRONTIER_KERNEL
+	return FrontierDriver::WriteMemory(process_id, address, buffer, static_cast<ULONG>(size));
+#else
+	if (!process_handle)
+		return false;
+	Luck_WriteVirtualMemory(
+		process_handle,
+		reinterpret_cast<void*>(address),
+		const_cast<void*>(buffer),
+		static_cast<ULONG>(size),
+		nullptr);
+	return true;
+#endif
+}
+
 std::uint32_t memory_t::find_process_id(const std::string& process_name)
 {
 	std::uint64_t local_process_id = 0;
@@ -76,13 +133,13 @@ std::uint64_t memory_t::find_module_address(const std::string& module_name)
 {
 	std::uint64_t module_address = 0;
 
-	if (!process_handle)
+	if (!process_id && !process_handle)
 	{
 		return module_address;
 	}
 
-	DWORD process_id = GetProcessId(process_handle);
-	HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, process_id);
+	const DWORD pid = process_id ? process_id : GetProcessId(process_handle);
+	HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid);
 
 	if (snapshot == INVALID_HANDLE_VALUE)
 	{
@@ -113,6 +170,18 @@ std::uint64_t memory_t::find_module_address(const std::string& module_name)
 
 bool memory_t::attach_to_process(const std::string& process_name)
 {
+#ifdef FRONTIER_KERNEL
+	if (!FrontierDriver::IsConnected() && !FrontierDriver::LoadFromDefaultPath())
+		return false;
+
+	const std::uint32_t pid = find_process_id(process_name);
+	if (!pid)
+		return false;
+
+	process_id = pid;
+	process_handle = reinterpret_cast<HANDLE>(static_cast<uintptr_t>(1));
+	return true;
+#else
 	HANDLE process = OpenProcess(PROCESS_ALL_ACCESS, false, find_process_id(process_name));
 
 	if (process == INVALID_HANDLE_VALUE)
@@ -123,11 +192,16 @@ bool memory_t::attach_to_process(const std::string& process_name)
 	process_handle = process;
 
 	return true;
+#endif
 }
 
 bool memory_t::IsConnected()
 {
+#ifdef FRONTIER_KERNEL
+	return process_id != 0 && FrontierDriver::IsConnected();
+#else
 	return process_handle != nullptr && process_handle != INVALID_HANDLE_VALUE;
+#endif
 }
 
 std::string memory_t::read_string(std::uint64_t address)
@@ -150,12 +224,7 @@ std::string memory_t::read_string(std::uint64_t address)
 	}
 
 	std::vector<char> buffer(static_cast<std::size_t>(string_length) + 1u, 0);
-	Luck_ReadVirtualMemory(
-		process_handle,
-		reinterpret_cast<void*>(string_address),
-		buffer.data(),
-		static_cast<ULONG>(string_length),
-		nullptr);
+	read_raw(string_address, buffer.data(), static_cast<std::size_t>(string_length));
 
 	return std::string(buffer.data(), static_cast<std::size_t>(string_length));
 }

@@ -1,7 +1,8 @@
-# Copy build outputs into a release-style folder next to the loader project
-$root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+# Stage loader release folder (usermode + optional kernel)
+$root = Split-Path -Parent $PSScriptRoot
 $loaderOut = Join-Path $root "External\loader\x64\Release\FrontierLoader.exe"
 $cheatOut = Join-Path $root "External\x64\Release\Frontier.exe"
+$kernelOut = Join-Path $root "kernel\Frontier.exe"
 $stage = Join-Path $root "dist"
 
 if (-not (Test-Path $cheatOut)) {
@@ -11,12 +12,22 @@ if (-not (Test-Path $cheatOut)) {
 
 New-Item -ItemType Directory -Force -Path (Join-Path $stage "usermode") | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $stage "kernel") | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $stage "kernel\driver") | Out-Null
 
 Copy-Item $cheatOut (Join-Path $stage "usermode\Frontier.exe") -Force
+if (Test-Path $kernelOut) {
+    Copy-Item $kernelOut (Join-Path $stage "kernel\Frontier.exe") -Force
+    Write-Host "  kernel\Frontier.exe"
+}
+$driverSys = Join-Path $root "kernel\driver\FrontierDrv.sys"
+if (Test-Path $driverSys) {
+    Copy-Item $driverSys (Join-Path $stage "kernel\driver\FrontierDrv.sys") -Force
+    Write-Host "  kernel\driver\FrontierDrv.sys"
+}
 if (Test-Path $loaderOut) {
     Copy-Item $loaderOut (Join-Path $stage "FrontierLoader.exe") -Force
 } else {
-    Write-Warning "Loader not built yet — only usermode staged"
+    Write-Warning "Loader not built yet — only cheat staged"
 }
 
 Write-Host "Staged to $stage"

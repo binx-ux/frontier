@@ -79,11 +79,13 @@ A normal Windows app that attaches to Roblox with `OpenProcess` / `ReadProcessMe
 
 ### Kernel (optional, not public)
 
-Uses a kernel driver (`.sys`) to read memory from Ring 0. Requires a driver bundle, mapper, and usually test signing or a private distribution channel. **Not included** in the public repo — the loader's `kernel\` folder is a placeholder.
+Uses a kernel driver (`FrontierDrv.sys`) to read memory from Ring 0. Requires a driver bundle, admin, and usually test signing or a private distribution channel. **Driver source** is in `kernel/driver/`; **do not commit** built `.sys` files.
 
 - **Pros:** Lower-level memory access; can be harder for usermode anti-cheat to see  
-- **Cons:** Driver maintenance, signing, BSOD risk, not open-sourced here  
-- **Path:** `kernel\Frontier.exe` — only selectable in the loader when that file exists
+- **Cons:** Driver maintenance, signing, BSOD risk, admin required  
+- **Build client:** Visual Studio → **ReleaseKernel | x64** or `scripts\build-kernel.ps1`  
+- **Build driver:** WDK — see [kernel/driver/README.md](kernel/driver/README.md)  
+- **Path:** `kernel\Frontier.exe` + `kernel\driver\FrontierDrv.sys`
 
 | | Usermode | Kernel |
 |---|----------|--------|

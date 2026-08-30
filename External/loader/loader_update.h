@@ -33,6 +33,7 @@ namespace LoaderUpdate {
         bool kernelAvailable = false;
         bool accessRequired = true;
         char discordInvite[128] = "https://discord.gg/zHGKqd92Pz";
+        char driverUrl[512] = "";
     };
 
     inline std::wstring GetLoaderDir()
@@ -280,6 +281,7 @@ namespace LoaderUpdate {
         m.accessRequired = JsonBool(body, "access_required", true);
         if (!JsonStr(body, "discord_invite", m.discordInvite, sizeof(m.discordInvite)))
             strncpy_s(m.discordInvite, LoaderConfig::kDiscordInvite, _TRUNCATE);
+        JsonStr(body, "driver_url", m.driverUrl, sizeof(m.driverUrl));
         return m.version > 0;
     }
 
@@ -288,6 +290,14 @@ namespace LoaderUpdate {
         std::wstring dir = GetLoaderDir();
         std::wstring kexe = PathJoin(PathJoin(dir, L"kernel"), LoaderConfig::kKernelExe);
         return FileExists(kexe);
+    }
+
+    inline bool ProbeKernelDriverAvailable()
+    {
+        std::wstring dir = GetLoaderDir();
+        std::wstring sys = PathJoin(PathJoin(dir, L"kernel"), L"driver");
+        sys = PathJoin(sys, L"FrontierDrv.sys");
+        return FileExists(sys);
     }
 
     inline bool RunPayload(int mode, std::wstring& errMsg)
@@ -359,6 +369,18 @@ namespace LoaderUpdate {
             if (HttpDownloadFile(m.kernelUrl, ktmp, err)) {
                 DeleteFileW(PathJoin(km, LoaderConfig::kKernelExe).c_str());
                 MoveFileW(ktmp.c_str(), PathJoin(km, LoaderConfig::kKernelExe).c_str());
+            }
+        }
+
+        if (m.driverUrl[0]) {
+            if (progress) progress(0.70f, "Downloading driver…");
+            std::wstring driverDir = PathJoin(PathJoin(dir, L"kernel"), L"driver");
+            EnsureDir(driverDir);
+            std::wstring sysPath = PathJoin(driverDir, L"FrontierDrv.sys");
+            std::wstring tmpSys = PathJoin(driverDir, L"FrontierDrv.new.sys");
+            if (HttpDownloadFile(m.driverUrl, tmpSys, err)) {
+                DeleteFileW(sysPath.c_str());
+                MoveFileW(tmpSys.c_str(), sysPath.c_str());
             }
         }
 

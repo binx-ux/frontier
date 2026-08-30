@@ -1,0 +1,4 @@
+kernel/Frontier.exe
+kernel/driver/*.sys
+kernel/driver/*.pdb
+*.sys

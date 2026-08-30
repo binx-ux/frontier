@@ -24,6 +24,7 @@
 #include "src/core/telemetry/telemetry.h"
 #include "src/core/features/combat_fx.h"
 #include "src/render/render.h"
+#include "src/discord/frontier_presence.h"
 
 namespace
 {
@@ -93,6 +94,8 @@ namespace
 	{
 		variables::Loading::progress = p;
 		strncpy_s(variables::Loading::status, status, _TRUNCATE);
+		if (variables::Misc::discordRpc)
+			FrontierPresence::SetLoading(status);
 	}
 
 	bool isgamerunning(const wchar_t*)
@@ -1329,8 +1332,15 @@ namespace
 		}
 
 		SetLoad(0.25f, "Attaching process");
+#ifdef FRONTIER_KERNEL
+		if (!memory->attach_to_process(app))
+			return FailAttach("Kernel attach failed. Run as Admin and ensure kernel\\driver\\FrontierDrv.sys exists.");
+#else
 		if (!memory->attach_to_process(app) || !memory->find_module_address(app))
 			return FailAttach("Failed to attach to Roblox.");
+#endif
+		if (!memory->find_module_address(app))
+			return FailAttach("Failed to resolve Roblox module.");
 
 		SetLoad(0.40f, "Resolving offsets");
 		const auto anchors = Scanner::ResolveAnchors();
@@ -1429,6 +1439,9 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	if (!overlay.Initialize())
 		return 1;
 
+	FrontierPresence::gEnabled.store(variables::Misc::discordRpc);
+	FrontierPresence::StartWorker();
+
 	std::atomic<bool> attachSucceeded{ false };
 	std::thread attachThread;
 	bool attachStarted = false;
@@ -1490,6 +1503,11 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 						EnforceBloxStrikeProfile();
 						GunMods::DisableAll();
 					}
+					if (variables::Misc::discordRpc && Globals::dataModel.Addr) {
+						const int64_t placeId = memory->read<int64_t>(
+							Globals::dataModel.Addr + Offsets::DataModel::PlaceId);
+						FrontierPresence::SetInGame(Games::Name(), placeId, 0, 0);
+					}
 				}
 			});
 		}
@@ -1520,6 +1538,30 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 			overlay.RenderLoading();
 			overlay.EndFrame();
 			continue;
+		}
+
+		static auto lastPresence = std::chrono::steady_clock::now();
+		if (variables::Misc::discordRpc && attachSucceeded.load()) {
+			FrontierPresence::gEnabled.store(true);
+			auto nowRpc = std::chrono::steady_clock::now();
+			if (std::chrono::duration<float>(nowRpc - lastPresence).count() >= 8.f) {
+				lastPresence = nowRpc;
+				if (Globals::dataModel.Addr && Arsenal::IsSupportedPlace()) {
+					const int64_t placeId = memory->read<int64_t>(
+						Globals::dataModel.Addr + Offsets::DataModel::PlaceId);
+					int players = 0;
+					if (Globals::renderEngine.Addr != 0) {
+						for (auto& p : PlayerCache::snapshotPlayers()) {
+							if (p.isValid && p.health > 0.f) ++players;
+						}
+					}
+					FrontierPresence::SetInGame(Games::Name(), placeId, players, 0);
+				} else {
+					FrontierPresence::SetWaiting();
+				}
+			}
+		} else {
+			FrontierPresence::gEnabled.store(false);
 		}
 
 		static bool telemetryReady = false;
@@ -1585,6 +1627,7 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	}
 
 	Globals::running = false;
+	FrontierPresence::Stop();
 	if (attachThread.joinable()) attachThread.join();
 	if (tpThread.joinable()) tpThread.join();
 	if (locThread.joinable()) locThread.join();
