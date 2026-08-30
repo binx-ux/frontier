@@ -98,9 +98,9 @@ namespace UIFx {
         if (progress > 1.f) progress = 1.f;
 
         float fade = Clampf(timeAcc / 0.45f, 0.f, 1.f);
-        int ar = (int)(variables::Theme::accent[0] * 255);
-        int ag = (int)(variables::Theme::accent[1] * 255);
-        int ab = (int)(variables::Theme::accent[2] * 255);
+        int ar = (int)(variables::Theme::brand[0] * 255);
+        int ag = (int)(variables::Theme::brand[1] * 255);
+        int ab = (int)(variables::Theme::brand[2] * 255);
         float breath = 0.5f + 0.5f * sinf(timeAcc * 1.15f);
 
         // Layered atmosphere

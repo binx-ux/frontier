@@ -22,7 +22,8 @@
 #include "../../src/render/ui_fx.h"
 #include "../../src/render/spotify_player.h"
 #include "../../src/render/embedded_fonts.h"
-#include "../../src/render/matcha_menu.h"
+#include "../../src/render/brand.h"
+#include "../../src/render/frontier_menu.h"
 #include "../../src/core/telemetry/telemetry.h"
 #include "../../src/core/updater/updater.h"
 
@@ -49,10 +50,6 @@ LRESULT CALLBACK OverlayWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
 
 namespace UI {
     inline ImVec4 V4(const float c[4]) { return ImVec4(c[0], c[1], c[2], c[3]); }
-    inline ImU32 U32(const float c[4], float a = -1.f) {
-        float aa = (a < 0) ? c[3] : a;
-        return IM_COL32((int)(c[0] * 255), (int)(c[1] * 255), (int)(c[2] * 255), (int)(aa * 255));
-    }
 
     inline void ApplyStyle() {
         ImGuiStyle& s = ImGui::GetStyle();
@@ -75,7 +72,6 @@ namespace UI {
         s.PopupBorderSize = 1.0f;
         s.AntiAliasedLines = true;
         s.AntiAliasedFill = true;
-        s.CurveTessellationTol = 0.75f;
         s.WindowTitleAlign = ImVec2(0.5f, 0.5f);
 
         auto& c = s.Colors;
@@ -89,7 +85,7 @@ namespace UI {
         c[ImGuiCol_FrameBgActive] = ImVec4(0.15f, 0.15f, 0.18f, 1);
         c[ImGuiCol_TitleBg] = ImVec4(0.06f, 0.06f, 0.07f, 1);
         c[ImGuiCol_TitleBgActive] = ImVec4(0.08f, 0.08f, 0.09f, 1);
-        c[ImGuiCol_CheckMark] = V4(variables::Theme::accent);
+        c[ImGuiCol_CheckMark] = V4(variables::Theme::brand);
         c[ImGuiCol_SliderGrab] = V4(variables::Theme::accent);
         c[ImGuiCol_SliderGrabActive] = ImVec4(1.f, 1.f, 1.f, 1);
         c[ImGuiCol_Button] = ImVec4(0.13f, 0.13f, 0.15f, 1);
@@ -107,227 +103,6 @@ namespace UI {
         c[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.55f, 0.55f, 0.60f, 1);
         c[ImGuiCol_ResizeGrip] = ImVec4(0.3f, 0.3f, 0.34f, 0.4f);
         c[ImGuiCol_ResizeGripHovered] = ImVec4(0.7f, 0.7f, 0.75f, 0.6f);
-    }
-
-    inline const char* KeyName(int vk) {
-        switch (vk) {
-        case 0: return "None";
-        case VK_LBUTTON: return "lmb";
-        case VK_RBUTTON: return "rmb";
-        case VK_MBUTTON: return "mmb";
-        case VK_XBUTTON1: return "x1";
-        case VK_XBUTTON2: return "x2";
-        case VK_SHIFT: return "shift";
-        case VK_CONTROL: return "ctrl";
-        case VK_MENU: return "alt";
-        case VK_SPACE: return "space";
-        case VK_TAB: return "tab";
-        case VK_INSERT: return "ins";
-        case VK_DELETE: return "del";
-        case VK_RCONTROL: return "rctrl";
-        case VK_LCONTROL: return "lctrl";
-        default:
-            if (vk >= 'A' && vk <= 'Z') { static char l[2]; l[0] = (char)(vk + 32); l[1] = 0; return l; }
-            if (vk >= '0' && vk <= '9') { static char d[2]; d[0] = (char)vk; d[1] = 0; return d; }
-            static char buf[16]; sprintf_s(buf, "%d", vk); return buf;
-        }
-    }
-
-    inline void Keybind(const char* id, int* key) {
-        ImGui::PushID(id);
-        char label[32];
-        sprintf_s(label, "%s", KeyName(*key));
-        static DWORD rebindIgnoreUntil = 0;
-        if (variables::waitingForKey && variables::keyToRebind == key) {
-            if (ImGui::Button("...", ImVec2(52, 0))) {}
-            if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
-                variables::waitingForKey = false; variables::keyToRebind = nullptr;
-            }
-            else if (GetTickCount() >= rebindIgnoreUntil) {
-                // Prefer keyboard; allow mouse side buttons after ignore window
-                for (int vk = 8; vk < 255; vk++) { // skip mouse 1-7 during rebind spam
-                    if (vk == VK_ESCAPE || vk == VK_LBUTTON || vk == VK_RBUTTON) continue;
-                    if (GetAsyncKeyState(vk) & 0x8000) {
-                        *key = vk; variables::waitingForKey = false; variables::keyToRebind = nullptr; break;
-                    }
-                }
-                // Allow X1/X2 mouse after delay
-                if (variables::waitingForKey) {
-                    if (GetAsyncKeyState(VK_XBUTTON1) & 0x8000) {
-                        *key = VK_XBUTTON1; variables::waitingForKey = false; variables::keyToRebind = nullptr;
-                    }
-                    else if (GetAsyncKeyState(VK_XBUTTON2) & 0x8000) {
-                        *key = VK_XBUTTON2; variables::waitingForKey = false; variables::keyToRebind = nullptr;
-                    }
-                    else if (GetAsyncKeyState(VK_MBUTTON) & 0x8000) {
-                        *key = VK_MBUTTON; variables::waitingForKey = false; variables::keyToRebind = nullptr;
-                    }
-                }
-            }
-        }
-        else {
-            if (ImGui::Button(label, ImVec2(52, 0))) {
-                variables::waitingForKey = true;
-                variables::keyToRebind = key;
-                rebindIgnoreUntil = GetTickCount() + 250; // ignore click that opened rebind
-            }
-        }
-        ImGui::PopID();
-    }
-
-    inline bool ToggleRow(const char* label, bool* v, int* key = nullptr) {
-        bool changed = ImGui::Checkbox(label, v);
-        if (key) {
-            ImGui::SameLine(ImGui::GetContentRegionAvail().x > 60 ? ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - 60 : 0);
-            float avail = ImGui::GetContentRegionAvail().x;
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail - 56);
-            Keybind(label, key);
-        }
-        return changed;
-    }
-
-    inline void BeginCard(const char* title) {
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, V4(variables::Theme::card));
-        ImGui::PushStyleColor(ImGuiCol_Border, V4(variables::Theme::border));
-        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 10.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-        ImGui::BeginChild(title, ImVec2(0, 0), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Borders, ImGuiWindowFlags_None);
-
-        ImDrawList* dl = ImGui::GetWindowDrawList();
-        ImVec2 wp = ImGui::GetCursorScreenPos();
-        float cw = ImGui::GetContentRegionAvail().x;
-        dl->AddRectFilled(wp, ImVec2(wp.x + cw, wp.y + 28), IM_COL32(18, 18, 22, 255), 10.0f, ImDrawFlags_RoundCornersTop);
-        dl->AddRectFilled(ImVec2(wp.x, wp.y + 4), ImVec2(wp.x + 3, wp.y + 24), U32(variables::Theme::accent), 1.0f);
-        dl->AddLine(ImVec2(wp.x, wp.y + 27), ImVec2(wp.x + cw, wp.y + 27), U32(variables::Theme::border, 0.65f));
-        dl->PushClipRect(ImVec2(wp.x + 14, wp.y), ImVec2(wp.x + cw - 8, wp.y + 28), true);
-        ImGui::SetCursorScreenPos(ImVec2(wp.x + 14, wp.y + 6));
-        ImGui::TextColored(V4(variables::Theme::accent), "%s", title);
-        dl->PopClipRect();
-        ImGui::SetCursorScreenPos(ImVec2(wp.x, wp.y + 28));
-        ImGui::Dummy(ImVec2(cw, 0));
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12, 6));
-        ImGui::BeginChild("##body", ImVec2(0, 0), ImGuiChildFlags_AutoResizeY);
-    }
-
-    inline void EndCard() {
-        ImGui::EndChild();
-        ImGui::PopStyleVar();
-        ImGui::Spacing();
-        ImGui::EndChild();
-        ImGui::PopStyleVar(2);
-        ImGui::PopStyleColor(2);
-        ImGui::Spacing();
-    }
-
-    // Right-aligned animated pill toggle
-    inline bool PillToggle(const char* label, bool* v) {
-        ImGui::PushID(label);
-        const float pillW = 42.0f, pillH = 22.0f;
-        const float gap = 10.0f;
-        float rowW = ImGui::GetContentRegionAvail().x;
-        float labelMax = rowW - pillW - gap;
-        if (labelMax < 20.0f) labelMax = 20.0f;
-        float dt = ImGui::GetIO().DeltaTime;
-
-        // Ellipsis so labels never clip mid-glyph
-        char shown[96];
-        strncpy_s(shown, label, _TRUNCATE);
-        if (ImGui::CalcTextSize(shown).x > labelMax) {
-            size_t n = strlen(shown);
-            while (n > 1) {
-                n--;
-                shown[n] = 0;
-                char test[104];
-                sprintf_s(test, "%s...", shown);
-                if (ImGui::CalcTextSize(test).x <= labelMax) {
-                    strcat_s(shown, "...");
-                    break;
-                }
-            }
-        }
-
-        ImVec2 start = ImGui::GetCursorScreenPos();
-        ImDrawList* dl = ImGui::GetWindowDrawList();
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted(shown[0] ? shown : label);
-
-        ImGui::SameLine(0, 0);
-        ImGui::SetCursorScreenPos(ImVec2(start.x + rowW - pillW, start.y + 1.0f));
-        ImVec2 p = ImGui::GetCursorScreenPos();
-
-        // Smooth 0?1 per-toggle via ImGui storage
-        ImGuiID sid = ImGui::GetID("##pillanim");
-        ImGuiStorage* st = ImGui::GetStateStorage();
-        float anim = st->GetFloat(sid, *v ? 1.0f : 0.0f);
-        float target = *v ? 1.0f : 0.0f;
-        float speed = 14.0f;
-        if (anim < target) { anim += dt * speed; if (anim > target) anim = target; }
-        else if (anim > target) { anim -= dt * speed; if (anim < target) anim = target; }
-        st->SetFloat(sid, anim);
-
-        float ar = variables::Theme::accent[0], ag = variables::Theme::accent[1], ab = variables::Theme::accent[2];
-        ImU32 bgOff = IM_COL32(22, 22, 28, 255);
-        ImU32 bgOn = IM_COL32((int)(ar * 255), (int)(ag * 255), (int)(ab * 255), 255);
-        auto lerpU8 = [](int a, int b, float t) -> int {
-            return (int)(a + (b - a) * t);
-        };
-        ImU32 bg = IM_COL32(
-            lerpU8(22, (int)(ar * 255), anim),
-            lerpU8(22, (int)(ag * 255), anim),
-            lerpU8(28, (int)(ab * 255), anim),
-            255);
-        (void)bgOff; (void)bgOn;
-        dl->AddRectFilled(p, ImVec2(p.x + pillW, p.y + pillH), bg, 100.0f);
-        if (anim > 0.05f)
-            dl->AddRect(p, ImVec2(p.x + pillW, p.y + pillH),
-                IM_COL32((int)(ar * 255), (int)(ag * 255), (int)(ab * 255), (int)(140 * anim)), 100.0f, 0, 1.2f);
-        float knob = pillH - 4.0f;
-        float kxOff = p.x + 2.0f;
-        float kxOn = p.x + pillW - knob - 2.0f;
-        float kx = kxOff + (kxOn - kxOff) * anim;
-        dl->AddCircleFilled(ImVec2(kx + knob * 0.5f, p.y + pillH * 0.5f), knob * 0.5f, IM_COL32(245, 245, 248, 255));
-        dl->AddCircleFilled(ImVec2(kx + knob * 0.5f, p.y + pillH * 0.5f), knob * 0.32f, IM_COL32(12, 12, 14, 255));
-        bool pressed = ImGui::InvisibleButton("##pill", ImVec2(pillW, pillH));
-        if (pressed) *v = !*v;
-        ImGui::PopID();
-        return pressed;
-    }
-
-    inline bool PillTab(const char* label, bool active) {
-        ImGui::PushID(label);
-        ImGuiID sid = ImGui::GetID("##tabanim");
-        ImGuiStorage* st = ImGui::GetStateStorage();
-        float anim = st->GetFloat(sid, active ? 1.0f : 0.0f);
-        float target = active ? 1.0f : 0.0f;
-        float dt = ImGui::GetIO().DeltaTime;
-        float speed = 12.0f;
-        if (anim < target) { anim += dt * speed; if (anim > target) anim = target; }
-        else if (anim > target) { anim -= dt * speed; if (anim < target) anim = target; }
-        st->SetFloat(sid, anim);
-
-        ImVec4 bg = ImVec4(0.15f * anim, 0.15f * anim, 0.17f * anim, anim > 0.01f ? 1.f : 0.f);
-        ImVec4 tx = ImVec4(
-            0.55f + 0.39f * anim,
-            0.55f + 0.39f * anim,
-            0.58f + 0.38f * anim, 1.f);
-        ImGui::PushStyleColor(ImGuiCol_Button, bg);
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.14f, 0.14f, 0.16f, 1));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.16f, 0.16f, 0.18f, 1));
-        ImGui::PushStyleColor(ImGuiCol_Text, tx);
-        bool clicked = ImGui::Button(label, ImVec2(0, 32));
-        ImGui::PopStyleColor(4);
-        if (anim > 0.02f) {
-            ImVec2 min = ImGui::GetItemRectMin();
-            ImVec2 max = ImGui::GetItemRectMax();
-            float mid = (min.x + max.x) * 0.5f;
-            float half = (max.x - min.x) * 0.5f * anim;
-            ImGui::GetWindowDrawList()->AddRectFilled(
-                ImVec2(mid - half, max.y - 2.0f),
-                ImVec2(mid + half, max.y),
-                U32(variables::Theme::accent, 0.85f * anim), 2.0f);
-        }
-        ImGui::PopID();
-        return clicked;
     }
 }
 
@@ -406,17 +181,17 @@ public:
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
         ImGuiIO& io = ImGui::GetIO();
-        // Persist layout in <exe_dir>\matcha\imgui.ini
+        // Persist layout in <exe_dir>\frontier\imgui.ini
         {
             static char iniPath[MAX_PATH]{};
             char exeDir[MAX_PATH]{};
             if (GetModuleFileNameA(nullptr, exeDir, MAX_PATH) > 0) {
                 char* slash = strrchr(exeDir, '\\');
                 if (slash) *slash = 0;
-                char matchaDir[MAX_PATH]{};
-                sprintf_s(matchaDir, "%s\\matcha", exeDir);
-                CreateDirectoryA(matchaDir, nullptr);
-                sprintf_s(iniPath, "%s\\imgui.ini", matchaDir);
+                char cfgDir[MAX_PATH]{};
+                sprintf_s(cfgDir, "%s\\%s", exeDir, Frontier::kIniFolder);
+                CreateDirectoryA(cfgDir, nullptr);
+                sprintf_s(iniPath, "%s\\imgui.ini", cfgDir);
                 io.IniFilename = iniPath;
             } else {
                 io.IniFilename = nullptr;
@@ -533,16 +308,14 @@ public:
         float cy = ds.y * 0.46f;
 
         {
-            const char* a = "Match-";
-            const char* b = "Ware";
             ImGui::SetWindowFontScale(1.65f);
-            ImVec2 sa = ImGui::CalcTextSize(a);
-            ImVec2 sb = ImGui::CalcTextSize(b);
-            float tw = sa.x + sb.x;
-            ImGui::SetCursorPos(ImVec2(cx - tw * 0.5f, cy - 118.f));
-            ImGui::TextColored(ImVec4(0.94f, 0.94f, 0.97f, 0.96f), "%s", a);
-            ImGui::SameLine(0, 0);
-            ImGui::TextColored(ImVec4(0.94f, 0.94f, 0.97f, 0.96f), "%s", b);
+            const char* title = Frontier::kName;
+            ImVec2 ts = ImGui::CalcTextSize(title);
+            ImGui::SetCursorPos(ImVec2(cx - ts.x * 0.5f, cy - 118.f));
+            ImGui::TextColored(FrontierUI::V4(variables::Theme::text), "%s", title);
+            ImVec2 tagSize = ImGui::CalcTextSize(Frontier::kTagline);
+            ImGui::SetCursorPos(ImVec2(cx - tagSize.x * 0.5f, cy - 92.f));
+            ImGui::TextColored(FrontierUI::V4(variables::Theme::brand), "%s", Frontier::kTagline);
             ImGui::SetWindowFontScale(1.0f);
         }
 
@@ -673,8 +446,8 @@ public:
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 14.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14, 12));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, MatchaUI::V4(variables::Theme::bg));
-        ImGui::PushStyleColor(ImGuiCol_Border, MatchaUI::V4(variables::Theme::border));
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, FrontierUI::V4(variables::Theme::bg));
+        ImGui::PushStyleColor(ImGuiCol_Border, FrontierUI::V4(variables::Theme::border));
         ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(0.06f, 0.06f, 0.07f, 1.f));
         ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.09f, 0.09f, 0.11f, 1.f));
         ImGui::PushStyleColor(ImGuiCol_TitleBgCollapsed, ImVec4(0.06f, 0.06f, 0.07f, 1.f));
@@ -699,16 +472,16 @@ public:
         wdl->AddLine(ImVec2(wp.x + 12, wp.y + 1), ImVec2(wp.x + ws.x - 12, wp.y + 1),
             IM_COL32(255, 255, 255, 22), 1.f);
         wdl->AddRectFilled(ImVec2(wp.x, wp.y + 8), ImVec2(wp.x + 2.5f, wp.y + 34),
-            MatchaUI::U32(variables::Theme::accent, 0.65f), 2.f);
+            FrontierUI::U32(variables::Theme::brand, 0.65f), 2.f);
 
         // Explorer manages its own panes; everything else gets a scroll frame
         if (tab == 5) {
-            MatchaMenu::RenderTab(tab);
+            FrontierMenu::RenderTab(tab);
         } else {
             ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
             ImGui::BeginChild("##mwscroll", ImVec2(0, 0), ImGuiChildFlags_NavFlattened,
                 ImGuiWindowFlags_AlwaysVerticalScrollbar);
-            MatchaMenu::RenderTab(tab);
+            FrontierMenu::RenderTab(tab);
             ImGui::Dummy(ImVec2(0, 8)); // bottom pad so last controls aren't flush
             ImGui::EndChild();
             ImGui::PopStyleColor();
@@ -810,7 +583,7 @@ public:
             RenderFloatingPanel();
 
             ImVec2 ds2 = ImGui::GetIO().DisplaySize;
-            MatchaUI::DrawToast(ImGui::GetForegroundDrawList(), ds2, ImGui::GetIO().DeltaTime);
+            FrontierUI::DrawToast(ImGui::GetForegroundDrawList(), ds2, ImGui::GetIO().DeltaTime);
 
             if (variables::Misc::showKeybinds) {
                 ImGui::SetNextWindowPos(ImVec2(16, ds2.y * 0.35f), ImGuiCond_FirstUseEver);
@@ -820,16 +593,16 @@ public:
                 ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.055f, 0.055f, 0.065f, 0.94f));
                 ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1, 1, 1, 0.10f));
                 ImGui::Begin("##binds", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_AlwaysAutoResize);
-                ImGui::TextColored(MatchaUI::V4(variables::Theme::text), "Keybinds");
+                ImGui::TextColored(FrontierUI::V4(variables::Theme::text), "Keybinds");
                 ImGui::Dummy(ImVec2(0, 2));
-                ImGui::TextColored(MatchaUI::V4(variables::Theme::textDim), "Menu");
-                ImGui::SameLine(72); ImGui::Text("%s", MatchaUI::KeyName(variables::Misc::menuVk));
-                ImGui::TextColored(MatchaUI::V4(variables::Theme::textDim), "Aim");
-                ImGui::SameLine(72); ImGui::Text("%s", MatchaUI::KeyName(variables::Aimbot::aimbotKey));
-                ImGui::TextColored(MatchaUI::V4(variables::Theme::textDim), "Trig");
-                ImGui::SameLine(72); ImGui::Text("%s", MatchaUI::KeyName(variables::Trigger::key));
-                ImGui::TextColored(MatchaUI::V4(variables::Theme::textDim), "Fly");
-                ImGui::SameLine(72); ImGui::Text("%s", MatchaUI::KeyName(variables::Local::flyKey));
+                ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim), "Menu");
+                ImGui::SameLine(72); ImGui::Text("%s", FrontierUI::KeyName(variables::Misc::menuVk));
+                ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim), "Aim");
+                ImGui::SameLine(72); ImGui::Text("%s", FrontierUI::KeyName(variables::Aimbot::aimbotKey));
+                ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim), "Trig");
+                ImGui::SameLine(72); ImGui::Text("%s", FrontierUI::KeyName(variables::Trigger::key));
+                ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim), "Fly");
+                ImGui::SameLine(72); ImGui::Text("%s", FrontierUI::KeyName(variables::Local::flyKey));
                 ImGui::End();
                 ImGui::PopStyleColor(2);
                 ImGui::PopStyleVar(3);
@@ -876,8 +649,8 @@ public:
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ease);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 14.0f);
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, MatchaUI::V4(variables::Theme::bg));
-        ImGui::PushStyleColor(ImGuiCol_Border, MatchaUI::V4(variables::Theme::border));
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, FrontierUI::V4(variables::Theme::bg));
+        ImGui::PushStyleColor(ImGuiCol_Border, FrontierUI::V4(variables::Theme::border));
         ImGui::Begin("##mw", &variables::menuOpen,
             ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize);
 
@@ -890,9 +663,9 @@ public:
 
         wdl->AddRectFilled(wp, ImVec2(wp.x + ww, wp.y + TOP_H), IM_COL32(12, 12, 15, 255));
         wdl->AddRectFilled(ImVec2(wp.x, wp.y + 10), ImVec2(wp.x + 2.5f, wp.y + TOP_H - 10),
-            MatchaUI::U32(variables::Theme::accent, 0.7f), 2.f);
+            FrontierUI::U32(variables::Theme::brand, 0.75f), 2.f);
         wdl->AddLine(ImVec2(wp.x, wp.y + TOP_H - 1), ImVec2(wp.x + ww, wp.y + TOP_H - 1),
-            MatchaUI::U32(variables::Theme::border, 0.7f));
+            FrontierUI::U32(variables::Theme::border, 0.7f));
         wdl->AddLine(ImVec2(wp.x + 14, wp.y + 1), ImVec2(wp.x + ww - 14, wp.y + 1),
             IM_COL32(255, 255, 255, 22), 1.f);
 
@@ -906,14 +679,14 @@ public:
         }
 
         ImGui::SetCursorPos(ImVec2(16, 10));
-        ImGui::TextColored(ImVec4(0.94f, 0.94f, 0.96f, 1), "Match-");
-        ImGui::SameLine(0, 0);
-        ImGui::TextColored(MatchaUI::V4(variables::Theme::accent), "Ware");
+        ImGui::TextColored(FrontierUI::V4(variables::Theme::text), "%s", Frontier::kName);
         ImGui::SetCursorPos(ImVec2(16, 28));
+        ImGui::TextColored(FrontierUI::V4(variables::Theme::brand), "%s", Frontier::kTagline);
+        ImGui::SetCursorPos(ImVec2(ww - 120, 18));
         static const char* tabNames[] = { "Combat", "Visuals", "World", "Character", "Options", "Explorer", "Servers", "Music", "Status" };
         int ti = variables::selectedTab;
         if (ti < 0 || ti > 8) ti = 0;
-        ImGui::TextColored(MatchaUI::V4(variables::Theme::textDim), "%s", tabNames[ti]);
+        ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim), "%s", tabNames[ti]);
 
         ImGui::SetCursorPos(ImVec2(10, TOP_H + 4));
         float bodyH = wh - TOP_H - FOOT_H - 8;
@@ -932,7 +705,7 @@ public:
             ImGui::PushStyleColor(ImGuiCol_Button, on ? ImVec4(0.16f, 0.16f, 0.19f, 1) : ImVec4(0.08f, 0.08f, 0.09f, 1));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.14f, 0.14f, 0.17f, 1));
             ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.18f, 0.18f, 0.22f, 1));
-            ImGui::PushStyleColor(ImGuiCol_Text, on ? MatchaUI::V4(variables::Theme::text) : MatchaUI::V4(variables::Theme::textDim));
+            ImGui::PushStyleColor(ImGuiCol_Text, on ? FrontierUI::V4(variables::Theme::text) : FrontierUI::V4(variables::Theme::textDim));
             ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 7.0f);
             if (ImGui::Button(tabNames[i], ImVec2(tabW, 26))) {
                 variables::selectedTab = i;
@@ -943,19 +716,19 @@ public:
                 ImVec2 mx = ImGui::GetItemRectMax();
                 ImGui::GetWindowDrawList()->AddLine(
                     ImVec2(mn.x + 8, mx.y - 1), ImVec2(mx.x - 8, mx.y - 1),
-                    MatchaUI::U32(variables::Theme::accent, 0.9f), 2.f);
+                    FrontierUI::U32(variables::Theme::brand, 0.9f), 2.f);
             }
             ImGui::PopStyleVar();
             ImGui::PopStyleColor(4);
         }
         ImGui::Spacing();
         ImGui::BeginChild("##body", ImVec2(0, -2), ImGuiChildFlags_None, ImGuiWindowFlags_AlwaysVerticalScrollbar);
-        MatchaMenu::RenderBody();
+        FrontierMenu::RenderBody();
         ImGui::EndChild();
         ImGui::EndChild();
         ImGui::PopStyleVar();
 
-        MatchaUI::DrawFooter(wdl, wp, ww, wh);
+        FrontierUI::DrawFooter(wdl, wp, ww, wh);
 
         variables::Misc::menuX = wp.x;
         variables::Misc::menuY = wp.y;
@@ -970,7 +743,7 @@ public:
         ImGui::PopStyleColor(2);
         ImGui::PopStyleVar(3);
 
-        MatchaUI::DrawToast(ImGui::GetForegroundDrawList(), ds, ImGui::GetIO().DeltaTime);
+        FrontierUI::DrawToast(ImGui::GetForegroundDrawList(), ds, ImGui::GetIO().DeltaTime);
 
         if (variables::Misc::showKeybinds) {
             ImGui::SetNextWindowPos(ImVec2(16, ds.y * 0.35f), ImGuiCond_FirstUseEver);
@@ -980,16 +753,16 @@ public:
             ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.055f, 0.055f, 0.065f, 0.94f));
             ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1, 1, 1, 0.10f));
             ImGui::Begin("##binds", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_AlwaysAutoResize);
-            ImGui::TextColored(MatchaUI::V4(variables::Theme::text), "Keybinds");
+            ImGui::TextColored(FrontierUI::V4(variables::Theme::text), "Keybinds");
             ImGui::Dummy(ImVec2(0, 2));
-            ImGui::TextColored(MatchaUI::V4(variables::Theme::textDim), "Menu");
-            ImGui::SameLine(72); ImGui::Text("%s", MatchaUI::KeyName(variables::Misc::menuVk));
-            ImGui::TextColored(MatchaUI::V4(variables::Theme::textDim), "Aim");
-            ImGui::SameLine(72); ImGui::Text("%s", MatchaUI::KeyName(variables::Aimbot::aimbotKey));
-            ImGui::TextColored(MatchaUI::V4(variables::Theme::textDim), "Trig");
-            ImGui::SameLine(72); ImGui::Text("%s", MatchaUI::KeyName(variables::Trigger::key));
-            ImGui::TextColored(MatchaUI::V4(variables::Theme::textDim), "Fly");
-            ImGui::SameLine(72); ImGui::Text("%s", MatchaUI::KeyName(variables::Local::flyKey));
+            ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim), "Menu");
+            ImGui::SameLine(72); ImGui::Text("%s", FrontierUI::KeyName(variables::Misc::menuVk));
+            ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim), "Aim");
+            ImGui::SameLine(72); ImGui::Text("%s", FrontierUI::KeyName(variables::Aimbot::aimbotKey));
+            ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim), "Trig");
+            ImGui::SameLine(72); ImGui::Text("%s", FrontierUI::KeyName(variables::Trigger::key));
+            ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim), "Fly");
+            ImGui::SameLine(72); ImGui::Text("%s", FrontierUI::KeyName(variables::Local::flyKey));
             ImGui::End();
             ImGui::PopStyleColor(2);
             ImGui::PopStyleVar(3);
@@ -1030,13 +803,13 @@ public:
         ImVec2 wp = ImGui::GetWindowPos();
         ImVec2 ws = ImGui::GetWindowSize();
         wdl->AddRectFilled(ImVec2(wp.x, wp.y + 10), ImVec2(wp.x + 3, wp.y + ws.y - 10),
-            IM_COL32(240, 240, 245, 200), 2.f);
+            FrontierUI::U32(variables::Theme::brand, 0.85f), 2.f);
         wdl->AddLine(ImVec2(wp.x + 16, wp.y + 1), ImVec2(wp.x + ws.x - 16, wp.y + 1),
             IM_COL32(255, 255, 255, 24), 1.f);
 
-        ImGui::TextColored(ImVec4(0.94f, 0.94f, 0.97f, 1), "FRONTIER");
+        ImGui::TextColored(FrontierUI::V4(variables::Theme::text), "%s", Frontier::kName);
         ImGui::SameLine();
-        ImGui::TextColored(ImVec4(0.55f, 0.55f, 0.60f, 1), "· See ahead. Built open.");
+        ImGui::TextColored(FrontierUI::V4(variables::Theme::brand), "· %s", Frontier::kTagline);
         ImGui::Dummy(ImVec2(0, 6));
         ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + 390);
         ImGui::TextColored(ImVec4(0.62f, 0.62f, 0.68f, 1),
@@ -1240,7 +1013,7 @@ public:
             ImVec2 ts = ImGui::CalcTextSize(buf);
             float x = ImGui::GetIO().DisplaySize.x - ts.x - 14;
             drawList->AddText(ImVec2(x + 1, 11), IM_COL32(0, 0, 0, 200), buf);
-            drawList->AddText(ImVec2(x, 10), UI::U32(variables::Theme::accent), buf);
+            drawList->AddText(ImVec2(x, 10), FrontierUI::U32(variables::Theme::text), buf);
         }
 
         if (variables::Aimbot::enabled && variables::Aimbot::showFOV && !variables::Loading::active) {

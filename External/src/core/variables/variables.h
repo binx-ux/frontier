@@ -30,12 +30,13 @@ namespace variables {
     }
 
     namespace Theme {
-        inline float accent[4] = { 0.94f, 0.94f, 0.97f, 1.0f };
-        inline float bg[4] = { 0.055f, 0.055f, 0.062f, 0.96f };     // deep charcoal
-        inline float card[4] = { 0.090f, 0.090f, 0.100f, 1.0f };     // raised surface
-        inline float border[4] = { 0.18f, 0.18f, 0.22f, 1.0f };
-        inline float text[4] = { 0.94f, 0.94f, 0.96f, 1.0f };
-        inline float textDim[4] = { 0.52f, 0.52f, 0.58f, 1.0f };
+        inline float brand[4] = { 0.718f, 0.627f, 0.965f, 1.0f };   // #b7a0f6
+        inline float accent[4] = { 0.941f, 0.941f, 0.973f, 1.0f };  // toggles / grabs
+        inline float bg[4] = { 0.055f, 0.055f, 0.063f, 0.96f };
+        inline float card[4] = { 0.090f, 0.090f, 0.102f, 1.0f };
+        inline float border[4] = { 1.0f, 1.0f, 1.0f, 0.10f };
+        inline float text[4] = { 0.941f, 0.941f, 0.961f, 1.0f };
+        inline float textDim[4] = { 0.518f, 0.518f, 0.565f, 1.0f };
         inline bool bgEffect = false;
         inline bool snowEffect = false;
         inline bool useFloatingHeader = true;

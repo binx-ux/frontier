@@ -7,9 +7,9 @@
 #include "../../ext/imgui/imgui_internal.h"
 #include "../core/variables/variables.h"
 #include "../core/updater/updater.h"
-#include <Shellapi.h>
+#include "brand.h"
 
-namespace MatchaUI {
+namespace FrontierUI {
 
     inline ImVec4 V4(const float c[4]) { return ImVec4(c[0], c[1], c[2], c[3]); }
     inline ImU32 U32(const float c[4], float a = -1.f) {
@@ -286,7 +286,7 @@ namespace MatchaUI {
             ImVec2 mx = ImGui::GetItemRectMax();
             ImGui::GetWindowDrawList()->AddRectFilled(
                 ImVec2(mn.x, mn.y + 6), ImVec2(mn.x + 2.5f, mx.y - 6),
-                U32(variables::Theme::accent, open ? 0.75f : 0.35f), 2.f);
+                U32(variables::Theme::brand, open ? 0.85f : 0.40f), 2.f);
         }
 
         if (g_dropDepth < 24)
@@ -330,7 +330,7 @@ namespace MatchaUI {
             ImGui::SetNextItemOpen(true, ImGuiCond_Once);
 
         char buf[96];
-        sprintf_s(buf, "%s  settings", label ? label : "Feature");
+        sprintf_s(buf, "%s", label ? label : "More");
         bool open = ImGui::CollapsingHeader(buf, ImGuiTreeNodeFlags_SpanAvailWidth);
 
         if (g_dropDepth < 24)
@@ -391,7 +391,7 @@ namespace MatchaUI {
                 ImVec2 mn = ImGui::GetItemRectMin();
                 ImVec2 mx = ImGui::GetItemRectMax();
                 dl->AddLine(ImVec2(mn.x + 6, mx.y - 1), ImVec2(mx.x - 6, mx.y - 1),
-                    U32(variables::Theme::accent, 0.9f), 2.f);
+                    U32(variables::Theme::brand, 0.9f), 2.f);
             }
             ImGui::PopStyleVar(2);
             ImGui::PopStyleColor(4);
@@ -422,8 +422,8 @@ namespace MatchaUI {
             : IM_COL32(70, 70, 82, (int)(210 * a));
         dl->AddRect(p, ImVec2(p.x + tw, p.y + th), border, 12.0f, 0, variables::Toast::warning ? 1.6f : 1.1f);
         dl->AddRectFilled(ImVec2(p.x, p.y + 10), ImVec2(p.x + 3, p.y + th - 10),
-            variables::Toast::warning ? IM_COL32(240, 90, 70, (int)(255 * a))
-            : IM_COL32(240, 240, 245, (int)(255 * a)), 2.f);
+            variables::Toast::warning ? IM_COL32(220, 90, 70, (int)(255 * a))
+            : U32(variables::Theme::brand, a), 2.f);
         dl->AddText(ImVec2(p.x + 16, p.y + 14), IM_COL32(245, 245, 248, (int)(255 * a)), variables::Toast::title);
         dl->AddText(ImVec2(p.x + 16, p.y + 34), IM_COL32(190, 170, 165, (int)(255 * a)), variables::Toast::body);
         dl->AddText(ImVec2(p.x + 16, p.y + 54), IM_COL32(130, 130, 140, (int)(255 * a)), variables::Toast::footer);
@@ -435,22 +435,14 @@ namespace MatchaUI {
         ImVec2 b(wp.x + ww, wp.y + wh);
         dl->AddRectFilled(a, b, IM_COL32(9, 9, 11, 255));
         dl->AddLine(a, ImVec2(b.x, a.y), U32(variables::Theme::border, 0.5f));
-        dl->AddCircleFilled(ImVec2(a.x + 16, a.y + fh * 0.5f), 3.5f, IM_COL32(70, 220, 120, 255), 12);
-        dl->AddText(ImVec2(a.x + 26, a.y + 7), IM_COL32(185, 185, 195, 255), "Online");
 
-        const char* disc = "discord.gg/3p6N3bJqZM";
-        ImVec2 ts = ImGui::CalcTextSize(disc);
-        ImVec2 discPos(wp.x + (ww - ts.x) * 0.5f, a.y + 7);
-        dl->AddText(discPos, IM_COL32(155, 155, 170, 255), disc);
-        ImGui::SetCursorScreenPos(discPos);
-        if (ImGui::InvisibleButton("##discordlink", ts))
-            ShellExecuteA(nullptr, "open", "https://discord.gg/3p6N3bJqZM", nullptr, nullptr, SW_SHOWNORMAL);
-        if (ImGui::IsItemHovered())
-            dl->AddText(discPos, IM_COL32(230, 230, 240, 255), disc);
+        char left[96];
+        sprintf_s(left, "%s | %s", Frontier::kName, Updater::kLocalDisplay);
+        dl->AddText(ImVec2(a.x + 14, a.y + 7), IM_COL32(185, 185, 195, 255), left);
 
-        char build[48];
-        sprintf_s(build, "v%s", Updater::kLocalDisplay);
-        ImVec2 bs = ImGui::CalcTextSize(build);
-        dl->AddText(ImVec2(b.x - bs.x - 12, a.y + 7), IM_COL32(140, 140, 155, 255), build);
+        char fps[32];
+        sprintf_s(fps, "%d fps", variables::Perf::currentFps > 0 ? variables::Perf::currentFps : 0);
+        ImVec2 fs = ImGui::CalcTextSize(fps);
+        dl->AddText(ImVec2(b.x - fs.x - 14, a.y + 7), IM_COL32(140, 140, 155, 255), fps);
     }
 }

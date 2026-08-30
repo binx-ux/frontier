@@ -365,7 +365,7 @@ namespace
 				continue;
 			}
 
-			// Sync Matcha Hitbox/Desync namespaces
+			// Hitbox / desync flags mirrored into Local::
 			variables::Local::hitboxEnabled = variables::Hitbox::enabled;
 			variables::Local::hitboxSize = variables::Hitbox::size;
 			variables::Local::visualizeHitbox = variables::Hitbox::visualize;
