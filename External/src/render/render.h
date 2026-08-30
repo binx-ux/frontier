@@ -23,7 +23,9 @@
 #include "../../src/render/spotify_player.h"
 #include "../../src/render/embedded_fonts.h"
 #include "../../src/render/brand.h"
+#include "../../src/render/frontier_shell.h"
 #include "../../src/render/frontier_menu.h"
+#include "../../src/core/features/aimbot/aimbot.h"
 #include "../../src/core/telemetry/telemetry.h"
 #include "../../src/core/updater/updater.h"
 
@@ -103,6 +105,12 @@ namespace UI {
         c[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.55f, 0.55f, 0.60f, 1);
         c[ImGuiCol_ResizeGrip] = ImVec4(0.3f, 0.3f, 0.34f, 0.4f);
         c[ImGuiCol_ResizeGripHovered] = ImVec4(0.7f, 0.7f, 0.75f, 0.6f);
+    }
+
+    inline void ApplyIfDirty() {
+        if (!variables::Theme::styleDirty) return;
+        ApplyStyle();
+        variables::Theme::styleDirty = false;
     }
 }
 
@@ -560,6 +568,8 @@ public:
     void RenderMenu() {
         if (variables::Loading::active) return;
 
+        UI::ApplyIfDirty();
+
         RenderUpdateBanner();
         RenderRedirectKick();
         if (variables::Servers::redirecting) return;
@@ -625,10 +635,12 @@ public:
             UIFx::DrawBackgroundFX(bg, ds, dt);
 
         float anim = variables::Misc::menuAnim;
-        // Ease-out cubic for scale feel
         float ease = 1.f - powf(1.f - anim, 3.f);
-        float scale = 0.88f + 0.12f * ease;
-        float baseW = 600.f, baseH = 780.f;
+        float uiScale = variables::Theme::menuScale;
+        if (uiScale < 0.85f) uiScale = 0.85f;
+        if (uiScale > 1.15f) uiScale = 1.15f;
+        float scale = (0.88f + 0.12f * ease) * uiScale;
+        float baseW = 640.f * uiScale, baseH = 760.f * uiScale;
         float winW = baseW * scale;
         float winH = baseH * scale;
         float rise = (1.f - ease) * 28.f;
@@ -658,18 +670,11 @@ public:
         ImVec2 wp = ImGui::GetWindowPos();
         float ww = ImGui::GetWindowSize().x;
         float wh = ImGui::GetWindowSize().y;
-        const float TOP_H = 48.0f;
-        const float FOOT_H = 28.0f;
+        const float TOP_H = FrontierShell::kTopH;
+        const float FOOT_H = FrontierShell::kFootH;
 
-        wdl->AddRectFilled(wp, ImVec2(wp.x + ww, wp.y + TOP_H), IM_COL32(12, 12, 15, 255));
-        wdl->AddRectFilled(ImVec2(wp.x, wp.y + 10), ImVec2(wp.x + 2.5f, wp.y + TOP_H - 10),
-            FrontierUI::U32(variables::Theme::brand, 0.75f), 2.f);
-        wdl->AddLine(ImVec2(wp.x, wp.y + TOP_H - 1), ImVec2(wp.x + ww, wp.y + TOP_H - 1),
-            FrontierUI::U32(variables::Theme::border, 0.7f));
-        wdl->AddLine(ImVec2(wp.x + 14, wp.y + 1), ImVec2(wp.x + ww - 14, wp.y + 1),
-            IM_COL32(255, 255, 255, 22), 1.f);
+        FrontierShell::DrawHeader(wdl, wp, ww, wh, &variables::selectedTab);
 
-        // Drag from the custom title bar (NoTitleBar has no native caption drag)
         ImGui::SetCursorPos(ImVec2(0, 0));
         ImGui::InvisibleButton("##mwdrag", ImVec2(ww, TOP_H));
         if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
@@ -678,56 +683,17 @@ public:
             wp = ImGui::GetWindowPos();
         }
 
-        ImGui::SetCursorPos(ImVec2(16, 10));
-        ImGui::TextColored(FrontierUI::V4(variables::Theme::text), "%s", Frontier::kName);
-        ImGui::SetCursorPos(ImVec2(16, 28));
-        ImGui::TextColored(FrontierUI::V4(variables::Theme::brand), "%s", Frontier::kTagline);
-        ImGui::SetCursorPos(ImVec2(ww - 120, 18));
-        static const char* tabNames[] = { "Combat", "Visuals", "World", "Character", "Options", "Explorer", "Servers", "Music", "Status" };
-        int ti = variables::selectedTab;
-        if (ti < 0 || ti > 8) ti = 0;
-        ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim), "%s", tabNames[ti]);
-
-        ImGui::SetCursorPos(ImVec2(10, TOP_H + 4));
-        float bodyH = wh - TOP_H - FOOT_H - 8;
-        if (bodyH < 80) bodyH = 80;
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 6));
-        ImGui::BeginChild("##navbody", ImVec2(ww - 20, bodyH), false);
-
-        // 3 rows x 3 equal tabs
-        float avail = ImGui::GetContentRegionAvail().x;
-        float gap = 4.0f;
-        float tabW = (avail - gap * 2.0f) / 3.0f;
-        if (tabW < 72.f) tabW = 72.f;
-        for (int i = 0; i < 9; i++) {
-            if (i % 3) ImGui::SameLine(0, gap);
-            bool on = variables::selectedTab == i;
-            ImGui::PushStyleColor(ImGuiCol_Button, on ? ImVec4(0.16f, 0.16f, 0.19f, 1) : ImVec4(0.08f, 0.08f, 0.09f, 1));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.14f, 0.14f, 0.17f, 1));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.18f, 0.18f, 0.22f, 1));
-            ImGui::PushStyleColor(ImGuiCol_Text, on ? FrontierUI::V4(variables::Theme::text) : FrontierUI::V4(variables::Theme::textDim));
-            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 7.0f);
-            if (ImGui::Button(tabNames[i], ImVec2(tabW, 26))) {
-                variables::selectedTab = i;
-                variables::selectedSub = 0;
-            }
-            if (on) {
-                ImVec2 mn = ImGui::GetItemRectMin();
-                ImVec2 mx = ImGui::GetItemRectMax();
-                ImGui::GetWindowDrawList()->AddLine(
-                    ImVec2(mn.x + 8, mx.y - 1), ImVec2(mx.x - 8, mx.y - 1),
-                    FrontierUI::U32(variables::Theme::brand, 0.9f), 2.f);
-            }
-            ImGui::PopStyleVar();
-            ImGui::PopStyleColor(4);
-        }
-        ImGui::Spacing();
-        ImGui::BeginChild("##body", ImVec2(0, -2), ImGuiChildFlags_None, ImGuiWindowFlags_AlwaysVerticalScrollbar);
+        ImVec2 contentOrigin = FrontierShell::ContentOrigin(wp);
+        ImVec2 contentSize = FrontierShell::ContentSize(ww, wh);
+        ImGui::SetCursorScreenPos(contentOrigin);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4, 4));
+        ImGui::BeginChild("##content", contentSize, ImGuiChildFlags_None,
+            ImGuiWindowFlags_AlwaysVerticalScrollbar);
         FrontierMenu::RenderBody();
-        ImGui::EndChild();
         ImGui::EndChild();
         ImGui::PopStyleVar();
 
+        FrontierMenu::RefreshStatusInfo();
         FrontierUI::DrawFooter(wdl, wp, ww, wh);
 
         variables::Misc::menuX = wp.x;
@@ -1030,13 +996,14 @@ public:
                 ImGui::ColorConvertHSVtoRGB(hue, 0.9f, 1.f, fr, fg, fb);
             }
             ImU32 col = IM_COL32((int)(fr * 255), (int)(fg * 255), (int)(fb * 255), a);
+            float fovDraw = Aimbot::ComputeAcquireFov();
             if (variables::Aimbot::fovFilled)
-                drawList->AddCircleFilled(c, variables::Aimbot::fovRadius,
+                drawList->AddCircleFilled(c, fovDraw,
                     IM_COL32((int)(fr * 255), (int)(fg * 255), (int)(fb * 255), a / 4), 64);
             if (variables::Aimbot::fovGlow)
-                drawList->AddCircle(c, variables::Aimbot::fovRadius,
+                drawList->AddCircle(c, fovDraw,
                     IM_COL32((int)(fr * 255), (int)(fg * 255), (int)(fb * 255), a / 3), 64, 4.0f);
-            drawList->AddCircle(c, variables::Aimbot::fovRadius, col, 64, 1.5f);
+            drawList->AddCircle(c, fovDraw, col, 64, 1.5f);
         }
     }
 

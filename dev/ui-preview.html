@@ -106,6 +106,50 @@
       overflow: hidden;
       animation: rise 0.35s ease-out;
     }
+
+    .layout {
+      flex: 1;
+      display: flex;
+      min-height: 0;
+    }
+
+    .rail {
+      width: 56px;
+      background: #0a0a0c;
+      border-right: 1px solid var(--border);
+      padding: 6px 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .rail-item {
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--dim);
+      font-size: 10px;
+      padding: 8px 2px 6px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+    .rail-item .glyph { font-size: 13px; font-weight: 700; }
+    .rail-item:hover { background: rgba(255,255,255,0.05); color: var(--text); }
+    .rail-item.active {
+      background: rgba(183, 160, 246, 0.14);
+      color: var(--ahead);
+    }
+    .rail-item.active .glyph { color: var(--ahead); }
+
+    .content-wrap {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      padding: 8px 10px 0;
+    }
     @keyframes rise {
       from { opacity: 0; transform: translateY(18px) scale(0.97); }
       to { opacity: 1; transform: none; }
@@ -152,18 +196,10 @@
 
     .body {
       flex: 1;
-      padding: 8px 10px 0;
-      display: flex;
-      flex-direction: column;
       min-height: 0;
     }
 
-    .tabs {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 4px;
-      margin-bottom: 8px;
-    }
+    .tabs { display: none; }
     .tab {
       height: 26px;
       border: none;
@@ -388,9 +424,11 @@
         <div class="brand"><span class="ahead">FRONTIER</span> <span style="color:var(--dim);font-weight:500">· See ahead. Built open.</span></div>
         <div class="subtitle" id="tabSubtitle">Combat</div>
       </div>
-      <div class="body">
-        <div class="tabs" id="mainTabs"></div>
-        <div class="panel" id="panel"></div>
+      <div class="layout">
+        <div class="rail" id="mainTabs"></div>
+        <div class="content-wrap">
+          <div class="panel" id="panel"></div>
+        </div>
       </div>
       <div class="footer" id="footer">FRONTIER | version-f5a60436d48947d3 | 144 fps</div>
     </div>
@@ -398,7 +436,7 @@
 
   <script>
     const TABS = ["Combat", "Visuals", "World", "Character", "Options", "Explorer", "Servers", "Music", "Status"];
-    const FLOAT_ICONS = ["⊕", "◎", "◉", "⌁", "⚙", "⎇", "⇄", "♫", "ℹ"];
+    const RAIL = ["C","V","W","M","S","E","R","A","I"];
 
     let activeTab = 0;
     let activeSub = 0;
@@ -451,7 +489,7 @@
           </div>
           <div>
             <div class="card">
-              <h3>Feel</h3>
+              <h3>Tuning</h3>
               ${slider("Smoothness", 31)}
               ${slider("Stability", 35)}
               ${slider("Lock Zone", 20)}
@@ -469,7 +507,7 @@
     }
 
     function visualsHtml() {
-      return `<div class="card"><h3>ESP</h3>${row("Box ESP", true)}${row("Name ESP", true)}${row("Health Bar", true)}${row("Skeleton", false)}${row("Chams", false)}</div><div class="card"><h3>Combat FX</h3>${row("Hit Sound", false)}${row("Hit Marker", true)}</div>`;
+      return `<div class="card"><h3>ESP</h3>${row("Box ESP", true)}${row("Name ESP", true)}${row("Health Bar", true)}${row("Skeleton", false)}${row("Chams", false)}</div><div class="card"><h3>HUD</h3>${row("Hit Sound", false)}${row("Hit Marker", true)}</div>`;
     }
 
     function statusHtml() {
@@ -500,9 +538,11 @@
     function renderTabs(container, isFloat) {
       container.innerHTML = TABS.map((name, i) => {
         if (isFloat) {
-          return `<button class="float-icon${i === activeTab && floatOpen ? " active" : ""}" type="button" data-tab="${i}" title="${name}">${FLOAT_ICONS[i]}</button>`;
+          const icons = ["⊕", "◎", "◉", "⌁", "⚙", "⎇", "⇄", "♫", "ℹ"];
+          return `<button class="float-icon${i === activeTab && floatOpen ? " active" : ""}" type="button" data-tab="${i}" title="${name}">${icons[i]}</button>`;
         }
-        return `<button class="tab${i === activeTab ? " active" : ""}" type="button" data-tab="${i}">${name}</button>`;
+        const short = name === "Character" ? "Move" : name === "Options" ? "Setup" : name === "Explorer" ? "Explore" : name === "Music" ? "Audio" : name === "Status" ? "Info" : name;
+        return `<button class="rail-item${i === activeTab ? " active" : ""}" type="button" data-tab="${i}"><span class="glyph">${RAIL[i]}</span><span>${short}</span></button>`;
       }).join("");
       container.querySelectorAll("[data-tab]").forEach((btn) => {
         btn.addEventListener("click", () => {

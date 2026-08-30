@@ -4,6 +4,7 @@
 #include <cstdio>
 #include "../../ext/imgui/imgui.h"
 #include "../../src/core/variables/variables.h"
+#include "frontier_ui.h"
 
 namespace UIFx {
 
@@ -315,12 +316,13 @@ namespace UIFx {
                     active ? IM_COL32(255, 255, 255, 22) : IM_COL32(255, 255, 255, 10), 10.f);
             }
             ImU32 col = (active || hovered)
-                ? IM_COL32(250, 250, 255, 255)
+                ? FrontierUI::U32(variables::Theme::brand, 1.f)
                 : IM_COL32(150, 150, 160, 210);
             DrawIcon(dl, center, 15.0f, icons[i], col);
             if (active)
                 dl->AddRectFilled(ImVec2(center.x - 7, p.y + btn.y - 3),
-                    ImVec2(center.x + 7, p.y + btn.y - 1), IM_COL32(240, 240, 245, 255), 2.f);
+                    ImVec2(center.x + 7, p.y + btn.y - 1),
+                    FrontierUI::U32(variables::Theme::brand, 0.95f), 2.f);
             ImGui::PopID();
         }
 

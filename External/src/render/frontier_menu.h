@@ -1,5 +1,6 @@
 #pragma once
 #include "frontier_ui.h"
+#include "frontier_theme.h"
 #include "../core/cache/cache.h"
 #include "../core/globals/globals.h"
 #include "../core/features/aimbot/visibility.h"
@@ -120,54 +121,43 @@ namespace FrontierMenu {
         }
 
         if (variables::selectedSub == 0) {
+            static int aimPanel = 0;
+            static const char* aimPanels[] = { "Aimbot", "Tuning", "FOV" };
+            static const char* aimPanelsBS[] = { "Aimbot", "Tuning" };
+
             FrontierUI::BeginTwoCol("##c0");
-            if (FrontierUI::BeginCard("Aimbot", true)) {
-                FrontierUI::Checkbox("Enabled", &variables::Aimbot::enabled, nullptr, &variables::Aimbot::aimbotKey);
-                FrontierUI::Checkbox("Always On", &variables::Aimbot::alwaysOn);
-                FrontierUI::Checkbox("Toggle Mode", &variables::Aimbot::toggleMode);
-                FrontierUI::Checkbox("Show FOV", &variables::Aimbot::showFOV, variables::Aimbot::fovColor);
-                if (variables::Aimbot::showFOV) {
-                    if (FrontierUI::BeginSettings("FOV", true)) {
-                        FrontierUI::Checkbox("FOV Fill", &variables::Aimbot::fovFilled);
-                        FrontierUI::Checkbox("FOV Glow", &variables::Aimbot::fovGlow);
-                        FrontierUI::Checkbox("FOV Rainbow", &variables::Extra::fovRainbow);
-                        FrontierUI::EndSettings();
+            if (FrontierUI::BeginCard(nullptr, true)) {
+                if (bloxStrike)
+                    FrontierUI::SubTabs(aimPanelsBS, 2, &aimPanel);
+                else
+                    FrontierUI::SubTabs(aimPanels, 3, &aimPanel);
+
+                if (aimPanel == 0) {
+                    FrontierUI::Checkbox("Enabled", &variables::Aimbot::enabled, nullptr, &variables::Aimbot::aimbotKey);
+                    FrontierUI::Checkbox("Always On", &variables::Aimbot::alwaysOn);
+                    FrontierUI::Checkbox("Toggle Mode", &variables::Aimbot::toggleMode);
+                    if (bloxStrike) {
+                        variables::Aimbot::requireVisible = false;
+                        ImGui::TextDisabled("Wall Check: off on BloxStrike (meshes break aim)");
+                    } else {
+                        FrontierUI::Checkbox("Wall Check", &variables::Aimbot::requireVisible);
+                        if (variables::Aimbot::requireVisible && Visibility::boxCount.load() == 0) {
+                            ImGui::TextColored(ImVec4(1.f, 0.45f, 0.35f, 1.f), "Building walls…");
+                            if (ImGui::SmallButton("Rebuild Walls"))
+                                Visibility::ForceRebuild();
+                        }
                     }
-                }
-                if (bloxStrike) {
-                    variables::Aimbot::requireVisible = false;
-                    ImGui::TextDisabled("Wall Check: off on BloxStrike (meshes break aim)");
-                } else {
-                    FrontierUI::Checkbox("Wall Check", &variables::Aimbot::requireVisible);
-                    if (variables::Aimbot::requireVisible && Visibility::boxCount.load() == 0) {
-                        ImGui::TextColored(ImVec4(1.f, 0.45f, 0.35f, 1.f), "Building walls…");
-                        if (ImGui::SmallButton("Rebuild Walls"))
-                            Visibility::ForceRebuild();
-                    }
-                }
-                FrontierUI::Checkbox("Sticky Aim", &variables::Aimbot::stickyAim);
-                FrontierUI::Checkbox("Predict Movement", &variables::Aimbot::prediction);
-                FrontierUI::Checkbox("Humanize", &variables::Extra::humanizeAim);
-                if (variables::Extra::humanizeAim) {
-                    if (FrontierUI::BeginSettings("Humanize", true)) {
+                    FrontierUI::Checkbox("Sticky Aim", &variables::Aimbot::stickyAim);
+                    FrontierUI::Checkbox("Predict Movement", &variables::Aimbot::prediction);
+                    FrontierUI::Checkbox("Humanize", &variables::Extra::humanizeAim);
+                    if (variables::Extra::humanizeAim)
                         FrontierUI::SliderFloat("Humanize Amt", &variables::Extra::humanizeAmount, 0.05f, 1.f, "%.2f");
-                        FrontierUI::EndSettings();
-                    }
-                }
-                FrontierUI::Checkbox("Aim On Shot", &variables::Extra::aimOnShot);
-                FrontierUI::Checkbox("Random Bone", &variables::Extra::randomBone);
-                FrontierUI::Checkbox("Melee Aura", &variables::Extra::meleeAura);
-                if (variables::Extra::meleeAura) {
-                    if (FrontierUI::BeginSettings("Melee Aura", true)) {
-                        FrontierUI::SliderFloat("Melee Range", &variables::Extra::meleeRange, 4.f, 30.f, "%.0f");
-                        FrontierUI::EndSettings();
-                    }
-                }
-                FrontierUI::Checkbox("Team Check", &variables::teamCheck);
-                if (variables::teamCheck != variables::ESP::teamCheck)
-                    variables::ESP::teamCheck = variables::teamCheck;
-                FrontierUI::Checkbox("Skip Dead", &variables::healthCheck);
-                if (FrontierUI::BeginSettings("Targeting", true)) {
+                    FrontierUI::Checkbox("Aim On Shot", &variables::Extra::aimOnShot);
+                    FrontierUI::Checkbox("Random Bone", &variables::Extra::randomBone);
+                    FrontierUI::Checkbox("Team Check", &variables::teamCheck);
+                    if (variables::teamCheck != variables::ESP::teamCheck)
+                        variables::ESP::teamCheck = variables::teamCheck;
+                    FrontierUI::Checkbox("Skip Dead", &variables::healthCheck);
                     if (bloxStrike) {
                         variables::Aimbot::aimType = 1;
                         variables::Aimbot::silentAim = true;
@@ -178,72 +168,70 @@ namespace FrontierMenu {
                         FrontierUI::Combo("Aim Style", &variables::Aimbot::aimType, aims, 2);
                         variables::Aimbot::silentAim = (variables::Aimbot::aimType == 1);
                         variables::Aimbot::targetMethod = variables::Aimbot::aimType;
-                    }
-                    const char* parts[] = { "Head", "Body", "L Leg", "R Leg", "L Arm", "R Arm", "Closest" };
-                    FrontierUI::Combo("Aim Bone", &variables::Aimbot::aimTarget, parts, 7);
-                    const char* prios[] = { "Crosshair", "Lowest HP", "Closest" };
-                    FrontierUI::Combo("Priority", &variables::Aimbot::targetPriority, prios, 3);
-                    const char* profiles[] = { "Custom", "Legit", "Smooth", "Rage" };
-                    if (FrontierUI::Combo("Preset", &variables::Aimbot::smoothProfile, profiles, 4)) {
-                        if (variables::Aimbot::smoothProfile == 1) {
-                            variables::Aimbot::uiSmoothness = 70.f; variables::Aimbot::uiFov = 18.f;
-                        } else if (variables::Aimbot::smoothProfile == 2) {
-                            variables::Aimbot::uiSmoothness = 45.f; variables::Aimbot::uiFov = 30.f;
-                        } else if (variables::Aimbot::smoothProfile == 3) {
-                            variables::Aimbot::uiSmoothness = 8.f; variables::Aimbot::uiFov = 70.f;
-                            variables::Aimbot::aimType = 1; variables::Aimbot::silentAim = true;
+                        const char* parts[] = { "Head", "Body", "L Leg", "R Leg", "L Arm", "R Arm", "Closest" };
+                        FrontierUI::Combo("Aim Bone", &variables::Aimbot::aimTarget, parts, 7);
+                        const char* prios[] = { "Crosshair", "Lowest HP", "Closest" };
+                        FrontierUI::Combo("Priority", &variables::Aimbot::targetPriority, prios, 3);
+                        const char* profiles[] = { "Custom", "Legit", "Smooth", "Rage" };
+                        if (FrontierUI::Combo("Preset", &variables::Aimbot::smoothProfile, profiles, 4)) {
+                            if (variables::Aimbot::smoothProfile == 1) {
+                                variables::Aimbot::uiSmoothness = 70.f; variables::Aimbot::uiFov = 18.f;
+                            } else if (variables::Aimbot::smoothProfile == 2) {
+                                variables::Aimbot::uiSmoothness = 45.f; variables::Aimbot::uiFov = 30.f;
+                            } else if (variables::Aimbot::smoothProfile == 3) {
+                                variables::Aimbot::uiSmoothness = 8.f; variables::Aimbot::uiFov = 70.f;
+                                variables::Aimbot::aimType = 1; variables::Aimbot::silentAim = true;
+                            }
                         }
                     }
-                    FrontierUI::EndSettings();
+                } else if (aimPanel == 1) {
+                    FrontierUI::SliderFloat("Smoothness", &variables::Aimbot::uiSmoothness, 0.f, 100.f, "%.0f");
+                    if (!bloxStrike) {
+                        FrontierUI::SliderFloat("Stability", &variables::Aimbot::uiStability, 0.f, 100.f, "%.0f");
+                        FrontierUI::SliderFloat("Lock Zone", &variables::Aimbot::uiLockZone, 0.f, 100.f, "%.0f");
+                        FrontierUI::SliderFloat("Sticky FOV", &variables::Aimbot::uiStickyFov, 0.f, 100.f, "%.0f");
+                        FrontierUI::SliderFloat("Aim Speed", &variables::Aimbot::uiAimSpeed, 0.f, 100.f, "%.0f");
+                        FrontierUI::SliderFloat("Range", &variables::Aimbot::uiRange, 0.f, 100.f, "%.0f");
+                    }
+                    FrontierUI::SliderFloat("FOV Size", &variables::Aimbot::uiFov, 0.f, 100.f, "%.0f");
+                } else {
+                    FrontierUI::Checkbox("Show FOV", &variables::Aimbot::showFOV, variables::Aimbot::fovColor);
+                    FrontierUI::Checkbox("FOV Fill", &variables::Aimbot::fovFilled);
+                    FrontierUI::Checkbox("FOV Glow", &variables::Aimbot::fovGlow);
+                    FrontierUI::Checkbox("FOV Rainbow", &variables::Extra::fovRainbow);
+                    FrontierUI::SliderFloat("FOV Opacity", &variables::Aimbot::fovOpacity, 0.05f, 1.f, "%.2f");
                 }
             }
             FrontierUI::EndCard();
 
-            if (bloxStrike) {
-                if (FrontierUI::BeginCard("Feel", true)) {
-                    FrontierUI::SliderFloat("Smoothness", &variables::Aimbot::uiSmoothness, 0.f, 100.f, "%.0f");
-                    FrontierUI::SliderFloat("FOV Size", &variables::Aimbot::uiFov, 0.f, 100.f, "%.0f");
-                }
-                FrontierUI::EndCard();
-            } else {
+            if (!bloxStrike) {
                 FrontierUI::NextCol();
-                if (FrontierUI::BeginCard("Feel", true)) {
-                    FrontierUI::SliderFloat("Smoothness", &variables::Aimbot::uiSmoothness, 0.f, 100.f, "%.0f");
-                    FrontierUI::SliderFloat("Stability", &variables::Aimbot::uiStability, 0.f, 100.f, "%.0f");
-                    FrontierUI::SliderFloat("Lock Zone", &variables::Aimbot::uiLockZone, 0.f, 100.f, "%.0f");
-                    FrontierUI::SliderFloat("FOV Size", &variables::Aimbot::uiFov, 0.f, 100.f, "%.0f");
-                    FrontierUI::SliderFloat("Sticky FOV", &variables::Aimbot::uiStickyFov, 0.f, 100.f, "%.0f");
-                    FrontierUI::SliderFloat("Aim Speed", &variables::Aimbot::uiAimSpeed, 0.f, 100.f, "%.0f");
-                    FrontierUI::SliderFloat("Range", &variables::Aimbot::uiRange, 0.f, 100.f, "%.0f");
-                }
-                FrontierUI::EndCard();
-
-                if (FrontierUI::BeginCard("Triggerbot", true)) {
+                if (FrontierUI::BeginCard("Trigger Bot", true)) {
                     FrontierUI::Checkbox("Enabled", &variables::Trigger::enabled, nullptr, &variables::Trigger::key);
-                    if (FrontierUI::BeginSettings("Triggerbot", true)) {
-                        FrontierUI::SliderFloat("Delay (ms)", &variables::Trigger::delayMs, 0, 200, "%.0f");
-                        FrontierUI::SliderFloat("Release (ms)", &variables::Trigger::releaseMs, 1, 80, "%.0f");
-                        FrontierUI::SliderFloat("Hit Radius", &variables::Trigger::hitRadius, 4, 60, "%.0f");
-                        FrontierUI::Checkbox("Wall Check", &variables::Trigger::requireVisible);
-                        FrontierUI::Checkbox("Head Only", &variables::Trigger::headOnly);
-                        FrontierUI::Checkbox("Burst Fire", &variables::Extra::burstTrigger);
-                        if (variables::Extra::burstTrigger)
-                            FrontierUI::SliderInt("Burst Count", &variables::Extra::burstCount, 2, 8);
-                        FrontierUI::EndSettings();
-                    }
+                    FrontierUI::Checkbox("Visible Check", &variables::Trigger::requireVisible);
+                    FrontierUI::Checkbox("Team Check", &variables::teamCheck);
+                    FrontierUI::SliderFloat("Hitbox Mul", &variables::Trigger::hitRadius, 4.f, 60.f, "%.2f");
+                    FrontierUI::SliderFloat("Delay (ms)", &variables::Trigger::delayMs, 0, 200, "%.0f");
+                    FrontierUI::SliderFloat("Release (ms)", &variables::Trigger::releaseMs, 1, 80, "%.0f");
+                    FrontierUI::Checkbox("Head Only", &variables::Trigger::headOnly);
+                    FrontierUI::Checkbox("Burst Fire", &variables::Extra::burstTrigger);
+                    if (variables::Extra::burstTrigger)
+                        FrontierUI::SliderInt("Burst Count", &variables::Extra::burstCount, 2, 8);
                 }
                 FrontierUI::EndCard();
 
-                if (FrontierUI::BeginCard("Rage", false)) {
-                    FrontierUI::Checkbox("Enabled", &variables::Rage::enabled, nullptr, &variables::Rage::key);
-                    if (FrontierUI::BeginSettings("Rage", variables::Rage::enabled)) {
+                if (FrontierUI::BeginCard("Misc", true)) {
+                    FrontierUI::Checkbox("Melee Aura", &variables::Extra::meleeAura);
+                    if (variables::Extra::meleeAura)
+                        FrontierUI::SliderFloat("Melee Range", &variables::Extra::meleeRange, 4.f, 30.f, "%.0f");
+                    FrontierUI::Checkbox("Rage", &variables::Rage::enabled, nullptr, &variables::Rage::key);
+                    if (variables::Rage::enabled) {
                         FrontierUI::Checkbox("Auto Shoot", &variables::Rage::shoot);
                         FrontierUI::Checkbox("Teleport", &variables::Rage::teleport);
                         if (variables::Rage::teleport) {
                             FrontierUI::Checkbox("Unkillable TP", &variables::Rage::unkillable);
                             FrontierUI::SliderFloat("TP Distance", &variables::Rage::tpDistance, 0.5f, 12.f, "%.1f");
                         }
-                        FrontierUI::EndSettings();
                     }
                 }
                 FrontierUI::EndCard();
@@ -391,7 +379,7 @@ namespace FrontierMenu {
             }
             FrontierUI::EndCard();
 
-            if (FrontierUI::BeginCard("Combat FX", true)) {
+            if (FrontierUI::BeginCard("HUD", true)) {
                 FrontierUI::Checkbox("Hit Markers", &variables::Misc::hitMarker);
                 FrontierUI::Checkbox("Damage Numbers", &variables::Misc::damageNumbers);
                 FrontierUI::Checkbox("Enemy Counter", &variables::Misc::enemyCounter);
@@ -711,6 +699,30 @@ namespace FrontierMenu {
         }
         FrontierUI::EndCard();
         FrontierUI::NextCol();
+        if (FrontierUI::BeginCard("Appearance", true)) {
+            const char* presets[] = { "Frontier Red", "Violet", "Ice", "OLED" };
+            if (FrontierUI::Combo("Preset", &variables::Theme::preset, presets, 4))
+                FrontierTheme::ApplyPreset(variables::Theme::preset);
+
+            FrontierUI::Checkbox("Link accent to UI", &variables::Theme::linkBrandAccent);
+            FrontierUI::ThemeColorRow("Accent", variables::Theme::accent, true);
+            if (!variables::Theme::linkBrandAccent)
+                FrontierUI::ThemeColorRow("Brand", variables::Theme::brand, false);
+            FrontierUI::ThemeColorRow("Background", variables::Theme::bg, false);
+            FrontierUI::ThemeColorRow("Cards", variables::Theme::card, false);
+
+            const char* layouts[] = { "Standard Tabs", "Sidebar Rail" };
+            if (FrontierUI::Combo("Layout", &variables::Theme::layoutMode, layouts, 2))
+                FrontierTheme::MarkDirty();
+            const char* subStyles[] = { "Text", "Pill" };
+            FrontierUI::Combo("Sub-tabs", &variables::Theme::subTabStyle, subStyles, 2);
+            if (FrontierUI::SliderFloat("Menu Scale", &variables::Theme::menuScale, 0.85f, 1.15f, "%.2f"))
+                FrontierTheme::MarkDirty();
+            FrontierUI::SliderFloat("Float Bar Y", &variables::Theme::headerY, 8.f, 80.f, "%.0f");
+            FrontierUI::Checkbox("Footer Link", &variables::Theme::showFooterLink);
+        }
+        FrontierUI::EndCard();
+
         if (FrontierUI::BeginCard("Menu", true)) {
             FrontierUI::Checkbox("Floating Icon Header", &variables::Theme::useFloatingHeader);
             {
@@ -733,9 +745,6 @@ namespace FrontierMenu {
             }
             ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim), "Menu key");
             FrontierUI::KeybindChip("menuk", &variables::Misc::menuVk);
-            FrontierUI::ColorSquare("accent", variables::Theme::accent);
-            ImGui::SameLine();
-            ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim), "Accent");
         }
         FrontierUI::EndCard();
 
@@ -752,10 +761,17 @@ namespace FrontierMenu {
             if (ImGui::Button("Load Config", ImVec2(-1, 28))) {
                 if (ConfigIO::Load()) {
                     LoadAimSliders();
+                    FrontierTheme::SyncBrandFromAccent();
+                    FrontierTheme::MarkDirty();
                     variables::Toast::show = true; variables::Toast::warning = false; variables::Toast::timer = 3.f;
                     strcpy_s(variables::Toast::title, "Config loaded");
                     strcpy_s(variables::Toast::body, "Settings applied");
                     strcpy_s(variables::Toast::footer, "ok");
+                } else {
+                    variables::Toast::show = true; variables::Toast::warning = true; variables::Toast::timer = 3.f;
+                    strcpy_s(variables::Toast::title, "Load failed");
+                    strcpy_s(variables::Toast::body, "No config found or file unreadable");
+                    strcpy_s(variables::Toast::footer, "Documents\\FRONTIER\\config.ini");
                 }
             }
             if (ImGui::Button("Open Config Folder", ImVec2(-1, 28)))

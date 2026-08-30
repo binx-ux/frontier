@@ -30,17 +30,24 @@ namespace variables {
     }
 
     namespace Theme {
-        inline float brand[4] = { 0.718f, 0.627f, 0.965f, 1.0f };   // #b7a0f6
-        inline float accent[4] = { 0.941f, 0.941f, 0.973f, 1.0f };  // toggles / grabs
-        inline float bg[4] = { 0.055f, 0.055f, 0.063f, 0.96f };
-        inline float card[4] = { 0.090f, 0.090f, 0.102f, 1.0f };
+        inline float brand[4] = { 0.92f, 0.22f, 0.28f, 1.0f };   // red accent
+        inline float accent[4] = { 0.92f, 0.22f, 0.28f, 1.0f };
+        inline float bg[4] = { 0.047f, 0.047f, 0.047f, 0.98f };   // #0C0C0C
+        inline float card[4] = { 0.082f, 0.082f, 0.082f, 1.0f };  // #151515
         inline float border[4] = { 1.0f, 1.0f, 1.0f, 0.10f };
         inline float text[4] = { 0.941f, 0.941f, 0.961f, 1.0f };
         inline float textDim[4] = { 0.518f, 0.518f, 0.565f, 1.0f };
         inline bool bgEffect = false;
         inline bool snowEffect = false;
-        inline bool useFloatingHeader = true;
+        inline bool useFloatingHeader = false;
         inline float headerY = 18.0f;
+        inline int layoutMode = 0;       // 0 = horizontal tabs, 1 = sidebar rail
+        inline int subTabStyle = 1;      // 0 = text, 1 = pill
+        inline float menuScale = 1.0f;
+        inline bool linkBrandAccent = true;
+        inline bool styleDirty = false;
+        inline int preset = 0;
+        inline bool showFooterLink = true;
     }
 
     namespace Perf {

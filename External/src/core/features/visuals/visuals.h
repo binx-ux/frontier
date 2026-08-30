@@ -392,10 +392,6 @@ namespace Visuals {
         float len = sqrtf(d.x * d.x + d.y * d.y);
         if (len < 0.001f) return ImVec2(c.x, margin);
 
-        float scaleX = ((sw * 0.5f) - margin) / fabsf(d.x > 0 ? d.x : 0.001f);
-        float scaleY = ((sh * 0.5f) - margin) / fabsf(d.y > 0 ? d.y : 0.001f);
-        float scale = (scaleX < scaleY) ? scaleX : scaleY;
-        // better: ray-box
         float t = 1e9f;
         if (fabsf(d.x) > 0.001f) {
             float tx = ((d.x > 0 ? sw - margin : margin) - c.x) / d.x;
@@ -405,7 +401,7 @@ namespace Visuals {
             float ty = ((d.y > 0 ? sh - margin : margin) - c.y) / d.y;
             if (ty > 0 && ty < t) t = ty;
         }
-        if (t > 1e8f) t = scale;
+        if (t > 1e8f) t = 1.f;
         return ImVec2(c.x + d.x * t, c.y + d.y * t);
     }
 
@@ -589,8 +585,8 @@ namespace Visuals {
             // Use W2S overlay coords for on-screen test
             RBX::Vec2 headOverlay = W2S::WorldToScreen(plr.bones.head, viewMatrix);
             bool onScreen = !(headOverlay.X == 0 && headOverlay.Y == 0) &&
-                headOverlay.X >= 0 && headOverlay.Y >= 0 &&
-                headOverlay.X <= sw && headOverlay.Y <= sh;
+                headOverlay.X >= -48.f && headOverlay.Y >= -48.f &&
+                headOverlay.X <= sw + 48.f && headOverlay.Y <= sh + 48.f;
 
             if (!onScreen && variables::ESP::oofArrows && plr.distance <= variables::ESP::oofDistance) {
                 ImVec2 projLocal(headOverlay.X, headOverlay.Y);

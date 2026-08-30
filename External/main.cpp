@@ -1511,7 +1511,7 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 					variables::menuOpen = !variables::menuOpen;
 			}
 		}
-		if (gameFocused && variables::Misc::panicKey && (GetAsyncKeyState(VK_DELETE) & 1))
+		if (gameFocused && variables::Misc::panicKey && (GetAsyncKeyState(variables::Misc::panicVk) & 1))
 			PanicDisableAll();
 
 		overlay.BeginFrame();

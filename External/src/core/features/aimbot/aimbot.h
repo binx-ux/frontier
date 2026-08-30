@@ -167,7 +167,7 @@ namespace Aimbot {
         }
     }
 
-    inline RBX::Vec3 AimPoint(const PlayerCache::CachedPlayer& plr)
+    inline RBX::Vec3 AimPoint(const PlayerCache::CachedPlayer& plr, const RBX::Mat4* viewMatrix = nullptr)
     {
         int bone = variables::Aimbot::aimTarget;
         if (variables::Extra::randomBone) {
@@ -183,7 +183,29 @@ namespace Aimbot {
         case 4: pos = plr.bones.isR6 ? plr.bones.leftArm : plr.bones.leftUpperArm; if (pos.X == 0 && pos.Y == 0) pos = plr.position; break;
         case 5: pos = plr.bones.isR6 ? plr.bones.rightArm : plr.bones.rightUpperArm; if (pos.X == 0 && pos.Y == 0) pos = plr.position; break;
         case 6: {
-            pos = plr.bones.hasHead ? plr.bones.head : plr.position;
+            if (!viewMatrix) {
+                pos = plr.bones.hasHead ? plr.bones.head : plr.position;
+                break;
+            }
+            float sw, sh, ox, oy;
+            W2S::GetViewport(sw, sh, ox, oy);
+            float cx = sw * 0.5f, cy = sh * 0.5f;
+            float best = 1e12f;
+            RBX::Vec3 bestPos = pos;
+            auto tryBone = [&](const RBX::Vec3& b) {
+                if (b.X == 0.f && b.Y == 0.f && b.Z == 0.f) return;
+                RBX::Vec2 s = W2S::WorldToScreen(b, *viewMatrix);
+                if (s.X == 0.f && s.Y == 0.f) return;
+                float d = Dist2(cx, cy, s.X, s.Y);
+                if (d < best) { best = d; bestPos = b; }
+            };
+            tryBone(plr.bones.head);
+            tryBone(plr.bones.hrp);
+            tryBone(plr.bones.isR6 ? plr.bones.leftLeg : plr.bones.leftUpperLeg);
+            tryBone(plr.bones.isR6 ? plr.bones.rightLeg : plr.bones.rightUpperLeg);
+            tryBone(plr.bones.isR6 ? plr.bones.leftArm : plr.bones.leftUpperArm);
+            tryBone(plr.bones.isR6 ? plr.bones.rightArm : plr.bones.rightUpperArm);
+            pos = bestPos;
             break;
         }
         default: break;
@@ -226,6 +248,38 @@ namespace Aimbot {
         if (variables::Aimbot::aimType == 1) return true;
         if (variables::Aimbot::targetMethod == 1) return true;
         return false;
+    }
+
+    inline void SyncUiSliders()
+    {
+        using namespace variables::Aimbot;
+        auto lerp = [](float ui, float lo, float hi) {
+            float t = Clamp(ui * 0.01f, 0.f, 1.f);
+            return lo + (hi - lo) * t;
+        };
+        smoothing = lerp(uiSmoothness, 4.f, 30.f);
+        damping = lerp(uiStability, 0.f, 0.85f);
+        deadzone = lerp(uiLockZone, 0.5f, 12.f);
+        maxDistance = lerp(uiRange, 100.f, 10000.f);
+        fovRadius = lerp(uiFov, 20.f, 500.f);
+        holdFovScale = lerp(uiStickyFov, 1.0f, 1.8f);
+        maxMove = lerp(uiAimSpeed, 4.f, 28.f);
+    }
+
+    inline float ComputeAcquireFov()
+    {
+        SyncUiSliders();
+        float acquireFov = variables::Aimbot::fovRadius;
+        if (acquireFov < 15.f) acquireFov = 15.f;
+        if (UseSilentAim())
+            acquireFov *= 1.15f;
+        if (Games::IsBloxStrike())
+            acquireFov *= 1.35f;
+        if (variables::Hitbox::enabled || variables::Local::hitboxEnabled) {
+            float hbBoost = variables::Hitbox::size * 6.f;
+            if (hbBoost > acquireFov) acquireFov = hbBoost;
+        }
+        return acquireFov;
     }
 
     inline bool ResolveMouseService(bool force = false)
@@ -292,6 +346,8 @@ namespace Aimbot {
 
     inline void RunAimbot(const RBX::Mat4& viewMatrix, std::vector<PlayerCache::CachedPlayer>& players)
     {
+        SyncUiSliders();
+
         // Menu Aim Style / Target Mode drive silentAim
         variables::Aimbot::silentAim =
             (variables::Aimbot::aimType == 1) || (variables::Aimbot::targetMethod == 1);
@@ -312,18 +368,7 @@ namespace Aimbot {
         W2S::EnsureViewport(sw, sh, ox, oy);
         float cx = sw * 0.5f, cy = sh * 0.5f;
 
-        float acquireFov = variables::Aimbot::fovRadius;
-        if (acquireFov < 15.f) acquireFov = 15.f;
-        // Silent aim: slightly wider acquire so it's usable without perfect crosshair
-        if (UseSilentAim())
-            acquireFov *= 1.15f;
-        // BloxStrike first-person FOV is tight — give a bit more lock radius
-        if (Games::IsBloxStrike())
-            acquireFov *= 1.35f;
-        if (variables::Hitbox::enabled || variables::Local::hitboxEnabled) {
-            float hbBoost = variables::Hitbox::size * 6.f;
-            if (hbBoost > acquireFov) acquireFov = hbBoost;
-        }
+        float acquireFov = ComputeAcquireFov();
         float holdFov = acquireFov * Clamp(variables::Aimbot::holdFovScale, 1.0f, 1.8f);
 
         float maxDist = variables::Aimbot::maxDistance;
@@ -349,7 +394,7 @@ namespace Aimbot {
             if (variables::healthCheck && plr.health <= 0.f) return false;
 
             LiveRefresh(plr);
-            RBX::Vec3 world = AimPoint(plr);
+            RBX::Vec3 world = AimPoint(plr, &viewMatrix);
 
             screenOut = W2S::WorldToScreen(world, viewMatrix);
             if (screenOut.X == 0.f && screenOut.Y == 0.f) return false;
@@ -363,7 +408,9 @@ namespace Aimbot {
             return true;
         };
 
-        if (lockedPlayerAddr) {
+        if (!variables::Aimbot::stickyAim) {
+            ClearLock();
+        } else if (lockedPlayerAddr) {
             bool keep = false;
             for (auto& plr : players) {
                 if (plr.playerAddr != lockedPlayerAddr) continue;
@@ -373,8 +420,6 @@ namespace Aimbot {
                 break;
             }
             if (!keep)
-                ClearLock();
-            else if (!variables::Aimbot::stickyAim)
                 ClearLock();
         }
 
@@ -465,7 +510,16 @@ namespace Aimbot {
             if (wantSilent && silentOk && blox) {
                 prevErrX = scr.X - cx;
                 prevErrY = scr.Y - cy;
-                // fall through — hybrid aim
+                accumX = accumY = 0.f;
+                float errX = scr.X - cx;
+                float errY = scr.Y - cy;
+                float dist = sqrtf(errX * errX + errY * errY);
+                if (dist > 22.f) {
+                    float mx = errX * 0.05f;
+                    float my = errY * 0.05f;
+                    MoveMouse(mx, my);
+                }
+                return;
             }
 
             float errX = scr.X - cx;
