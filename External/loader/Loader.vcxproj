@@ -78,6 +78,7 @@
   <ItemGroup>
     <ClInclude Include="loader_config.h" />
     <ClInclude Include="loader_update.h" />
+    <ClInclude Include="loader_auth.h" />
     <ClInclude Include="loader_ui.h" />
     <ClInclude Include="resource.h" />
   </ItemGroup>

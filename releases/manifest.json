@@ -2,6 +2,8 @@
   "version": 36,
   "display": "FRONTIER v36",
   "kernel_available": false,
+  "access_required": true,
+  "discord_invite": "https://discord.gg/zHGKqd92Pz",
   "usermode_url": "https://github.com/binx-ux/frontier/releases/download/v36/Frontier.exe",
   "kernel_url": ""
 }

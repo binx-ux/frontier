@@ -31,6 +31,8 @@ namespace LoaderUpdate {
         char usermodeUrl[512] = "";
         char kernelUrl[512] = "";
         bool kernelAvailable = false;
+        bool accessRequired = true;
+        char discordInvite[128] = "https://discord.gg/zHGKqd92Pz";
     };
 
     inline std::wstring GetLoaderDir()
@@ -209,6 +211,9 @@ namespace LoaderUpdate {
         JsonStr(body, "usermode_url", m.usermodeUrl, sizeof(m.usermodeUrl));
         JsonStr(body, "kernel_url", m.kernelUrl, sizeof(m.kernelUrl));
         m.kernelAvailable = JsonBool(body, "kernel_available", false);
+        m.accessRequired = JsonBool(body, "access_required", true);
+        if (!JsonStr(body, "discord_invite", m.discordInvite, sizeof(m.discordInvite)))
+            strncpy_s(m.discordInvite, LoaderConfig::kDiscordInvite, _TRUNCATE);
         return m.version > 0;
     }
 
