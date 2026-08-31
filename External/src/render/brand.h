@@ -3,7 +3,7 @@
 namespace Frontier {
     inline constexpr const char* kName = "FRONTIER";
     inline constexpr const char* kTagline = "Roblox External";
-    inline constexpr const char* kVersion = "v1.2.13";
+    inline constexpr const char* kVersion = "v1.2.14";
     inline constexpr const char* kBuildTag = "Universal";
     inline constexpr const char* kWindowClass = "FrontierExternal";
     inline constexpr const char* kIniFolder = "frontier";

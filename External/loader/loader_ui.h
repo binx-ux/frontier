@@ -320,19 +320,19 @@ namespace LoaderUI {
     inline RECT AuthStatusRect()
     {
         RECT r = ContentRect();
-        return RECT{ r.left, r.top + 136, r.right, r.top + 152 };
+        return RECT{ r.left, r.top + 134, r.right, r.top + 164 };
     }
 
     inline RECT DiscordButtonRect()
     {
         RECT r = ContentRect();
-        return RECT{ r.left, r.top + 196, r.right, r.top + 228 };
+        return RECT{ r.left, r.top + 206, r.right, r.top + 238 };
     }
 
     inline RECT PrimaryButtonRect()
     {
         RECT r = ContentRect();
-        return RECT{ r.left, r.top + 142, r.right, r.top + 174 };
+        return RECT{ r.left, r.top + 168, r.right, r.top + 200 };
     }
 
     inline RECT ActivateButtonRect()
@@ -892,7 +892,6 @@ namespace LoaderUI {
         DrawWindowControls(hdc, s);
         if (s->authenticated) {
             DrawLoginHeader(hdc, "Welcome back", "Your license is active on this PC.");
-            DrawAuthStatusBanner(hdc, s);
             DrawGradientButton(hdc, AuthContinueRect(s), "Continue", true, s->hoverBlend[0]);
             DrawGhostButton(hdc, SignOutButtonRect(), "Sign out", s->hoverBlend[7]);
         } else {
