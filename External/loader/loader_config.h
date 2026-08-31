@@ -4,8 +4,8 @@
 
 namespace LoaderConfig {
 
-    inline constexpr int kLocalVersion = 15;
-    inline constexpr const char* kDisplayVersion = "v1.2.12";
+    inline constexpr int kLocalVersion = 16;
+    inline constexpr const char* kDisplayVersion = "v1.2.13";
     inline constexpr const char* kProductLine = "Roblox External";
 
     inline constexpr const wchar_t* kAppName = L"FRONTIER";
@@ -16,7 +16,7 @@ namespace LoaderConfig {
     inline constexpr const char* kManifestUrl =
         "https://trace-host.vercel.app/releases/manifest.json";
     inline constexpr const char* kFallbackUsermodeUrl =
-        "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.12/Frontier.exe";
+        "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.13/Frontier.exe";
     inline constexpr const char* kReleasesPage =
         "https://github.com/binx-ux/frontier-releases/releases/latest";
     inline constexpr const char* kDiscordInvite =

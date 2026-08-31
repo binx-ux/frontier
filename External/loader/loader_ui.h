@@ -340,15 +340,24 @@ namespace LoaderUI {
         return PrimaryButtonRect();
     }
 
-    inline RECT AuthContinueRect()
+    inline RECT AuthContinueRect(const State* s = nullptr)
     {
+        const State* st = s ? s : gState;
+        RECT r = ContentRect();
+        if (st && st->authenticated)
+            return RECT{ r.left, r.top + 62, r.right, r.top + 94 };
         return PrimaryButtonRect();
     }
 
     inline RECT SignOutButtonRect()
     {
         RECT r = ContentRect();
-        return RECT{ r.left, r.top + 180, r.right, r.top + 212 };
+        return RECT{ r.left, r.top + 104, r.right, r.top + 136 };
+    }
+
+    inline bool ShouldShowKeyField(const State* s)
+    {
+        return s && s->screen == ScreenAuth && !s->authenticated;
     }
 
     inline RECT ProgressBarRect()
@@ -418,6 +427,11 @@ namespace LoaderUI {
         EnableWindow(gKeyEdit, visible && !(gState && gState->authBusy));
     }
 
+    inline void SyncKeyFieldVisibility(State* s)
+    {
+        SetKeyEditVisible(ShouldShowKeyField(s));
+    }
+
     inline void TransitionToScreen(State* s, Screen next)
     {
         if (!s || s->screen == next) return;
@@ -429,7 +443,7 @@ namespace LoaderUI {
             InvalidateRect(gWnd, nullptr, FALSE);
         }
         if (next == ScreenAuth)
-            SetKeyEditVisible(true);
+            SyncKeyFieldVisibility(s);
         else
             SetKeyEditVisible(false);
         RepositionKeyEdit();
@@ -447,7 +461,7 @@ namespace LoaderUI {
     inline void RefreshAuthUi(State* s)
     {
         s->authenticated = s->licenseToken[0] != 0;
-        SetKeyEditVisible(s->screen == ScreenAuth);
+        SyncKeyFieldVisibility(s);
         if (gWnd) InvalidateRect(gWnd, nullptr, FALSE);
     }
 
@@ -879,7 +893,7 @@ namespace LoaderUI {
         if (s->authenticated) {
             DrawLoginHeader(hdc, "Welcome back", "Your license is active on this PC.");
             DrawAuthStatusBanner(hdc, s);
-            DrawGradientButton(hdc, AuthContinueRect(), "Continue", true, s->hoverBlend[0]);
+            DrawGradientButton(hdc, AuthContinueRect(s), "Continue", true, s->hoverBlend[0]);
             DrawGhostButton(hdc, SignOutButtonRect(), "Sign out", s->hoverBlend[7]);
         } else {
             DrawLoginHeader(hdc, "Hello, please login in your account", "Enter your Frontier license key");
@@ -1121,12 +1135,33 @@ namespace LoaderUI {
         }
         s->authBusy = false;
         RefreshAuthUi(s);
+        if (payload->ok && s->screen == ScreenAuth) {
+            s->selectedMode = 0;
+            LoaderUpdate::SaveMode(0);
+            TransitionToScreen(s, ScreenLauncher);
+        } else if (gWnd) {
+            InvalidateRect(gWnd, nullptr, FALSE);
+        }
+    }
+
+    inline void GoToLauncher(State* s)
+    {
+        if (!s) return;
+        s->selectedMode = 0;
+        LoaderUpdate::SaveMode(0);
+        TransitionToScreen(s, ScreenLauncher);
+        gHover = HoverNone;
         if (gWnd) InvalidateRect(gWnd, nullptr, FALSE);
     }
 
     inline void RunActivateKey(State* s)
     {
-        if (s->authBusy || !gKeyEdit) return;
+        if (!s || s->authBusy) return;
+        if (s->authenticated) {
+            GoToLauncher(s);
+            return;
+        }
+        if (!gKeyEdit) return;
         char raw[80]{};
         GetWindowTextA(gKeyEdit, raw, sizeof(raw));
         char key[64]{};
@@ -1224,11 +1259,11 @@ namespace LoaderUI {
             return HoverPrimary;
 
         if (s->screen == ScreenAuth) {
-            if (s->authenticated && PtInRect(&AuthContinueRect(), pt))
+            if (s->authenticated && PtInRect(&AuthContinueRect(s), pt))
                 return HoverPrimary;
             if (LoaderConfig::kDiscordOAuthEnabled && PtInRect(&DiscordButtonRect(), pt))
                 return HoverDiscord;
-            if (PtInRect(&ActivateButtonRect(), pt))
+            if (!s->authenticated && PtInRect(&ActivateButtonRect(), pt))
                 return HoverActivate;
             if (s->authenticated && PtInRect(&SignOutButtonRect(), pt))
                 return HoverSignOut;
@@ -1403,16 +1438,12 @@ namespace LoaderUI {
                     RunDiscordSignIn(s);
                     return 0;
                 }
-                if (PtInRect(&ActivateButtonRect(), pt)) {
-                    RunActivateKey(s);
+                if (s->authenticated && PtInRect(&AuthContinueRect(s), pt)) {
+                    GoToLauncher(s);
                     return 0;
                 }
-                if (s->authenticated && PtInRect(&AuthContinueRect(), pt)) {
-                    s->selectedMode = 0;
-                    LoaderUpdate::SaveMode(0);
-                    TransitionToScreen(s, ScreenLauncher);
-                    gHover = HoverNone;
-                    InvalidateRect(hwnd, nullptr, FALSE);
+                if (!s->authenticated && PtInRect(&ActivateButtonRect(), pt)) {
+                    RunActivateKey(s);
                     return 0;
                 }
                 return 0;
