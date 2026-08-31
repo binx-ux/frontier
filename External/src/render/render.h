@@ -482,7 +482,7 @@ public:
         ImGui::SetNextWindowSize(sz, ImGuiCond_Always);
         ImGui::SetNextWindowSizeConstraints(ImVec2(380.f, 200.f), ImVec2(ds.x - 16.f, ds.y - 8.f));
         {
-            static bool placed[8] = {};
+            static bool placed[9] = {};
             if (!placed[tab]) {
                 ImGui::SetNextWindowPos(ImVec2(px, py), ImGuiCond_Always);
                 placed[tab] = true;
@@ -1140,7 +1140,7 @@ public:
             drawList->AddCircleFilled(c, 2.2f, IM_COL32(255, 255, 255, 180), 12);
         }
 
-        if (variables::MagicBullet::showFov && variables::Hitbox::enabled && !variables::Loading::active) {
+        if (variables::MagicBullet::showFov && variables::MagicBullet::enabled && !variables::Loading::active) {
             Aimbot::RefreshFovCenter();
             ImVec2 c(Aimbot::fovCenterX, Aimbot::fovCenterY);
             float fr = variables::MagicBullet::fovColor[0];

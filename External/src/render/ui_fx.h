@@ -207,9 +207,9 @@ namespace UIFx {
     inline bool FloatingHeader(int* selectedTab) {
         const Icon icons[] = {
             Icon::Combat, Icon::Visuals, Icon::World, Icon::Character,
-            Icon::Options, Icon::Servers, Icon::Music, Icon::Status
+            Icon::Options, Icon::Servers, Icon::Music, Icon::Status, Icon::Config
         };
-        const int count = 8;
+        const int count = 9;
         const float iconSlot = 40.0f;
         const float barH = 52.0f;
         const float barW = count * iconSlot + 24.0f;

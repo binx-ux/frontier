@@ -54,7 +54,7 @@ namespace variables {
         inline bool vsync = false;
         inline int targetFps = 144; // soft cap when vsync off (0 = uncapped)
         inline int playerUpdateEveryNFrames = 2;
-        inline bool skipSkeletonWhenLowFps = true;
+        inline bool skipSkeletonWhenLowFps = false;
         inline int lowFpsThreshold = 45;
         inline int currentFps = 0;
     }
@@ -97,8 +97,8 @@ namespace variables {
         inline float uiAimSpeed = 52.f;     // → maxMove 4–28
         // 0 Head 1 Body 2 LeftLeg 3 RightLeg 4 LeftArm 5 RightArm 6 Closest
         inline int aimTarget = 0;
-        inline int aimbotKey = 0;           // none — user binds or uses Always On
-        inline int silentAimKey = 0x06;     // XBUTTON2
+        inline int aimbotKey = 0x02;         // RMB — hold to aim
+        inline int silentAimKey = 0;     // 0 = use aimbot hotkey
         inline bool fovFollowMouse = true;
         inline bool toggleMode = false;
         inline bool toggledOn = false;

@@ -154,7 +154,7 @@ namespace LoaderUI {
         if (s->screen == ScreenDownloading) return true;
         if (s->screen == ScreenReady && s->filesReady)
             return fabsf(s->progressAnim - 1.f) > 0.002f;
-        return true;
+        return false;
     }
 
     inline void StartAnimTimer(HWND hwnd)
@@ -227,13 +227,13 @@ namespace LoaderUI {
     inline RECT AuthStatusRect()
     {
         RECT r = RightContentRect();
-        return RECT{ r.left, r.top + 194, r.right, r.top + 224 };
+        return RECT{ r.left, r.top + 138, r.right, r.top + 168 };
     }
 
     inline RECT DiscordButtonRect()
     {
         RECT r = RightContentRect();
-        return RECT{ r.left, r.top + 218, r.right, r.top + 256 };
+        return RECT{ r.left, r.top + 176, r.right, r.top + 214 };
     }
 
     inline RECT PrimaryButtonRect()
@@ -255,26 +255,27 @@ namespace LoaderUI {
     inline RECT AuthContinueRect()
     {
         RECT r = RightContentRect();
-        return RECT{ r.left, r.top + 218, r.right, r.top + 258 };
+        return RECT{ r.left, r.top + 176, r.right, r.top + 220 };
     }
 
     inline RECT SignOutButtonRect()
     {
-        return RECT{ LoaderConfig::kWindowW - 108, 14, LoaderConfig::kWindowW - 70, 34 };
+        RECT r = RightContentRect();
+        return RECT{ r.left, r.top + 228, r.right, r.top + 266 };
     }
 
     inline int ModeCardTop(State* s, int displayIndex)
     {
         (void)s;
         RECT r = RightContentRect();
-        return r.top + 72 + displayIndex * 54;
+        return r.top + 68 + displayIndex * 62;
     }
 
     inline RECT ModeCardRect(State* s, int displayIndex)
     {
         RECT r = RightContentRect();
         const int top = ModeCardTop(s, displayIndex);
-        return RECT{ r.left, top, r.right, top + 46 };
+        return RECT{ r.left, top, r.right, top + 54 };
     }
 
     inline bool HeaderDragArea(POINT pt)
@@ -413,14 +414,21 @@ namespace LoaderUI {
     {
         const int h = rc.bottom - rc.top;
         if (h <= 0) return;
-        for (int y = 0; y < h; y += 2) {
-            const float t = (float)y / (float)h;
-            COLORREF c = BlendRgb(top, bottom, t);
-            HBRUSH b = CreateSolidBrush(c);
-            RECT strip{ rc.left, rc.top + y, rc.right, rc.top + y + 2 };
-            FillRect(hdc, &strip, b);
-            DeleteObject(b);
-        }
+        TRIVERTEX vert[2]{};
+        vert[0].x = rc.left;
+        vert[0].y = rc.top;
+        vert[0].Red = (COLOR16)(GetRValue(top) << 8);
+        vert[0].Green = (COLOR16)(GetGValue(top) << 8);
+        vert[0].Blue = (COLOR16)(GetBValue(top) << 8);
+        vert[0].Alpha = 0;
+        vert[1].x = rc.right;
+        vert[1].y = rc.bottom;
+        vert[1].Red = (COLOR16)(GetRValue(bottom) << 8);
+        vert[1].Green = (COLOR16)(GetGValue(bottom) << 8);
+        vert[1].Blue = (COLOR16)(GetBValue(bottom) << 8);
+        vert[1].Alpha = 0;
+        GRADIENT_RECT gRect{ 0, 1 };
+        GradientFill(hdc, vert, 2, &gRect, 1, GRADIENT_FILL_RECT_V);
     }
 
     inline void DrawLeftBrandPanel(HDC hdc, float animTime)
@@ -430,32 +438,35 @@ namespace LoaderUI {
         const int h = client.bottom - client.top;
 
         RECT left{ 0, 0, LoaderConfig::kSplitX, h };
-        FillVerticalGradient(hdc, left, RGB(18, 19, 23), LoaderConfig::kPanelLeft);
+        FillVerticalGradient(hdc, left, RGB(12, 12, 14), LoaderConfig::kPanelLeft);
 
         const int cx = LoaderConfig::kSplitX / 2;
-        const int cy = h / 2 - 8;
-        const float pulse = 0.5f + 0.5f * sinf(animTime * 0.9f);
-        const int bob = (int)(sinf(animTime * 1.1f) * 2.f);
+        const int cy = h / 2 - 12;
+        const float pulse = 0.5f + 0.5f * sinf(animTime * 0.7f);
 
-        DrawSoftGlow(hdc, cx, cy + bob, 88,
-            BlendRgb(LoaderConfig::kAccentGlow, LoaderConfig::kAccent, 0.25f + pulse * 0.15f),
-            LoaderConfig::kPanelLeft, 14);
-        DrawSoftGlow(hdc, cx, cy + bob, 36,
-            BlendRgb(LoaderConfig::kAccent, LoaderConfig::kAccentHover, pulse * 0.35f),
+        DrawSoftGlow(hdc, cx, cy, 96,
+            BlendRgb(LoaderConfig::kAccentGlow, LoaderConfig::kAccent, 0.18f + pulse * 0.12f),
             LoaderConfig::kPanelLeft, 10);
+
+        HPEN accentPen = CreatePen(PS_SOLID, 2, LoaderConfig::kAccent);
+        HGDIOBJ op = SelectObject(hdc, accentPen);
+        MoveToEx(hdc, cx - 42, cy - 36, nullptr);
+        LineTo(hdc, cx + 42, cy - 36);
+        SelectObject(hdc, op);
+        DeleteObject(accentPen);
 
         SelectObject(hdc, gFontLogo);
         SetTextColor(hdc, LoaderConfig::kText);
-        RECT logoRc{ 0, cy - 28 + bob, LoaderConfig::kSplitX, cy + 12 + bob };
-        DrawTextA(hdc, "frontier", -1, &logoRc, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
+        RECT logoRc{ 0, cy - 24, LoaderConfig::kSplitX, cy + 16 };
+        DrawTextA(hdc, "FRONTIER", -1, &logoRc, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
 
         SelectObject(hdc, gFont);
         SetTextColor(hdc, LoaderConfig::kTextMuted);
-        RECT tagRc{ 0, cy + 14 + bob, LoaderConfig::kSplitX, cy + 36 + bob };
-        DrawTextA(hdc, "external loader", -1, &tagRc, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
+        RECT tagRc{ 0, cy + 18, LoaderConfig::kSplitX, cy + 40 };
+        DrawTextA(hdc, "Premium External", -1, &tagRc, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
 
-        HPEN pen = CreatePen(PS_SOLID, 1, RGB(34, 36, 42));
-        HGDIOBJ op = SelectObject(hdc, pen);
+        HPEN pen = CreatePen(PS_SOLID, 1, RGB(34, 34, 38));
+        op = SelectObject(hdc, pen);
         MoveToEx(hdc, LoaderConfig::kSplitX - 1, 0, nullptr);
         LineTo(hdc, LoaderConfig::kSplitX - 1, h);
         SelectObject(hdc, op);
@@ -473,11 +484,9 @@ namespace LoaderUI {
         RECT right{ rx, 0, w, h };
         FillVerticalGradient(hdc, right, LoaderConfig::kBgTop, LoaderConfig::kBgBottom);
 
-        const float drift = sinf(animTime * 0.55f) * 12.f;
-        DrawSoftGlow(hdc, rx + 180 + (int)drift, 90, 120,
-            RGB(34, 44, 88), LoaderConfig::kBgBottom, 12);
-        DrawSoftGlow(hdc, w - 80, h - 70, 90,
-            RGB(28, 36, 72), LoaderConfig::kBgBottom, 10);
+        const float drift = sinf(animTime * 0.45f) * 8.f;
+        DrawSoftGlow(hdc, rx + 160 + (int)drift, 80, 100,
+            RGB(72, 10, 6), LoaderConfig::kBgBottom, 8);
     }
 
     inline void DrawContentCard(HDC hdc)
@@ -490,10 +499,10 @@ namespace LoaderUI {
             r.bottom + 8
         };
 
-        FillRoundRect(hdc, card, RGB(24, 26, 32), RGB(38, 42, 52), 18);
+        FillRoundRect(hdc, card, LoaderConfig::kCard, LoaderConfig::kBorder, 16);
         RECT inner = card;
         inner.left += 1; inner.top += 1; inner.right -= 1; inner.bottom -= 1;
-        FillRoundRect(hdc, inner, RGB(19, 21, 26), RGB(19, 21, 26), 17);
+        FillRoundRect(hdc, inner, LoaderConfig::kCardInner, LoaderConfig::kCardInner, 15);
 
         HPEN accentLine = CreatePen(PS_SOLID, 2, LoaderConfig::kAccent);
         HGDIOBJ oldPen = SelectObject(hdc, accentLine);
@@ -517,8 +526,8 @@ namespace LoaderUI {
     {
         RECT minRc = MinButtonRect();
         RECT closeRc = CloseButtonRect();
-        FillRoundRectSolid(hdc, minRc, RGB(28, 30, 36), 6);
-        FillRoundRectSolid(hdc, closeRc, gHover == HoverClose ? RGB(196, 72, 82) : RGB(28, 30, 36), 6);
+        FillRoundRectSolid(hdc, minRc, gHover == HoverMin ? RGB(36, 36, 40) : RGB(24, 24, 28), 6);
+        FillRoundRectSolid(hdc, closeRc, gHover == HoverClose ? RGB(196, 52, 52) : RGB(24, 24, 28), 6);
         SelectObject(hdc, gFontBold);
         SetTextColor(hdc, RGB(210, 214, 222));
         DrawTextA(hdc, "-", -1, &minRc, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
@@ -550,10 +559,10 @@ namespace LoaderUI {
     inline void DrawInputChrome(HDC hdc)
     {
         RECT field = KeyFieldRect();
-        FillRoundRect(hdc, field, RGB(14, 16, 22), RGB(62, 70, 96), 12);
+        FillRoundRect(hdc, field, LoaderConfig::kInputBg, LoaderConfig::kInputBorder, 10);
         RECT inner = field;
         inner.left += 1; inner.top += 1; inner.right -= 1; inner.bottom -= 1;
-        FillRoundRect(hdc, inner, LoaderConfig::kInputBg, LoaderConfig::kInputBg, 11);
+        FillRoundRect(hdc, inner, LoaderConfig::kInputBg, LoaderConfig::kInputBg, 9);
 
         // key icon
         const int ix = field.left + 16;
@@ -573,7 +582,7 @@ namespace LoaderUI {
         COLORREF border = BlendRgb(fill, RGB(255, 255, 255), hover ? 0.18f : 0.10f);
         FillRoundRect(hdc, btn, fill, border, 12);
 
-        HPEN hi = CreatePen(PS_SOLID, 1, RGB(180, 188, 255));
+        HPEN hi = CreatePen(PS_SOLID, 1, LoaderConfig::kAccentLight);
         HGDIOBJ op = SelectObject(hdc, hi);
         MoveToEx(hdc, btn.left + 14, btn.top + 1, nullptr);
         LineTo(hdc, btn.right - 14, btn.top + 1);
@@ -649,7 +658,7 @@ namespace LoaderUI {
     }
 
     inline void DrawModeCard(HDC hdc, State* s, int displayIndex, int modeValue,
-        const char* label, const char* tag)
+        const char* label, const char* tag, const char* subtitle = nullptr)
     {
         RECT card = ModeCardRect(s, displayIndex);
         bool sel = (s->selectedMode == modeValue);
@@ -659,13 +668,29 @@ namespace LoaderUI {
         else
             hover = (gHover == HoverMode1);
 
-        COLORREF fill = hover ? LoaderConfig::kCardHover : LoaderConfig::kCard;
+        COLORREF fill = sel ? BlendRgb(LoaderConfig::kCard, LoaderConfig::kAccentGlow, 0.35f)
+            : (hover ? LoaderConfig::kCardHover : LoaderConfig::kCard);
         COLORREF border = sel ? LoaderConfig::kBorderActive : LoaderConfig::kBorder;
         FillRoundRect(hdc, card, fill, border, 12);
 
+        if (sel) {
+            HPEN p = CreatePen(PS_SOLID, 2, LoaderConfig::kAccent);
+            HGDIOBJ op = SelectObject(hdc, p);
+            MoveToEx(hdc, card.left + 14, card.top + 10, nullptr);
+            LineTo(hdc, card.left + 14, card.bottom - 10);
+            SelectObject(hdc, op);
+            DeleteObject(p);
+        }
+
         SelectObject(hdc, gFontBold);
         SetTextColor(hdc, LoaderConfig::kText);
-        TextOutA(hdc, card.left + 16, card.top + 14, label, (int)strlen(label));
+        TextOutA(hdc, card.left + 18, card.top + 12, label, (int)strlen(label));
+
+        if (subtitle && subtitle[0]) {
+            SelectObject(hdc, gFont);
+            SetTextColor(hdc, LoaderConfig::kTextMuted);
+            TextOutA(hdc, card.left + 18, card.top + 30, subtitle, (int)strlen(subtitle));
+        }
 
         if (tag && tag[0]) {
             SelectObject(hdc, gFont);
@@ -673,7 +698,7 @@ namespace LoaderUI {
             SetTextColor(hdc, testingTag ? LoaderConfig::kWarning : LoaderConfig::kAccent);
             SIZE ts{};
             GetTextExtentPoint32A(hdc, tag, (int)strlen(tag), &ts);
-            TextOutA(hdc, card.right - ts.cx - 16, card.top + 15, tag, (int)strlen(tag));
+            TextOutA(hdc, card.right - ts.cx - 18, card.top + 14, tag, (int)strlen(tag));
         }
     }
 
@@ -726,25 +751,18 @@ namespace LoaderUI {
         DrawInputChrome(hdc);
         DrawLoginHint(hdc);
         DrawAuthStatusBanner(hdc, s);
-        DrawGradientButton(hdc, ActivateButtonRect(),
-            s->authBusy ? "Please wait..." : "Activate",
-            !s->authBusy, gHover == HoverActivate);
-        if (LoaderConfig::kDiscordOAuthEnabled) {
-            DrawGhostButton(hdc, DiscordButtonRect(),
-                s->authBusy ? "Discord..." : "Sign in with Discord",
-                gHover == HoverDiscord);
-        }
         if (s->authenticated) {
             DrawGradientButton(hdc, AuthContinueRect(), "Continue", true, gHover == HoverPrimary);
             DrawGhostButton(hdc, SignOutButtonRect(), "Sign out", gHover == HoverSignOut);
-        }
-        if (s->signedInAs[0]) {
-            RECT r = RightContentRect();
-            SelectObject(hdc, gFont);
-            SetTextColor(hdc, LoaderConfig::kSuccess);
-            char line[96];
-            sprintf_s(line, "Discord: %s", s->signedInAs);
-            TextOutA(hdc, r.left, r.top + 48, line, (int)strlen(line));
+        } else {
+            DrawGradientButton(hdc, ActivateButtonRect(),
+                s->authBusy ? "Please wait..." : "Activate License",
+                !s->authBusy, gHover == HoverActivate);
+            if (LoaderConfig::kDiscordOAuthEnabled) {
+                DrawGhostButton(hdc, DiscordButtonRect(),
+                    s->authBusy ? "Discord..." : "Sign in with Discord",
+                    gHover == HoverDiscord);
+            }
         }
     }
 
@@ -756,13 +774,15 @@ namespace LoaderUI {
         RECT r = RightContentRect();
         SelectObject(hdc, gFont);
         SetTextColor(hdc, LoaderConfig::kTextDim);
-        TextOutA(hdc, r.left, r.top + 40, "Choose attach method", 20);
+        TextOutA(hdc, r.left, r.top + 40, "Select how FRONTIER attaches to Roblox", 38);
 
         int display = 0;
         if (ShowKernelMode(s)) {
-            DrawModeCard(hdc, s, display++, 1, "Kernel", LoaderConfig::kKernelModeTag);
+            DrawModeCard(hdc, s, display++, 1, "Kernel", LoaderConfig::kKernelModeTag,
+                "Driver attach — testing only");
         }
-        DrawModeCard(hdc, s, display, 0, "Usermode", "Recommended");
+        DrawModeCard(hdc, s, display, 0, "Usermode", "Recommended",
+            "Standard external — best for most games");
         DrawGradientButton(hdc, LaunchButtonRect(), "Launch", true, gHover == HoverPrimary);
     }
 
@@ -1282,8 +1302,6 @@ namespace LoaderUI {
             auto* payload = (AuthDonePayload*)lp;
             if (s && payload) {
                 FinishAuthUi(s, payload);
-                if (payload->ok)
-                    MessageBoxW(hwnd, L"License activated. Click Continue to launch.", LoaderConfig::kAppName, MB_OK | MB_ICONINFORMATION);
             }
             delete payload;
             return 0;

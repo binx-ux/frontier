@@ -297,9 +297,9 @@ namespace FrontierUI {
         ImGui::BeginGroup();
 
         float avail = ImGui::GetContentRegionAvail().x;
-        float rightW = 42.f;
-        if (color) rightW += 24.f;
-        if (key) rightW += 78.f;
+        float rightW = 44.f;
+        if (color) rightW += 26.f;
+        if (key) rightW += 92.f;
         float leftW = avail - rightW - 4.f;
         if (leftW < 48.f) leftW = 48.f;
 
@@ -462,7 +462,8 @@ namespace FrontierUI {
             const float rowW = ImGui::GetContentRegionAvail().x;
             ImGui::TextColored(V4(variables::Theme::text), "%s", title);
             if (headerToggle) {
-                ImGui::SameLine(rowW - 44.f);
+                ImGui::SameLine(0, 0);
+                ImGui::SetCursorPosX(ImGui::GetWindowContentRegionMax().x - 44.f);
                 ToggleSwitch("##hdr", headerToggle);
             }
             ImGui::Spacing();

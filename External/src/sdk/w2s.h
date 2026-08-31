@@ -62,8 +62,11 @@ namespace W2S {
         float w = (worldPos.X * viewMatrix.data[12]) + (worldPos.Y * viewMatrix.data[13]) + (worldPos.Z * viewMatrix.data[14]) + viewMatrix.data[15];
 
         RBX::Vec2 screen{};
-        if (w < 0.01f)
+        if (w < 0.01f) {
+            screen.X = -1.f;
+            screen.Y = -1.f;
             return screen;
+        }
 
         float ndcX = x / w;
         float ndcY = y / w;

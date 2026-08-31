@@ -232,7 +232,6 @@ namespace FrontierMenu {
     }
 
     inline void DrawCombat() {
-        SyncMagicBulletFromHitbox();
         const char* parts[] = { "Head", "Body", "L Leg", "R Leg", "L Arm", "R Arm", "Closest" };
 
         FrontierUI::BeginTwoCol("##c0");
@@ -292,10 +291,10 @@ namespace FrontierMenu {
         if (FrontierUI::BeginCard("Silent Aim", true, &variables::Aimbot::silentAim)) {
             if (variables::Aimbot::silentAim) {
                 variables::Aimbot::aimType = 1;
+                variables::Aimbot::enabled = true;
             } else if (variables::Aimbot::aimType == 1) {
                 variables::Aimbot::aimType = 0;
             }
-            FrontierUI::OptionCheck("Enable Silent Aim", &variables::Aimbot::silentAim);
             FrontierUI::KeybindRow("Silent Aim Hotkey", &variables::Aimbot::silentAimKey);
             FrontierUI::SliderFloat("Field Of View", &variables::Aimbot::uiSilentFov, 0.f, 100.f, "%.0f");
             FrontierUI::Combo("Hitbox", &variables::Aimbot::aimTarget, parts, 7);
@@ -304,11 +303,7 @@ namespace FrontierMenu {
         FrontierUI::EndCard();
 
         if (FrontierUI::BeginCard("Magic Bullet", true, &variables::MagicBullet::enabled)) {
-            if (variables::MagicBullet::enabled != variables::Hitbox::enabled)
-                SyncMagicBulletToHitbox();
-            FrontierUI::OptionCheck("Enable Magic Bullet", &variables::MagicBullet::enabled);
-            if (ImGui::IsItemDeactivatedAfterEdit())
-                SyncMagicBulletToHitbox();
+            SyncMagicBulletToHitbox();
             FrontierUI::KeybindRow("Magic Bullet Hotkey", &variables::MagicBullet::key);
             if (ImGui::IsItemDeactivatedAfterEdit()) {
                 variables::Hitbox::key = variables::MagicBullet::key;
@@ -753,7 +748,7 @@ namespace FrontierMenu {
                 if (ConfigIO::Load()) {
                     LoadAimSliders();
                     ApplyMagicBulletSliders();
-                    SyncMagicBulletFromHitbox();
+                    SyncMagicBulletToHitbox();
                     FrontierPresence::SyncEnabled(variables::Misc::discordRpc);
                     FrontierTheme::SyncBrandFromAccent();
                     FrontierTheme::MarkDirty();
@@ -1220,10 +1215,11 @@ namespace FrontierMenu {
         }
 
         float heroH = 118.f;
+        float volH = 36.f;
         float heroW = ImGui::GetContentRegionAvail().x;
         ImVec2 heroMin = ImGui::GetCursorScreenPos();
-        ImGui::InvisibleButton("##musicHero", ImVec2(heroW, heroH));
-        ImVec2 heroMax(heroMin.x + heroW, heroMin.y + heroH);
+        ImGui::InvisibleButton("##musicHero", ImVec2(heroW, heroH - volH));
+        ImVec2 heroMax(heroMin.x + heroW, heroMin.y + heroH - volH);
         ImDrawList* dl = ImGui::GetWindowDrawList();
         dl->AddRectFilled(heroMin, heroMax, IM_COL32(18, 20, 24, 255), 12.f);
         dl->AddRect(heroMin, heroMax, FrontierUI::U32(variables::Theme::border, 0.65f), 12.f);
@@ -1253,7 +1249,7 @@ namespace FrontierMenu {
             }
         }
 
-        ImGui::SetCursorScreenPos(ImVec2(heroMin.x + 16.f, heroMin.y + heroH - 36.f));
+        ImGui::SetCursorScreenPos(ImVec2(heroMin.x + 16.f, heroMin.y + heroH - volH));
         ImGui::PushItemWidth(heroW - 32.f);
         float volPct = variables::Audio::musicVolume * 100.f;
         if (FrontierUI::SliderFloat("Volume", &volPct, 0.f, 100.f, "%.0f%%"))

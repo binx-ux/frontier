@@ -58,7 +58,8 @@ namespace Aimbot {
     inline bool CombatBlocked()
     {
         if (variables::waitingForKey) return true;
-        if (variables::menuOpen || variables::Misc::floatingPanelOpen) return true;
+        // Block only while the menu is capturing mouse/input — not merely because it is open
+        if (variables::Misc::menuHovered) return true;
         if (!variables::Theme::useFloatingHeader && variables::Misc::menuAnim > 0.05f)
             return true;
         return false;
@@ -248,9 +249,9 @@ namespace Aimbot {
 
         if (variables::Rage::enabled)
             return focused; // key toggles enabled in main; no hold required
-        if (!variables::Aimbot::enabled) return false;
-        if (!focused) return false;
         const bool silentPath = variables::Aimbot::silentAim || variables::Aimbot::aimType == 1;
+        if (!variables::Aimbot::enabled && !silentPath) return false;
+        if (!focused) return false;
         if (variables::Aimbot::toggleMode) {
             bool held = silentPath ? IsSilentAimKeyHeld() : IsAimKeyHeld();
             if (held && !aimToggleLatched) {
@@ -346,8 +347,14 @@ namespace Aimbot {
     {
         if (!variables::Aimbot::requireVisible) return true;
         Visibility::EnsureWorker();
-        if (Visibility::boxCount.load() <= 0) return false;
+        if (Visibility::boxCount.load() <= 0) return true;
         return Visibility::HasLineOfSight(eye, aimWorld);
+    }
+
+    inline bool ScreenPointValid(const RBX::Vec2& scr, float sw, float sh)
+    {
+        if (scr.X < -1.f || scr.Y < -1.f) return false;
+        return scr.X >= -64.f && scr.Y >= -64.f && scr.X <= sw + 64.f && scr.Y <= sh + 64.f;
     }
 
     inline void ClearLock()
@@ -483,11 +490,20 @@ namespace Aimbot {
     inline bool WriteMousePosToInputObject(uintptr_t inputObj, float x, float y, float maxW, float maxH)
     {
         if (!inputObj || inputObj < 0x10000) return false;
-        if (!ValidateInputObject(inputObj, maxW, maxH)) return false;
         if (!LooksLikeMousePos(x, y, maxW, maxH)) return false;
-        memory->write<float>(inputObj + Offsets::MouseService::MousePosition, x);
-        memory->write<float>(inputObj + Offsets::MouseService::MousePosition + 4, y);
-        return true;
+        static const uintptr_t posOffs[] = {
+            Offsets::MouseService::MousePosition,
+            0xE4, 0xEC, 0xF4, 0xD4
+        };
+        for (uintptr_t off : posOffs) {
+            memory->write<float>(inputObj + off, x);
+            memory->write<float>(inputObj + off + 4, y);
+            float rx = memory->read<float>(inputObj + off);
+            float ry = memory->read<float>(inputObj + off + 4);
+            if (fabsf(rx - x) < 2.f && fabsf(ry - y) < 2.f)
+                return true;
+        }
+        return false;
     }
 
     inline bool WriteMousePosToInputObject(uintptr_t inputObj, float x, float y)
@@ -553,6 +569,8 @@ namespace Aimbot {
         RBX::Vec3 eye = EyePos();
         float maxDist = variables::Aimbot::maxDistance;
         if (maxDist < 50.f) maxDist = 50.f;
+        float sw, sh, ox, oy;
+        W2S::EnsureViewport(sw, sh, ox, oy);
 
         const int savedBone = variables::Aimbot::aimTarget;
         if (boneOverride >= 0)
@@ -575,7 +593,7 @@ namespace Aimbot {
             LiveRefresh(plr);
             RBX::Vec3 world = AimPoint(plr, &viewMatrix);
             RBX::Vec2 scr = W2S::WorldToScreen(world, viewMatrix);
-            if (scr.X == 0.f && scr.Y == 0.f) continue;
+            if (!ScreenPointValid(scr, sw, sh)) continue;
 
             float limit = fovLimit;
             if (useHitboxRadius) {
@@ -605,7 +623,6 @@ namespace Aimbot {
         if (!UseSilentAim()) return;
         if (CombatBlocked()) return;
         if (!WindowManager::IsRobloxFocused()) return;
-        if (wasAiming && lockedPlayerAddr) return;
 
         const bool firing = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
         const bool keyHeld = ShouldAim();
@@ -656,7 +673,7 @@ namespace Aimbot {
         if (acquireFov < 15.f) acquireFov = 15.f;
         if (Games::IsBloxStrike())
             acquireFov *= 1.35f;
-        if (variables::Hitbox::enabled || variables::Local::hitboxEnabled) {
+        if (variables::Hitbox::enabled || variables::Local::hitboxEnabled || variables::MagicBullet::enabled) {
             float hbBoost = variables::Hitbox::size * 6.f;
             if (hbBoost > acquireFov) acquireFov = hbBoost;
         }
@@ -731,9 +748,7 @@ namespace Aimbot {
             RBX::Vec3 world = AimPoint(plr, &viewMatrix);
 
             screenOut = W2S::WorldToScreen(world, viewMatrix);
-            if (screenOut.X == 0.f && screenOut.Y == 0.f) return false;
-            if (screenOut.X < -40.f || screenOut.Y < -40.f || screenOut.X > sw + 40.f || screenOut.Y > sh + 40.f)
-                return false;
+            if (!ScreenPointValid(screenOut, sw, sh)) return false;
 
             pixelDist = Dist2(aimCx, aimCy, screenOut.X, screenOut.Y);
             if (pixelDist > fovLimit) return false;
@@ -831,7 +846,8 @@ namespace Aimbot {
             const bool blox = Games::IsBloxStrike();
             const bool wantSilent = UseSilentAim();
             const bool hitboxAssist =
-                (variables::Hitbox::enabled || variables::Local::hitboxEnabled) && variables::Hitbox::aimAssist;
+                (variables::Hitbox::enabled || variables::Local::hitboxEnabled || variables::MagicBullet::enabled)
+                && variables::Hitbox::aimAssist;
 
             // Silent spoof for bullet rays; on BloxStrike also mouse-move so camera tracks
             // (old path returned after a failed spoof → aimbot looked completely dead)
@@ -1011,10 +1027,10 @@ namespace Aimbot {
             RBX::Vec3 world = variables::Trigger::headOnly ? worldHead : worldBody;
 
             RBX::Vec2 scr = W2S::WorldToScreen(world, viewMatrix);
-            if (scr.X == 0.f && scr.Y == 0.f) {
+            if (!ScreenPointValid(scr, sw, sh)) {
                 world = worldBody;
                 scr = W2S::WorldToScreen(world, viewMatrix);
-                if (scr.X == 0.f && scr.Y == 0.f) continue;
+                if (!ScreenPointValid(scr, sw, sh)) continue;
             }
 
             float baseR = variables::Trigger::hitRadius;
@@ -1029,7 +1045,7 @@ namespace Aimbot {
             // Also accept body if not head-only
             if (!variables::Trigger::headOnly) {
                 RBX::Vec2 sb = W2S::WorldToScreen(worldBody, viewMatrix);
-                if (!(sb.X == 0.f && sb.Y == 0.f)) {
+                if (ScreenPointValid(sb, sw, sh)) {
                     float pdb = Dist2(aimCx, aimCy, sb.X, sb.Y);
                     if (pdb < pd) { pd = pdb; scr = sb; world = worldBody; }
                 }
@@ -1050,7 +1066,8 @@ namespace Aimbot {
         if (!hit) return;
 
         // Big hitbox assist: spoof mouse onto the real bone so Arsenal registers the shot
-        if ((variables::Hitbox::enabled || variables::Local::hitboxEnabled) && variables::Hitbox::aimAssist)
+        if ((variables::Hitbox::enabled || variables::Local::hitboxEnabled || variables::MagicBullet::enabled)
+            && variables::Hitbox::aimAssist)
             SetSilentMouse(bestScr.X, bestScr.Y);
         else if (rageShoot && UseSilentAim())
             SetSilentMouse(bestScr.X, bestScr.Y);

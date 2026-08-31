@@ -369,7 +369,7 @@ namespace Visuals {
         const RBX::Mat4& viewMatrix, ImU32 color, float thickness, bool outline) {
         RBX::Vec2 a = W2S::WorldToScreen(pos1, viewMatrix);
         RBX::Vec2 b = W2S::WorldToScreen(pos2, viewMatrix);
-        if ((a.X != 0 || a.Y != 0) && (b.X != 0 || b.Y != 0))
+        if (a.X >= 0.f && b.X >= 0.f)
             DrawLine(drawList, ImVec2(a.X, a.Y), ImVec2(b.X, b.Y), color, thickness, outline);
     }
 
@@ -621,14 +621,16 @@ namespace Visuals {
 
             // Use W2S overlay coords for on-screen test
             RBX::Vec2 headOverlay = W2S::WorldToScreen(plr.bones.head, viewMatrix);
-            bool onScreen = !(headOverlay.X == 0 && headOverlay.Y == 0) &&
-                headOverlay.X >= -48.f && headOverlay.Y >= -48.f &&
-                headOverlay.X <= sw + 48.f && headOverlay.Y <= sh + 48.f;
+            bool onScreen = Aimbot::ScreenPointValid(headOverlay, sw, sh);
+            if (!onScreen && variables::ESP::skeleton) {
+                RBX::Vec2 hrpOverlay = W2S::WorldToScreen(plr.bones.hrp, viewMatrix);
+                onScreen = Aimbot::ScreenPointValid(hrpOverlay, sw, sh);
+            }
 
             if (!onScreen && variables::ESP::oofArrows && plr.distance <= variables::ESP::oofDistance) {
                 ImVec2 projLocal(headOverlay.X, headOverlay.Y);
                 bool dummy = false;
-                if (headOverlay.X == 0 && headOverlay.Y == 0)
+                if (headOverlay.X < 0.f || headOverlay.Y < 0.f)
                     ProjectDirection(plr.bones.head, viewMatrix, sw, sh, projLocal, dummy);
                 ImVec2 d(projLocal.x - screenCenter.x, projLocal.y - screenCenter.y);
                 float len = sqrtf(d.x * d.x + d.y * d.y);
@@ -670,10 +672,12 @@ namespace Visuals {
                 plr.bones.hasHead = true;
             }
             headOverlay = W2S::WorldToScreen(plr.bones.head, viewMatrix);
-            onScreen = !(headOverlay.X == 0 && headOverlay.Y == 0) &&
-                headOverlay.X >= 0 && headOverlay.Y >= 0 &&
-                headOverlay.X <= sw && headOverlay.Y <= sh;
-            if (!onScreen) continue;
+            onScreen = Aimbot::ScreenPointValid(headOverlay, sw, sh);
+            if (!onScreen && (variables::ESP::skeleton || variables::ESP::wireframePlayers)) {
+                RBX::Vec2 hrpOverlay = W2S::WorldToScreen(plr.bones.hrp, viewMatrix);
+                onScreen = Aimbot::ScreenPointValid(hrpOverlay, sw, sh);
+            }
+            if (!onScreen && !variables::ESP::skeleton && !variables::ESP::wireframePlayers) continue;
 
             RBX::Vec3 headPos = plr.bones.head;
             RBX::Vec3 hrpPos = plr.bones.hrp;

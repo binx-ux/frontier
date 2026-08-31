@@ -142,15 +142,103 @@ namespace
 		memory->write<RBX::Vec3>(prim + Offsets::Primitive::AssemblyAngularVelocity, av);
 	}
 
-	// Devforum anti-fling: force Running when stuck in ragdoll / falling / physics states
 	void ForceHumanoidRunning(uintptr_t humanoidAddr)
 	{
 		if (!humanoidAddr) return;
 		const uintptr_t statePtr = memory->read<uintptr_t>(humanoidAddr + Offsets::Humanoid::HumanoidState);
 		if (!statePtr) return;
 		const int stateId = memory->read<int>(statePtr + Offsets::Humanoid::HumanoidStateID);
-		if (stateId == 0 || stateId == 5 || stateId == 6 || stateId == 10 || stateId == 15)
+		if (stateId == 0 || stateId == 5 || stateId == 6 || stateId == 8 || stateId == 10 || stateId == 15)
 			memory->write<int>(statePtr + Offsets::Humanoid::HumanoidStateID, 1);
+	}
+
+	void ApplyCharacterPartFlags(RBX::RbxInstance character, bool noCollide, bool noTouch);
+
+	void ApplyAntiFling(RBX::RbxInstance rootPart, RBX::RbxInstance humanoid, RBX::RbxInstance character)
+	{
+		if (!variables::Local::antiFling || !rootPart.Addr)
+			return;
+
+		auto prim = rootPart.GetPrimitivePtr();
+		if (!prim)
+			return;
+
+		static RBX::Vec3 lastSafePos{};
+		static bool haveSafe = false;
+		static auto recoverUntil = std::chrono::steady_clock::now();
+
+		WriteLocalAngularVelocity(rootPart, { 0.f, 0.f, 0.f });
+		memory->write<RBX::Vec3>(prim + Offsets::Primitive::AssemblyAngularVelocity, { 0.f, 0.f, 0.f });
+
+		const RBX::Vec3 pos = rootPart.GetPos();
+		RBX::Vec3 v = memory->read<RBX::Vec3>(prim + Offsets::Primitive::AssemblyLinearVelocity);
+		const float horiz = sqrtf(v.X * v.X + v.Z * v.Z);
+
+		float expected = 16.f;
+		if (variables::Local::speedEnabled)
+			expected = (std::max)(expected, variables::Local::walkSpeed * 1.05f);
+		if (variables::Local::flyEnabled && variables::Local::flyActive)
+			expected = (std::max)(expected, variables::Local::flySpeed * 1.05f);
+		if (variables::Local::bhopEnabled)
+			expected = (std::max)(expected, variables::Local::bhopSpeed * 1.05f);
+
+		const float softCap = expected + 6.f;
+		const float hardCap = expected + 18.f;
+		bool flung = horiz > softCap || fabsf(v.Y) > 22.f;
+
+		if (haveSafe) {
+			const float dx = pos.X - lastSafePos.X;
+			const float dy = pos.Y - lastSafePos.Y;
+			const float dz = pos.Z - lastSafePos.Z;
+			const float disp = sqrtf(dx * dx + dy * dy + dz * dz);
+			if (disp > 5.f)
+				flung = true;
+		}
+
+		if (flung) {
+			if (horiz > hardCap || fabsf(v.Y) > 36.f)
+				v = { 0.f, 0.f, 0.f };
+			else {
+				if (horiz > softCap && horiz > 0.01f) {
+					const float scale = softCap / horiz;
+					v.X *= scale;
+					v.Z *= scale;
+				}
+				if (fabsf(v.Y) > 22.f)
+					v.Y *= 0.12f;
+			}
+
+			WriteLocalVelocity(rootPart, v);
+			memory->write<RBX::Vec3>(prim + Offsets::Primitive::AssemblyLinearVelocity, v);
+			WriteLocalAngularVelocity(rootPart, { 0.f, 0.f, 0.f });
+
+			if (haveSafe) {
+				const float dx = pos.X - lastSafePos.X;
+				const float dy = pos.Y - lastSafePos.Y;
+				const float dz = pos.Z - lastSafePos.Z;
+				if (sqrtf(dx * dx + dy * dy + dz * dz) > 5.f) {
+					RBX::Vec3 fix = lastSafePos;
+					fix.Y += 1.5f;
+					rootPart.SetPos(fix);
+					WriteLocalVelocity(rootPart, { 0.f, 0.f, 0.f });
+				}
+			}
+
+			if (humanoid.Addr) {
+				ForceHumanoidRunning(humanoid.Addr);
+				memory->write<uint8_t>(humanoid.Addr + Offsets::Humanoid::PlatformStand, 0);
+				memory->write<uint8_t>(humanoid.Addr + Offsets::Humanoid::AutoRotate, 1);
+			}
+
+			ApplyCharacterPartFlags(character, true, true);
+			recoverUntil = std::chrono::steady_clock::now() + std::chrono::milliseconds(150);
+		}
+		else {
+			lastSafePos = pos;
+			haveSafe = true;
+			if (humanoid.Addr && std::chrono::steady_clock::now() >= recoverUntil)
+				memory->write<uint8_t>(humanoid.Addr + Offsets::Humanoid::PlatformStand, 0);
+		}
 	}
 
 	void WritePrimVelocityBurst(uintptr_t prim, const RBX::Vec3& vel, int reps)
@@ -443,6 +531,18 @@ namespace
 				else if (!hk) hitboxKeyLatch = false;
 			}
 
+			static bool magicKeyLatch = false;
+			if (variables::MagicBullet::key > 0 && variables::MagicBullet::key != variables::Hitbox::key) {
+				bool mk = GameKeyDown(variables::MagicBullet::key);
+				if (mk && !magicKeyLatch) {
+					variables::MagicBullet::enabled = !variables::MagicBullet::enabled;
+					variables::Hitbox::enabled = variables::MagicBullet::enabled;
+					variables::Local::hitboxEnabled = variables::Hitbox::enabled;
+					magicKeyLatch = true;
+				}
+				else if (!mk) magicKeyLatch = false;
+			}
+
 			static bool rageKeyLatch = false;
 			if (variables::Rage::key > 0) {
 				bool rk = GameKeyDown(variables::Rage::key);
@@ -683,65 +783,6 @@ namespace
 						} else {
 							clearFlingVictim();
 						}
-					}
-				}
-			}
-
-			// Anti-fling — devforum pattern: zero spin, clamp velocity spikes, force Running state
-			if (variables::Local::antiFling) {
-				static auto antiFlingUntil = std::chrono::steady_clock::now();
-				auto prim = rootPart.GetPrimitivePtr();
-				if (prim) {
-					WriteLocalAngularVelocity(rootPart, { 0.f, 0.f, 0.f });
-					memory->write<RBX::Vec3>(prim + Offsets::Primitive::AssemblyAngularVelocity, { 0.f, 0.f, 0.f });
-
-					RBX::Vec3 v = memory->read<RBX::Vec3>(prim + Offsets::Primitive::AssemblyLinearVelocity);
-					const float horiz = sqrtf(v.X * v.X + v.Z * v.Z);
-					float expected = 20.f;
-					if (variables::Local::speedEnabled)
-						expected = (std::max)(expected, variables::Local::walkSpeed * 1.1f);
-					if (variables::Local::flyEnabled && variables::Local::flyActive)
-						expected = (std::max)(expected, variables::Local::flySpeed * 1.1f);
-
-					const float softCap = expected + 14.f;
-					const float hardCap = expected + 38.f;
-					const float extremeCap = expected + 95.f;
-					const bool spikeHoriz = horiz > softCap;
-					const bool spikeVert = fabsf(v.Y) > 52.f;
-					const bool extreme = horiz > extremeCap || fabsf(v.Y) > 120.f;
-					bool changed = false;
-
-					if (extreme) {
-						v = { 0.f, (v.Y > 0.f && v.Y < 8.f) ? v.Y : 0.f, 0.f };
-						changed = true;
-					} else if (spikeHoriz && horiz > 1.f) {
-						const float target = horiz > hardCap ? expected : softCap;
-						const float scale = target / horiz;
-						v.X *= scale;
-						v.Z *= scale;
-						changed = true;
-					}
-					if (!extreme && spikeVert) {
-						v.Y *= 0.22f;
-						if (fabsf(v.Y) > 42.f)
-							v.Y = (v.Y > 0.f ? 42.f : -42.f);
-						changed = true;
-					}
-
-					if (changed) {
-						WriteLocalVelocity(rootPart, v);
-						memory->write<RBX::Vec3>(prim + Offsets::Primitive::AssemblyLinearVelocity, v);
-						WriteLocalAngularVelocity(rootPart, { 0.f, 0.f, 0.f });
-						if (humanoid.Addr) {
-							ForceHumanoidRunning(humanoid.Addr);
-							if (horiz > hardCap || fabsf(v.Y) > 75.f || extreme) {
-								memory->write<uint8_t>(humanoid.Addr + Offsets::Humanoid::PlatformStand, 1);
-								const int ms = extreme ? 160 : 90;
-								antiFlingUntil = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
-							}
-						}
-					} else if (humanoid.Addr && std::chrono::steady_clock::now() >= antiFlingUntil) {
-						memory->write<uint8_t>(humanoid.Addr + Offsets::Humanoid::PlatformStand, 0);
 					}
 				}
 			}
@@ -1008,7 +1049,7 @@ namespace
 
 			const bool wantNoCol = variables::Local::noclip || variables::Local::flyActive ||
 				(variables::Rage::enabled && variables::Rage::teleport);
-			ApplyCharacterPartFlags(character, wantNoCol, variables::Local::antiFling);
+			ApplyCharacterPartFlags(character, wantNoCol, variables::Local::antiFling && !wantNoCol);
 
 			if (variables::Local::bhopEnabled && !variables::Local::flyActive && GameKeyDown(VK_SPACE) && Globals::camera.Addr != 0) {
 				auto cf = Globals::camera.GetCameraCFrame();
@@ -1041,7 +1082,7 @@ namespace
 			variables::Local::hitboxSize = variables::Hitbox::size;
 			variables::Local::visualizeHitbox = variables::Hitbox::visualize;
 
-			const bool hitboxOn = variables::Hitbox::enabled;
+			const bool hitboxOn = variables::Hitbox::enabled || variables::MagicBullet::enabled;
 
 			auto restoreHitboxes = [&]() {
 				for (auto& kv : hitboxOrig) {
@@ -1172,8 +1213,8 @@ namespace
 					memory->write<RBX::Vec3>(prim + Offsets::Primitive::AssemblyAngularVelocity, { 0, 0, 0 });
 			}
 
-			// Spin ΓÇö yaw angular velocity
-			if (variables::Local::spin && !variables::Local::walkFling) {
+			// Spin — yaw angular velocity (disabled while anti-fling protects you)
+			if (variables::Local::spin && !variables::Local::walkFling && !variables::Local::antiFling) {
 				auto prim = rootPart.GetPrimitivePtr();
 				if (prim)
 					memory->write<RBX::Vec3>(prim + Offsets::Primitive::AssemblyAngularVelocity,
@@ -1395,9 +1436,13 @@ namespace
 				}
 			}
 
+			ApplyAntiFling(rootPart, humanoid, character);
+
 			// Keep exploit loop tight while Auto TP is sticking to a target
 			if (variables::Local::autoTp)
 				std::this_thread::sleep_for(std::chrono::milliseconds(0));
+			else if (variables::Local::antiFling)
+				std::this_thread::sleep_for(std::chrono::milliseconds(1));
 			else
 				std::this_thread::sleep_for(std::chrono::milliseconds(4));
 		}

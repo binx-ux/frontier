@@ -315,7 +315,11 @@ namespace ConfigIO {
             variables::MagicBullet::key = variables::Hitbox::key;
         }
         else if (eq("hitbox.size")) variables::Hitbox::size = (float)atof(val);
-        else if (eq("magic.enabled")) variables::MagicBullet::enabled = B(val);
+        else if (eq("magic.enabled")) {
+            variables::MagicBullet::enabled = B(val);
+            if (variables::MagicBullet::enabled)
+                variables::Hitbox::enabled = true;
+        }
         else if (eq("magic.key")) {
             variables::MagicBullet::key = atoi(val);
             variables::Hitbox::key = variables::MagicBullet::key;
@@ -469,6 +473,10 @@ namespace ConfigIO {
             ApplyAimFromUi();
         else
             SyncUiFromAimTuning();
+        if (variables::MagicBullet::enabled)
+            variables::Hitbox::enabled = true;
+        else if (variables::Hitbox::enabled)
+            variables::MagicBullet::enabled = true;
         variables::Theme::styleDirty = true;
         return true;
     }

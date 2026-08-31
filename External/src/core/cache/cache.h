@@ -582,8 +582,10 @@ namespace PlayerCache {
         std::vector<CachedPlayer> updatedPlayers;
         updatedPlayers.reserve(playerList.size());
 
-        const bool needBones = variables::ESP::skeleton || variables::Aimbot::enabled
-            || variables::Aimbot::alwaysOn || variables::Misc::afkAssist
+        const bool needBones = variables::ESP::skeleton || variables::ESP::enabled
+            || variables::Aimbot::enabled || variables::Aimbot::silentAim
+            || variables::Aimbot::alwaysOn || variables::MagicBullet::enabled
+            || variables::Trigger::enabled || variables::Misc::afkAssist
             || variables::Aimbot::aimTarget >= 2;
 
         for (auto& plr : playerList) {
@@ -699,9 +701,10 @@ namespace PlayerCache {
                 int n = variables::Perf::playerUpdateEveryNFrames;
                 if (n < 1) n = 1;
                 // Aimbot wants fresher bones; ESP-only can idle longer
-                bool hot = variables::Aimbot::enabled || variables::Aimbot::alwaysOn
-                    || variables::Misc::afkAssist || variables::Rage::enabled
-                    || variables::Trigger::enabled;
+                bool hot = variables::Aimbot::enabled || variables::Aimbot::silentAim
+                    || variables::Aimbot::alwaysOn || variables::MagicBullet::enabled
+                    || variables::ESP::skeleton || variables::Misc::afkAssist
+                    || variables::Rage::enabled || variables::Trigger::enabled;
                 int ms = hot ? 16 : (16 * n);
                 if (ms > 48) ms = 48;
                 std::this_thread::sleep_for(std::chrono::milliseconds(ms));

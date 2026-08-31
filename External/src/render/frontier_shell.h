@@ -31,8 +31,8 @@ namespace FrontierShell {
 
     inline const TabItem* Tabs() {
         static const TabItem kTabs[] = {
-            { "Aimbot", 0 }, { "Players", 2 }, { "World", 3 }, { "Player", 1 },
-            { "Miscellaneous", 5 }, { "Lists", 7 }, { "Music", 8 }, { "Status", 6 }, { "Configs", 9 },
+            { "Aimbot", 0 }, { "Visuals", 2 }, { "World", 3 }, { "Player", 1 },
+            { "Miscellaneous", 5 }, { "Servers", 7 }, { "Music", 8 }, { "Status", 6 }, { "Configs", 9 },
         };
         return kTabs;
     }
