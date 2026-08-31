@@ -844,13 +844,8 @@ namespace LoaderUI {
     inline void DrawDownloadingScreen(HDC hdc, State* s)
     {
         DrawWindowControls(hdc, s);
-        DrawLoginHeader(hdc, "Updating", "Fetching the latest build...");
-        SelectObject(hdc, gFont);
-        SetTextColor(hdc, LoaderConfig::kTextDim);
-        RECT statusRc = HelloTextRect();
-        statusRc.top += 20;
-        statusRc.bottom += 20;
-        DrawTextA(hdc, s->status, -1, &statusRc, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS);
+        const char* line = (s && s->status[0]) ? s->status : "Fetching the latest build...";
+        DrawLoginHeader(hdc, "Updating", line);
         DrawProgressBar(hdc, s, false, false);
     }
 
@@ -862,14 +857,9 @@ namespace LoaderUI {
             DrawProgressBar(hdc, s, true, false);
             DrawGradientButton(hdc, PrimaryButtonRect(), "Continue", true, s->hoverBlend[0]);
         } else {
-            DrawLoginHeader(hdc, "Setup", "Downloading required files...");
-            SelectObject(hdc, gFont);
-            SetTextColor(hdc, LoaderConfig::kTextDim);
-            RECT subRc = SubtitleTextRect();
-            subRc.top += 18;
-            subRc.bottom += 40;
-            DrawTextA(hdc, s->status, -1, &subRc, DT_LEFT | DT_WORDBREAK);
-            DrawProgressBar(hdc, s, false, true);
+            const char* line = (s && s->status[0]) ? s->status : "Downloading required files...";
+            DrawLoginHeader(hdc, "Setup", line);
+            DrawProgressBar(hdc, s, false, false);
             DrawGradientButton(hdc, PrimaryButtonRect(), "Download", true, s->hoverBlend[0]);
         }
     }
