@@ -325,41 +325,64 @@ namespace PlayerCache {
         return 0;
     }
 
+    inline uintptr_t FindNamedAddrDeep(RBX::RbxInstance root, const char* name, int depth = 0)
+    {
+        if (!root.Addr || depth > 8) return 0;
+        if (root.GetName() == name) return root.Addr;
+        for (auto& ch : root.GetChildList()) {
+            if (ch.GetName() == name) return ch.Addr;
+            uintptr_t found = FindNamedAddrDeep(ch, name, depth + 1);
+            if (found) return found;
+        }
+        return 0;
+    }
+
     inline void fillBoneParts(RBX::RbxInstance character, BoneParts& bp)
     {
         bp = {};
         if (!character.Addr) return;
         auto children = character.GetChildList();
         bp.head = FindNamedAddr(children, "Head");
+        if (!bp.head) bp.head = FindNamedAddrDeep(character, "Head");
         bp.hrp = FindNamedAddr(children, "HumanoidRootPart");
         if (!bp.hrp) {
             auto humanoid = character.FindChildByClass("Humanoid");
             if (humanoid.Addr)
                 bp.hrp = memory->read<uintptr_t>(humanoid.Addr + Offsets::Humanoid::HumanoidRootPart);
         }
+        if (!bp.hrp) bp.hrp = FindNamedAddrDeep(character, "HumanoidRootPart");
         bp.torso = FindNamedAddr(children, "Torso");
+        if (!bp.torso) bp.torso = FindNamedAddrDeep(character, "Torso");
         bp.isR6 = (bp.torso != 0);
         if (bp.isR6) {
             bp.leftArm = FindNamedAddr(children, "Left Arm");
             bp.rightArm = FindNamedAddr(children, "Right Arm");
             bp.leftLeg = FindNamedAddr(children, "Left Leg");
             bp.rightLeg = FindNamedAddr(children, "Right Leg");
+            if (!bp.leftArm) bp.leftArm = FindNamedAddrDeep(character, "Left Arm");
+            if (!bp.rightArm) bp.rightArm = FindNamedAddrDeep(character, "Right Arm");
+            if (!bp.leftLeg) bp.leftLeg = FindNamedAddrDeep(character, "Left Leg");
+            if (!bp.rightLeg) bp.rightLeg = FindNamedAddrDeep(character, "Right Leg");
         }
         else {
             bp.upperTorso = FindNamedAddr(children, "UpperTorso");
+            if (!bp.upperTorso) bp.upperTorso = FindNamedAddrDeep(character, "UpperTorso");
             bp.lowerTorso = FindNamedAddr(children, "LowerTorso");
-            bp.leftUpperArm = FindNamedAddr(children, "LeftUpperArm");
-            bp.leftLowerArm = FindNamedAddr(children, "LeftLowerArm");
-            bp.leftHand = FindNamedAddr(children, "LeftHand");
-            bp.rightUpperArm = FindNamedAddr(children, "RightUpperArm");
-            bp.rightLowerArm = FindNamedAddr(children, "RightLowerArm");
-            bp.rightHand = FindNamedAddr(children, "RightHand");
-            bp.leftUpperLeg = FindNamedAddr(children, "LeftUpperLeg");
-            bp.leftLowerLeg = FindNamedAddr(children, "LeftLowerLeg");
-            bp.leftFoot = FindNamedAddr(children, "LeftFoot");
-            bp.rightUpperLeg = FindNamedAddr(children, "RightUpperLeg");
-            bp.rightLowerLeg = FindNamedAddr(children, "RightLowerLeg");
-            bp.rightFoot = FindNamedAddr(children, "RightFoot");
+            if (!bp.lowerTorso) bp.lowerTorso = FindNamedAddrDeep(character, "LowerTorso");
+            bp.leftUpperArm = FindNamedAddrDeep(character, "LeftUpperArm");
+            bp.leftLowerArm = FindNamedAddrDeep(character, "LeftLowerArm");
+            bp.leftHand = FindNamedAddrDeep(character, "LeftHand");
+            bp.rightUpperArm = FindNamedAddrDeep(character, "RightUpperArm");
+            bp.rightLowerArm = FindNamedAddrDeep(character, "RightLowerArm");
+            bp.rightHand = FindNamedAddrDeep(character, "RightHand");
+            bp.leftUpperLeg = FindNamedAddrDeep(character, "LeftUpperLeg");
+            bp.leftLowerLeg = FindNamedAddrDeep(character, "LeftLowerLeg");
+            bp.leftFoot = FindNamedAddrDeep(character, "LeftFoot");
+            bp.rightUpperLeg = FindNamedAddrDeep(character, "RightUpperLeg");
+            bp.rightLowerLeg = FindNamedAddrDeep(character, "RightLowerLeg");
+            bp.rightFoot = FindNamedAddrDeep(character, "RightFoot");
+            if (!bp.upperTorso && bp.lowerTorso) bp.upperTorso = bp.lowerTorso;
+            if (!bp.lowerTorso && bp.upperTorso) bp.lowerTorso = bp.upperTorso;
         }
         bp.ready = (bp.head != 0 || bp.hrp != 0);
     }

@@ -10,7 +10,7 @@ namespace LoaderConfig {
 
 
 
-    inline constexpr int kLocalVersion = 9;
+    inline constexpr int kLocalVersion = 10;
 
 
 
@@ -30,7 +30,7 @@ namespace LoaderConfig {
 
     inline constexpr const char* kFallbackUsermodeUrl =
 
-        "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.6/Frontier.exe";
+        "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.7/Frontier.exe";
 
     inline constexpr const char* kReleasesPage =
 
@@ -72,41 +72,24 @@ namespace LoaderConfig {
 
 
 
-    // Premium split layout — matches in-game red brand
+    // Flat utility layout — no glow / gradient chrome
+    inline constexpr int kWindowW = 780;
+    inline constexpr int kWindowH = 460;
+    inline constexpr int kSplitX = 248;
 
-    inline constexpr int kWindowW = 820;
-
-    inline constexpr int kWindowH = 480;
-
-    inline constexpr int kSplitX = 300;
-
-
-
-    inline constexpr COLORREF kBgTop = RGB(14, 14, 16);
-
-    inline constexpr COLORREF kBgBottom = RGB(8, 8, 10);
-
-    inline constexpr COLORREF kBg = RGB(10, 10, 12);
-
-    inline constexpr COLORREF kPanel = RGB(16, 16, 18);
-
-    inline constexpr COLORREF kPanelLeft = RGB(11, 11, 13);
-
-    inline constexpr COLORREF kCard = RGB(22, 22, 26);
-
-    inline constexpr COLORREF kCardInner = RGB(17, 17, 20);
-
-    inline constexpr COLORREF kCardHover = RGB(30, 30, 34);
-
-    inline constexpr COLORREF kAccent = RGB(251, 27, 8);
-
-    inline constexpr COLORREF kAccentHover = RGB(255, 58, 42);
-
-    inline constexpr COLORREF kAccentDim = RGB(160, 18, 6);
-
-    inline constexpr COLORREF kAccentLight = RGB(255, 120, 100);
-
-    inline constexpr COLORREF kAccentGlow = RGB(72, 10, 6);
+    inline constexpr COLORREF kBgTop = RGB(18, 18, 20);
+    inline constexpr COLORREF kBgBottom = RGB(14, 14, 16);
+    inline constexpr COLORREF kBg = RGB(16, 16, 18);
+    inline constexpr COLORREF kPanel = RGB(20, 20, 22);
+    inline constexpr COLORREF kPanelLeft = RGB(12, 12, 14);
+    inline constexpr COLORREF kCard = RGB(22, 22, 24);
+    inline constexpr COLORREF kCardInner = RGB(22, 22, 24);
+    inline constexpr COLORREF kCardHover = RGB(28, 28, 32);
+    inline constexpr COLORREF kAccent = RGB(235, 45, 35);
+    inline constexpr COLORREF kAccentHover = RGB(255, 70, 58);
+    inline constexpr COLORREF kAccentDim = RGB(140, 28, 22);
+    inline constexpr COLORREF kAccentLight = RGB(255, 120, 110);
+    inline constexpr COLORREF kAccentGlow = RGB(40, 40, 44);
 
     inline constexpr COLORREF kText = RGB(252, 252, 254);
 

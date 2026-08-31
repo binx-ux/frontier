@@ -433,83 +433,51 @@ namespace LoaderUI {
 
     inline void DrawLeftBrandPanel(HDC hdc, float animTime)
     {
+        (void)animTime;
         RECT client{};
         GetClientRect(gWnd, &client);
         const int h = client.bottom - client.top;
 
         RECT left{ 0, 0, LoaderConfig::kSplitX, h };
-        FillVerticalGradient(hdc, left, RGB(12, 12, 14), LoaderConfig::kPanelLeft);
+        HBRUSH panelBrush = CreateSolidBrush(LoaderConfig::kPanelLeft);
+        FillRect(hdc, &left, panelBrush);
+        DeleteObject(panelBrush);
 
-        const int cx = LoaderConfig::kSplitX / 2;
-        const int cy = h / 2 - 12;
-        const float pulse = 0.5f + 0.5f * sinf(animTime * 0.7f);
-
-        DrawSoftGlow(hdc, cx, cy, 96,
-            BlendRgb(LoaderConfig::kAccentGlow, LoaderConfig::kAccent, 0.18f + pulse * 0.12f),
-            LoaderConfig::kPanelLeft, 10);
-
-        HPEN accentPen = CreatePen(PS_SOLID, 2, LoaderConfig::kAccent);
-        HGDIOBJ op = SelectObject(hdc, accentPen);
-        MoveToEx(hdc, cx - 42, cy - 36, nullptr);
-        LineTo(hdc, cx + 42, cy - 36);
-        SelectObject(hdc, op);
-        DeleteObject(accentPen);
-
-        SelectObject(hdc, gFontLogo);
-        SetTextColor(hdc, LoaderConfig::kText);
-        RECT logoRc{ 0, cy - 24, LoaderConfig::kSplitX, cy + 16 };
-        DrawTextA(hdc, "FRONTIER", -1, &logoRc, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
-
-        SelectObject(hdc, gFont);
-        SetTextColor(hdc, LoaderConfig::kTextMuted);
-        RECT tagRc{ 0, cy + 18, LoaderConfig::kSplitX, cy + 40 };
-        DrawTextA(hdc, "Premium External", -1, &tagRc, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
-
-        HPEN pen = CreatePen(PS_SOLID, 1, RGB(34, 34, 38));
-        op = SelectObject(hdc, pen);
+        HPEN pen = CreatePen(PS_SOLID, 1, LoaderConfig::kBorder);
+        HGDIOBJ op = SelectObject(hdc, pen);
         MoveToEx(hdc, LoaderConfig::kSplitX - 1, 0, nullptr);
         LineTo(hdc, LoaderConfig::kSplitX - 1, h);
         SelectObject(hdc, op);
         DeleteObject(pen);
+
+        const int cx = LoaderConfig::kSplitX / 2;
+        const int cy = h / 2 - 8;
+
+        SelectObject(hdc, gFontLogo);
+        SetTextColor(hdc, LoaderConfig::kText);
+        RECT logoRc{ 0, cy - 20, LoaderConfig::kSplitX, cy + 12 };
+        DrawTextA(hdc, "FRONTIER", -1, &logoRc, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
+
+        SelectObject(hdc, gFont);
+        SetTextColor(hdc, LoaderConfig::kTextMuted);
+        RECT tagRc{ 0, cy + 14, LoaderConfig::kSplitX, cy + 34 };
+        DrawTextA(hdc, "External  v1.2.7", -1, &tagRc, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
     }
 
     inline void DrawRightBackdrop(HDC hdc, float animTime)
     {
+        (void)animTime;
         RECT client{};
         GetClientRect(gWnd, &client);
-        const int w = client.right - client.left;
-        const int h = client.bottom - client.top;
-        const int rx = LoaderConfig::kSplitX;
-
-        RECT right{ rx, 0, w, h };
-        FillVerticalGradient(hdc, right, LoaderConfig::kBgTop, LoaderConfig::kBgBottom);
-
-        const float drift = sinf(animTime * 0.45f) * 8.f;
-        DrawSoftGlow(hdc, rx + 160 + (int)drift, 80, 100,
-            RGB(72, 10, 6), LoaderConfig::kBgBottom, 8);
+        RECT right{ LoaderConfig::kSplitX, 0, client.right, client.bottom };
+        HBRUSH bg = CreateSolidBrush(LoaderConfig::kBg);
+        FillRect(hdc, &right, bg);
+        DeleteObject(bg);
     }
 
     inline void DrawContentCard(HDC hdc)
     {
-        RECT r = RightContentRect();
-        RECT card{
-            r.left - 4,
-            r.top - 12,
-            r.right + 4,
-            r.bottom + 8
-        };
-
-        FillRoundRect(hdc, card, LoaderConfig::kCard, LoaderConfig::kBorder, 16);
-        RECT inner = card;
-        inner.left += 1; inner.top += 1; inner.right -= 1; inner.bottom -= 1;
-        FillRoundRect(hdc, inner, LoaderConfig::kCardInner, LoaderConfig::kCardInner, 15);
-
-        HPEN accentLine = CreatePen(PS_SOLID, 2, LoaderConfig::kAccent);
-        HGDIOBJ oldPen = SelectObject(hdc, accentLine);
-        MoveToEx(hdc, inner.left + 20, inner.top + 2, nullptr);
-        LineTo(hdc, inner.left + 56, inner.top + 2);
-        SelectObject(hdc, oldPen);
-        DeleteObject(accentLine);
+        (void)hdc;
     }
 
     inline void DrawBackground(HDC hdc, float animTime)
@@ -801,7 +769,7 @@ namespace LoaderUI {
         } else if (s->localVersion > 0) {
             sprintf_s(ver, "v%d", s->localVersion);
         } else {
-            sprintf_s(ver, "v1.2.6");
+            sprintf_s(ver, "v1.2.7");
         }
 
         SetTextColor(hdc, LoaderConfig::kTextMuted);

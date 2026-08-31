@@ -369,15 +369,39 @@ namespace Visuals {
         const RBX::Mat4& viewMatrix, ImU32 color, float thickness, bool outline) {
         RBX::Vec2 a = W2S::WorldToScreen(pos1, viewMatrix);
         RBX::Vec2 b = W2S::WorldToScreen(pos2, viewMatrix);
-        if (a.X >= 0.f && b.X >= 0.f)
+        float sw, sh, ox, oy;
+        W2S::EnsureViewport(sw, sh, ox, oy);
+        if (Aimbot::ScreenPointValid(a, sw, sh) && Aimbot::ScreenPointValid(b, sw, sh))
             DrawLine(drawList, ImVec2(a.X, a.Y), ImVec2(b.X, b.Y), color, thickness, outline);
+    }
+
+    inline void RenderSkeletonFallback(ImDrawList* drawList, const PlayerCache::BoneSet& bones,
+        const RBX::Mat4& viewMatrix, ImU32 boneColor)
+    {
+        if (!bones.hasHead && !bones.hasHrp) return;
+        float th = variables::ESP::skeletonThickness;
+        bool ol = variables::ESP::skeletonOutline;
+        RBX::Vec3 head = bones.hasHead ? bones.head : bones.hrp;
+        RBX::Vec3 body = bones.hasHrp ? bones.hrp : head;
+        if (!bones.hasHead) head = body; head.Y += 1.4f;
+        DrawSkeletonBone(drawList, head, body, viewMatrix, boneColor, th, ol);
+        if (bones.hasHrp) {
+            RBX::Vec3 lFoot = body; lFoot.X -= 0.8f; lFoot.Y -= 2.2f;
+            RBX::Vec3 rFoot = body; rFoot.X += 0.8f; rFoot.Y -= 2.2f;
+            RBX::Vec3 lArm = body; lArm.X -= 1.2f; lArm.Y += 0.5f;
+            RBX::Vec3 rArm = body; rArm.X += 1.2f; rArm.Y += 0.5f;
+            DrawSkeletonBone(drawList, body, lFoot, viewMatrix, boneColor, th, ol);
+            DrawSkeletonBone(drawList, body, rFoot, viewMatrix, boneColor, th, ol);
+            DrawSkeletonBone(drawList, body, lArm, viewMatrix, boneColor, th * 0.9f, ol);
+            DrawSkeletonBone(drawList, body, rArm, viewMatrix, boneColor, th * 0.9f, ol);
+        }
     }
 
     inline void RenderSkeletonCached(ImDrawList* drawList, const PlayerCache::BoneSet& bones, const RBX::Mat4& viewMatrix, ImU32 boneColor) {
         float th = variables::ESP::skeletonThickness;
         bool ol = variables::ESP::skeletonOutline;
         if (bones.isR6) {
-            if (!bones.hasHead) return;
+            if (!bones.hasHead && !bones.hasHrp) return;
             DrawSkeletonBone(drawList, bones.head, bones.torso, viewMatrix, boneColor, th, ol);
             DrawSkeletonBone(drawList, bones.torso, bones.leftArm, viewMatrix, boneColor, th, ol);
             DrawSkeletonBone(drawList, bones.torso, bones.rightArm, viewMatrix, boneColor, th, ol);
@@ -385,6 +409,7 @@ namespace Visuals {
             DrawSkeletonBone(drawList, bones.torso, bones.rightLeg, viewMatrix, boneColor, th, ol);
             return;
         }
+        if (!bones.hasHead && !bones.hasHrp) return;
         if (!bones.hasHead) return;
         DrawSkeletonBone(drawList, bones.head, bones.upperTorso, viewMatrix, boneColor, th, ol);
         DrawSkeletonBone(drawList, bones.upperTorso, bones.lowerTorso, viewMatrix, boneColor, th, ol);
@@ -679,6 +704,14 @@ namespace Visuals {
             }
             if (!onScreen && !variables::ESP::skeleton && !variables::ESP::wireframePlayers) continue;
 
+            // Always refresh bones when skeleton/wireframe/chams need them
+            if (variables::ESP::skeleton || variables::ESP::wireframePlayers || variables::ESP::chamsEnabled) {
+                if (plr.characterAddr)
+                    PlayerCache::fillBoneParts(RBX::RbxInstance(plr.characterAddr), plr.boneParts);
+                if (plr.boneParts.ready)
+                    PlayerCache::refreshBonePositions(plr.boneParts, plr.bones);
+            }
+
             RBX::Vec3 headPos = plr.bones.head;
             RBX::Vec3 hrpPos = plr.bones.hrp;
             bool isR6 = plr.bones.isR6;
@@ -736,8 +769,12 @@ namespace Visuals {
             if (isTarget)
                 boxCol = IM_COL32(255, 214, 72, 255);
 
-            if (variables::ESP::skeleton && drawSkeleton)
-                RenderSkeletonCached(drawList, plr.bones, viewMatrix, MulAlpha(boxCol, 0.92f));
+            if (variables::ESP::skeleton && drawSkeleton) {
+                if (plr.boneParts.ready && (plr.boneParts.torso || plr.boneParts.upperTorso))
+                    RenderSkeletonCached(drawList, plr.bones, viewMatrix, MulAlpha(boxCol, 0.92f));
+                else
+                    RenderSkeletonFallback(drawList, plr.bones, viewMatrix, MulAlpha(boxCol, 0.92f));
+            }
             if (variables::ESP::wireframePlayers && !variables::ESP::skeleton && drawSkeleton)
                 RenderSkeletonCached(drawList, plr.bones, viewMatrix, MulAlpha(boxCol, 0.75f));
 

@@ -132,18 +132,10 @@ namespace Visibility {
 
     inline bool PartBlocksRays(uintptr_t prim, uintptr_t instAddr = 0)
     {
+        (void)instAddr;
         if (!prim) return false;
         uint8_t flags = memory->read<uint8_t>(prim + Offsets::Primitive::Flags);
-        bool collide = (flags & Offsets::PrimitiveFlags::CanCollide) != 0;
-        bool query = (flags & Offsets::PrimitiveFlags::CanQuery) != 0;
-        bool touch = (flags & Offsets::PrimitiveFlags::CanTouch) != 0;
-        if (collide || query || touch) return true;
-        // Many games use invisible non-collide barriers — treat opaque parts as occluders.
-        if (instAddr) {
-            float tr = memory->read<float>(instAddr + Offsets::BasePart::Transparency);
-            if (tr < 0.92f) return true;
-        }
-        return false;
+        return (flags & Offsets::PrimitiveFlags::CanCollide) != 0;
     }
 
     inline bool IsWallLike(const RBX::Vec3& size)
@@ -329,16 +321,13 @@ namespace Visibility {
         float maxT = len - 0.35f;
         if (maxT < 0.15f) return true;
 
-        if (!everBuilt) {
-            rebuildRequested.store(true);
-            return false;
-        }
-
         std::lock_guard<std::mutex> lock(boxesMutex);
 
-        // No geometry yet — block when wall check is active (fail-closed)
-        if (!everBuilt || boxes.empty())
-            return false;
+        // Mesh still building — fail open so aim isn't dead for the first seconds
+        if (!everBuilt || boxes.empty()) {
+            rebuildRequested.store(true);
+            return true;
+        }
 
         for (const auto& b : boxes) {
             if (!b.Valid()) continue;
@@ -346,8 +335,7 @@ namespace Visibility {
 
             float t = 0.f;
             if (RayHitsOBB(from, dir, maxT, b, t)) {
-                // Ignore hits glued to the camera (local gun / viewmodel leftovers)
-                if (t >= 0.25f && t <= maxT)
+                if (t >= 0.5f && t <= maxT)
                     return false;
             }
         }

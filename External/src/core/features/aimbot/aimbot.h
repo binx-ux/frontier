@@ -370,8 +370,9 @@ namespace Aimbot {
     // (VisualEngine dimensions), not always 1:1 with overlay client coords.
     inline uintptr_t cachedMouseService = 0;
     inline uintptr_t cachedPlayerMouse = 0;
-    inline uintptr_t cachedInputObjects[6]{};
+    inline uintptr_t cachedInputObjects[12]{};
     inline int cachedInputObjectCount = 0;
+    inline uintptr_t cachedUserInputState = 0;
     inline auto lastMouseResolve = std::chrono::steady_clock::now() - std::chrono::seconds(10);
 
     inline bool UseSilentAim()
@@ -428,7 +429,7 @@ namespace Aimbot {
         if (!io || io < 0x10000) return;
         for (int i = 0; i < cachedInputObjectCount; i++)
             if (cachedInputObjects[i] == io) return;
-        if (cachedInputObjectCount >= 6) return;
+        if (cachedInputObjectCount >= 12) return;
         if (!trusted && !ValidateInputObject(io, maxW, maxH)) return;
         cachedInputObjects[cachedInputObjectCount++] = io;
     }
@@ -442,6 +443,7 @@ namespace Aimbot {
 
         lastMouseResolve = now;
         cachedMouseService = cachedPlayerMouse = 0;
+        cachedUserInputState = 0;
         cachedInputObjectCount = 0;
         for (auto& io : cachedInputObjects) io = 0;
         if (!Globals::dataModel.Addr) return false;
@@ -458,13 +460,27 @@ namespace Aimbot {
             static const uintptr_t ioOffs[] = {
                 Offsets::MouseService::InputObject,
                 Offsets::MouseService::InputObject2,
-                0xE8, 0xF8, 0x108
+                0xE8, 0xF8, 0x108, 0x110, 0x118, 0x128
             };
             for (uintptr_t off : ioOffs) {
                 uintptr_t io = memory->read<uintptr_t>(ms.Addr + off);
                 const bool trusted = (off == Offsets::MouseService::InputObject ||
                     off == Offsets::MouseService::InputObject2);
                 PushInputObject(io, maxW, maxH, trusted);
+            }
+        }
+
+        auto uis = Globals::dataModel.FindChildByClass("UserInputService");
+        if (!uis.Addr) uis = Globals::dataModel.FindChild("UserInputService");
+        if (uis.Addr) {
+            cachedUserInputState = memory->read<uintptr_t>(
+                uis.Addr + Offsets::UserInputService::WindowInputState);
+            if (cachedUserInputState) {
+                static const uintptr_t wisOffs[] = { 0x0, 0x8, 0x10, 0x18, 0x20, 0xF0, 0x100, 0xD4 };
+                for (uintptr_t off : wisOffs) {
+                    uintptr_t io = memory->read<uintptr_t>(cachedUserInputState + off);
+                    PushInputObject(io, maxW, maxH);
+                }
             }
         }
 
@@ -493,17 +509,18 @@ namespace Aimbot {
         if (!LooksLikeMousePos(x, y, maxW, maxH)) return false;
         static const uintptr_t posOffs[] = {
             Offsets::MouseService::MousePosition,
-            0xE4, 0xEC, 0xF4, 0xD4
+            0xEC, 0xE4, 0xF4, 0xD4, 0xFC, 0x104
         };
+        bool wrote = false;
         for (uintptr_t off : posOffs) {
             memory->write<float>(inputObj + off, x);
             memory->write<float>(inputObj + off + 4, y);
             float rx = memory->read<float>(inputObj + off);
             float ry = memory->read<float>(inputObj + off + 4);
             if (fabsf(rx - x) < 2.f && fabsf(ry - y) < 2.f)
-                return true;
+                wrote = true;
         }
-        return false;
+        return wrote;
     }
 
     inline bool WriteMousePosToInputObject(uintptr_t inputObj, float x, float y)
@@ -533,11 +550,20 @@ namespace Aimbot {
         float matW = (W2S::renderSW > 50.f) ? W2S::renderSW : sw;
         float matH = (W2S::renderSH > 50.f) ? W2S::renderSH : sh;
 
+        bool any = false;
+        if (cachedMouseService) {
+            memory->write<float>(cachedMouseService + Offsets::MouseService::MousePosition, rx);
+            memory->write<float>(cachedMouseService + Offsets::MouseService::MousePosition + 4, ry);
+            any = true;
+        }
+
         for (int i = 0; i < cachedInputObjectCount; i++) {
             if (WriteMousePosToInputObject(cachedInputObjects[i], rx, ry, matW, matH))
-                return true;
+                any = true;
+            if (WriteMousePosToInputObject(cachedInputObjects[i], clientX, clientY, sw, sh))
+                any = true;
         }
-        return false;
+        return any;
     }
 
     inline bool RestoreSilentMouseFromCursor()
@@ -627,6 +653,8 @@ namespace Aimbot {
         const bool firing = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
         const bool keyHeld = ShouldAim();
         if (!firing && !keyHeld) return;
+
+        ResolveMouseService(false);
 
         float t = Clamp(variables::Aimbot::uiSilentFov * 0.01f, 0.f, 1.f);
         float acquireFov = 20.f + (500.f - 20.f) * t;
@@ -843,7 +871,6 @@ namespace Aimbot {
             lockScreenY = scr.Y;
             hasLockScreen = true;
 
-            const bool blox = Games::IsBloxStrike();
             const bool wantSilent = UseSilentAim();
             const bool hitboxAssist =
                 (variables::Hitbox::enabled || variables::Local::hitboxEnabled || variables::MagicBullet::enabled)
@@ -859,38 +886,21 @@ namespace Aimbot {
                 if (silentOk) silentSpoofActive = true;
             }
 
-            if (wantSilent && silentOk && !blox) {
-                prevErrX = scr.X - aimCx;
-                prevErrY = scr.Y - aimCy;
-                accumX = accumY = 0.f;
-                return;
-            }
-
-            if (wantSilent && silentOk && blox) {
+            // Silent: always spoof; fall back to mouse move if spoof fails or crosshair is far
+            if (wantSilent && silentOk) {
                 prevErrX = scr.X - aimCx;
                 prevErrY = scr.Y - aimCy;
                 accumX = accumY = 0.f;
                 float errX = scr.X - aimCx;
                 float errY = scr.Y - aimCy;
                 float dist = sqrtf(errX * errX + errY * errY);
-                if (dist > 22.f) {
-                    float mx = errX * 0.05f;
-                    float my = errY * 0.05f;
-                    MoveMouse(mx, my);
-                }
-                return;
+                if (dist < 12.f)
+                    return;
             }
 
             if (wantSilent && !silentOk) {
                 ResolveMouseService(true);
-                silentOk = SetSilentMouse(scr.X, scr.Y);
-                if (silentOk) {
-                    silentSpoofActive = true;
-                    prevErrX = scr.X - aimCx;
-                    prevErrY = scr.Y - aimCy;
-                    accumX = accumY = 0.f;
-                    return;
-                }
+                SetSilentMouse(scr.X, scr.Y);
             }
 
             float errX = scr.X - aimCx;

@@ -631,19 +631,21 @@ namespace
 				jumpWasOn = false;
 			}
 
-			// Inf jump
-			if (variables::Local::infJump && GameKeyDown(VK_SPACE)) {
-				RBX::ModifyJumpPower(humanoid, variables::Local::jumpPower > 1.f ? variables::Local::jumpPower : 50.f);
+			// Inf jump — velocity + humanoid jump (works across R6/R15/custom)
+			if (variables::Local::infJump && WindowManager::IsRobloxFocused() &&
+				(GetAsyncKeyState(VK_SPACE) & 0x8000)) {
+				float jp = variables::Local::jumpPower > 1.f ? variables::Local::jumpPower : 50.f;
+				RBX::ModifyJumpPower(humanoid, jp);
+				memory->write<float>(humanoid.Addr + Offsets::Humanoid::JumpHeight, jp * 0.18f);
 				RBX::ForceJump(humanoid);
 				auto prim = rootPart.GetPrimitivePtr();
 				if (prim) {
 					RBX::Vec3 vel = memory->read<RBX::Vec3>(prim + Offsets::Primitive::AssemblyLinearVelocity);
-					float boost = variables::Local::jumpPower * 0.55f;
-					if (boost < 45.0f) boost = 45.0f;
-					if (vel.Y < boost * 0.85f) {
+					float boost = jp * 0.75f;
+					if (boost < 42.f) boost = 42.f;
+					if (vel.Y < boost * 0.8f)
 						vel.Y = boost;
-						WriteLocalVelocity(rootPart, vel);
-					}
+					WriteLocalVelocity(rootPart, vel);
 				}
 			}
 
@@ -1006,7 +1008,7 @@ namespace
 
 			if (variables::Local::flyActive && Globals::camera.Addr != 0) {
 				if (humanoid.Addr) {
-					memory->write<uint8_t>(humanoid.Addr + Offsets::Humanoid::PlatformStand, 1);
+					memory->write<uint8_t>(humanoid.Addr + Offsets::Humanoid::PlatformStand, 0);
 					memory->write<uint8_t>(humanoid.Addr + Offsets::Humanoid::AutoRotate, 0);
 					flyHumanoidSet = true;
 				}
@@ -1038,7 +1040,11 @@ namespace
 					}
 				}
 				else if (variables::Local::flyMethod == 0) {
-					WriteLocalVelocity(rootPart, { 0, 0, 0 });
+					auto prim = rootPart.GetPrimitivePtr();
+					if (prim) {
+						RBX::Vec3 vel = memory->read<RBX::Vec3>(prim + Offsets::Primitive::AssemblyLinearVelocity);
+						WriteLocalVelocity(rootPart, { 0.f, vel.Y > -1.f ? 0.f : vel.Y * 0.5f, 0.f });
+					}
 				}
 				auto prim = rootPart.GetPrimitivePtr();
 				if (prim)
@@ -1050,7 +1056,7 @@ namespace
 				flyHumanoidSet = false;
 			}
 
-			const bool wantNoCol = variables::Local::noclip || variables::Local::flyActive ||
+			const bool wantNoCol = variables::Local::noclip ||
 				(variables::Rage::enabled && variables::Rage::teleport);
 			ApplyCharacterPartFlags(character, wantNoCol, variables::Local::antiFling && !wantNoCol);
 
@@ -1276,7 +1282,7 @@ namespace
 				}
 			}
 
-			// TP walk ΓÇö nudge HRP while holding WASD
+			// TP walk — nudge HRP while holding WASD (keep Y, damp fall)
 			if (variables::Local::tpWalk && Globals::camera.Addr) {
 				auto cf = Globals::camera.GetCameraCFrame();
 				RBX::Vec3 look = cf.GetLookVector();
@@ -1293,9 +1299,14 @@ namespace
 				if (GameKeyDown('A')) { step.X -= right.X * amt; step.Z -= right.Z * amt; }
 				if (step.X != 0.f || step.Z != 0.f) {
 					auto pos = rootPart.GetPos();
-					pos.X += step.X; pos.Z += step.Z;
+					pos.X += step.X;
+					pos.Z += step.Z;
 					rootPart.SetPos(pos);
-					WriteLocalVelocity(rootPart, { 0, 0, 0 });
+					auto prim = rootPart.GetPrimitivePtr();
+					if (prim) {
+						RBX::Vec3 vel = memory->read<RBX::Vec3>(prim + Offsets::Primitive::AssemblyLinearVelocity);
+						WriteLocalVelocity(rootPart, { vel.X * 0.15f, vel.Y, vel.Z * 0.15f });
+					}
 				}
 			}
 

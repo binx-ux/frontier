@@ -1,12 +1,12 @@
 {
-  "version": 9,
-  "display": "FRONTIER v1.2.6",
+  "version": 10,
+  "display": "FRONTIER v1.2.7",
   "kernel_available": true,
   "access_required": true,
   "discord_invite": "https://discord.gg/zHGKqd92Pz",
-  "loader_url": "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.6/FrontierLoader.exe",
-  "zip_url": "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.6/Frontier-v1.2.6.zip",
-  "usermode_url": "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.6/Frontier.exe",
-  "kernel_url": "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.6/Frontier-Kernel.exe",
-  "driver_url": "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.6/FrontierDrv.sys"
+  "loader_url": "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.7/FrontierLoader.exe",
+  "zip_url": "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.7/Frontier-v1.2.7.zip",
+  "usermode_url": "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.7/Frontier.exe",
+  "kernel_url": "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.7/Frontier-Kernel.exe",
+  "driver_url": "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.7/FrontierDrv.sys"
 }
