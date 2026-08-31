@@ -1095,7 +1095,7 @@ public:
             else if (variables::Misc::streamerMode)
                 sprintf_s(buf, "FRONTIER  |  %d fps", fps);
             else
-                sprintf_s(buf, "FRONTIER  |  %s  |  %d fps", Offsets::ClientVersion.c_str(), fps);
+                sprintf_s(buf, "FRONTIER %s  |  %s  |  %d fps", Frontier::kVersion, Offsets::ClientVersion.c_str(), fps);
             ImVec2 ts = ImGui::CalcTextSize(buf);
             float x = ImGui::GetIO().DisplaySize.x - ts.x - 14;
             drawList->AddText(ImVec2(x + 1, 11), IM_COL32(0, 0, 0, 200), buf);

@@ -801,7 +801,7 @@ namespace LoaderUI {
         } else if (s->localVersion > 0) {
             sprintf_s(ver, "v%d", s->localVersion);
         } else {
-            strcpy_s(ver, "v1.2.3");
+            sprintf_s(ver, "v1.2.6");
         }
 
         SetTextColor(hdc, LoaderConfig::kTextMuted);
@@ -907,6 +907,12 @@ namespace LoaderUI {
                 if (s->localVersion <= 0)
                     LoaderUpdate::SaveLocalVersion(1);
                 s->localVersion = LoaderUpdate::LoadLocalVersion();
+                if (s->updateAvailable && s->manifest.usermodeUrl[0]) {
+                    s->checking = false;
+                    if (gWnd) InvalidateRect(gWnd, nullptr, FALSE);
+                    RunUpdate(s);
+                    return;
+                }
                 GoReady(s, true);
                 if (!ok)
                     SetStatus(s, "Offline mode - using local files");
@@ -973,6 +979,10 @@ namespace LoaderUI {
         std::wstring work;
         std::wstring exe;
         if (s->selectedMode == 0) {
+            if (s->updateAvailable && s->manifest.usermodeUrl[0]) {
+                RunUpdate(s);
+                return;
+            }
             if (!LoaderUpdate::ResolveUsermodeExe(exe, work)) {
                 MessageBoxW(gWnd, L"Missing usermode\\Frontier.exe.", LoaderConfig::kAppName, MB_OK | MB_ICONWARNING);
                 return;

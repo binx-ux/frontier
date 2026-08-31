@@ -36,14 +36,14 @@ namespace
 	constexpr const char* app = "RobloxPlayerBeta.exe";
 	constexpr const wchar_t* apptitle = L"Roblox";
 
-	// Feature keybinds only while Roblox is focused and the menu UI is not open.
+	// Feature keybinds only while Roblox is focused and the menu is not capturing input.
 	inline bool GameKeyDown(int vk)
 	{
 		if ((GetAsyncKeyState(vk) & 0x8000) == 0)
 			return false;
 		if (!WindowManager::IsRobloxFocused())
 			return false;
-		if (variables::menuOpen || variables::Misc::floatingPanelOpen || variables::waitingForKey)
+		if (variables::Misc::menuHovered || variables::waitingForKey)
 			return false;
 		return true;
 	}
@@ -304,6 +304,9 @@ namespace
 				continue;
 			}
 
+			if (!Globals::players.Addr || !Globals::workspace.Addr || !Globals::localPlayer.Addr)
+				Globals::RefreshServices();
+
 			// World / lighting — capture originals so disable restores cleanly
 			if (Globals::dataModel.Addr != 0) {
 				struct LightSnap {
@@ -501,9 +504,9 @@ namespace
 					Globals::localPlayer = RBX::RbxInstance(lpAddr);
 			}
 
-			auto character = PlayerCache::ResolveCharacter(Globals::localPlayer);
+			auto character = PlayerCache::ResolveLocalCharacter();
 			if (character.Addr == 0) {
-				std::this_thread::sleep_for(std::chrono::milliseconds(20));
+				std::this_thread::sleep_for(std::chrono::milliseconds(8));
 				continue;
 			}
 
@@ -1583,6 +1586,13 @@ namespace
 				sprintf_s(waitMsg, "Waiting — join %s", Games::SupportedListShort());
 			SetLoad(pulse, waitMsg);
 			std::this_thread::sleep_for(std::chrono::milliseconds(200));
+		}
+
+		SetLoad(0.72f, "Waiting for character");
+		for (int charWait = 0; charWait < 120 && !IsInActiveGame(); charWait++) {
+			Globals::RefreshServices();
+			PlayerCache::EnsureCacheWorker();
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
 		}
 
 		char readyMsg[96];

@@ -176,6 +176,68 @@ namespace PlayerCache {
         return model;
     }
 
+    // Local player only — retries folder scan, cached HRP, and closest Characters model.
+    inline RBX::RbxInstance ResolveLocalCharacter()
+    {
+        if (!Globals::dataModel.Addr)
+            return RBX::RbxInstance(0);
+        if (!Globals::workspace.Addr || !Globals::players.Addr)
+            Globals::RefreshServices();
+        if (!Globals::localPlayer.Addr)
+            Globals::RefreshLocalPlayer();
+
+        if (Globals::localPlayer.Addr) {
+            auto ch = ResolveCharacter(Globals::localPlayer);
+            if (ch.Addr && CharacterLooksAlive(ch))
+                return ch;
+        }
+
+        if (localRootAddr) {
+            RBX::RbxInstance node(localRootAddr);
+            for (int depth = 0; depth < 8 && node.Addr; depth++) {
+                if (CharacterLooksAlive(node))
+                    return node;
+                node = node.GetParent();
+            }
+        }
+
+        if (Globals::workspace.Addr) {
+            auto folder = Globals::workspace.FindChild("Characters");
+            if (!folder.Addr) folder = Globals::workspace.FindChild("characters");
+            if (folder.Addr && Globals::localPlayer.Addr) {
+                const std::string lpName = Globals::localPlayer.GetName();
+                const std::string display = Globals::localPlayer.GetDisplayName();
+                const int64_t uid = memory->read<int64_t>(
+                    Globals::localPlayer.Addr + Offsets::Player::UserId);
+
+                RBX::RbxInstance best(0);
+                float bestD = 1e12f;
+                for (auto& child : folder.GetChildList()) {
+                    if (!CharacterLooksAlive(child)) continue;
+                    if (!lpName.empty() && child.GetName() == lpName) return child;
+                    if (!display.empty() && child.GetName() == display) return child;
+                    if (uid != 0 && child.GetName() == std::to_string(uid)) return child;
+
+                    auto rp = FindRootPart(child);
+                    if (!rp.Addr) continue;
+                    RBX::Vec3 p = rp.GetPos();
+                    float dx = p.X - localPlayerPos.X;
+                    float dy = p.Y - localPlayerPos.Y;
+                    float dz = p.Z - localPlayerPos.Z;
+                    float d = dx * dx + dy * dy + dz * dz;
+                    if (d < bestD) {
+                        bestD = d;
+                        best = child;
+                    }
+                }
+                if (best.Addr && bestD < 900.f)
+                    return best;
+            }
+        }
+
+        return RBX::RbxInstance(0);
+    }
+
     inline bool CharacterMarkedDead(RBX::RbxInstance character)
     {
         if (!character.Addr) return false;
