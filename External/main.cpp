@@ -1757,12 +1757,7 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 				if (AttachGame()) {
 					attachSucceeded.store(true);
 					variables::Loading::active = false;
-					if (variables::Theme::useFloatingHeader) {
-						variables::menuOpen = false;
-						variables::Misc::floatingPanelOpen = true;
-					} else {
-						variables::menuOpen = true;
-					}
+					variables::pendingMenuReveal.store(true);
 					Visibility::EnsureWorker();
 					Visibility::RequestRebuild();
 					if (variables::Misc::discordRpc) {
@@ -1809,6 +1804,19 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 			overlay.RenderLoading();
 			overlay.EndFrame();
 			continue;
+		}
+
+		if (variables::pendingMenuReveal.exchange(false)) {
+			variables::Misc::menuAnim = 0.f;
+			variables::Misc::tabContentAnim = 1.f;
+			variables::Misc::floatingPanelAnim = 0.f;
+			variables::Misc::headerIntro = 0.f;
+			if (variables::Theme::useFloatingHeader) {
+				variables::menuOpen = false;
+				variables::Misc::floatingPanelOpen = true;
+			} else {
+				variables::menuOpen = true;
+			}
 		}
 
 		static bool lastDiscordRpc = variables::Misc::discordRpc;

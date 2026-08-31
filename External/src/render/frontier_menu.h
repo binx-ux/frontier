@@ -27,6 +27,9 @@ namespace FrontierMenu {
 
         strncpy_s(variables::Status::clientVersion, Offsets::ClientVersion.c_str(), _TRUNCATE);
 
+        if (!memory || !memory->IsConnected())
+            return;
+
         if (Globals::localPlayer.Addr) {
             auto name = Globals::localPlayer.GetName();
             auto disp = Globals::localPlayer.GetDisplayName();

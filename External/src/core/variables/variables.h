@@ -1,8 +1,11 @@
 #pragma once
 #include <Windows.h>
+#include <atomic>
 
 namespace variables {
     inline bool menuOpen = false;
+    // Set by attach thread; consumed on the UI thread to avoid races with RenderMenu.
+    inline std::atomic<bool> pendingMenuReveal{ false };
     // 0 Combat 1 Visuals 2 World 3 Character 4 Options 5 Servers 6 Music 7 Status
     inline int selectedTab = 0;
     inline int selectedSub = 0;

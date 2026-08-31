@@ -420,7 +420,7 @@ public:
     static ImVec2 FloatingPanelSize(int tab, int sub, ImVec2 ds, float barBottom)
     {
         float maxH = ds.y - barBottom - 12.f;
-        if (maxH < 360.f) maxH = 360.f;
+        if (maxH < 160.f) maxH = 160.f;
 
         float w = 520.f, h = 480.f;
         switch (tab) {
@@ -530,12 +530,13 @@ public:
             FrontierUI::U32(variables::Theme::brand, 0.65f * panelAlpha), 2.f);
 
         const float tabEase = UIMotion::EaseOutCubic(variables::Misc::tabContentAnim);
-        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, tabEase);
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, panelAlpha * tabEase);
         ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
-        ImGui::BeginChild("##mwscroll", ImVec2(0, 0), ImGuiChildFlags_NavFlattened,
-            ImGuiWindowFlags_AlwaysVerticalScrollbar);
-        FrontierMenu::RenderTab(tab);
-        ImGui::Dummy(ImVec2(0, 8)); // bottom pad so last controls aren't flush
+        if (ImGui::BeginChild("##mwscroll", ImVec2(0, 0), ImGuiChildFlags_None,
+            ImGuiWindowFlags_AlwaysVerticalScrollbar) && panelAnim > 0.04f) {
+            FrontierMenu::RenderTab(tab);
+            ImGui::Dummy(ImVec2(0, 8)); // bottom pad so last controls aren't flush
+        }
         ImGui::EndChild();
         ImGui::PopStyleColor();
         ImGui::PopStyleVar();
@@ -792,8 +793,6 @@ public:
         float baseW = 849.f * uiScale * scaleAnim;
         float baseH = 538.f * uiScale * scaleAnim;
 
-        UIMotion::NotifyTabChanged(variables::selectedTab);
-
         ImGui::SetNextWindowSize(ImVec2(baseW, baseH), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSizeConstraints(ImVec2(720.f, 460.f), ImVec2(ds.x - 16.f, ds.y - 8.f));
         {
@@ -823,6 +822,9 @@ public:
         float wh = ImGui::GetWindowSize().y;
 
         FrontierShell::DrawHeader(wdl, wp, ww, wh, &variables::selectedTab);
+        FrontierShell::DrawContentHeader(
+            wdl, FrontierShell::ContentHeaderOrigin(wp),
+            FrontierShell::ContentSize(ww, wh).x, variables::selectedTab);
 
         ImGui::SetCursorPos(ImVec2(0, 0));
         ImGui::InvisibleButton("##mwdrag", ImVec2(FrontierShell::kSidebarW, FrontierShell::kBrandH));
@@ -834,13 +836,16 @@ public:
 
         ImVec2 contentOrigin = FrontierShell::ContentOrigin(wp);
         ImVec2 contentSize = FrontierShell::ContentSize(ww, wh);
+        if (contentSize.x < 80.f) contentSize.x = 80.f;
+        if (contentSize.y < 80.f) contentSize.y = 80.f;
         const float tabEase = UIMotion::EaseOutCubic(variables::Misc::tabContentAnim);
         ImGui::SetCursorScreenPos(contentOrigin);
-        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, tabEase);
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ease * tabEase);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 8));
-        ImGui::BeginChild("##content", contentSize, ImGuiChildFlags_None,
-            ImGuiWindowFlags_AlwaysVerticalScrollbar);
-        FrontierMenu::RenderBody();
+        if (ImGui::BeginChild("##content", contentSize, ImGuiChildFlags_None,
+            ImGuiWindowFlags_AlwaysVerticalScrollbar) && ease > 0.04f) {
+            FrontierMenu::RenderBody();
+        }
         ImGui::EndChild();
         ImGui::PopStyleVar(2);
 

@@ -229,6 +229,7 @@ namespace UIFx {
         variables::Misc::floatW = barW;
         variables::Misc::floatH = barH;
 
+        bool changed = false;
         ImGui::SetNextWindowPos(ImVec2(px, py), ImGuiCond_Always);
         ImGui::SetNextWindowSize(ImVec2(barW, barH));
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, intro);
@@ -237,9 +238,13 @@ namespace UIFx {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
         ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.055f, 0.055f, 0.065f, 0.94f));
         ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1, 1, 1, 0.12f));
-        ImGui::Begin("##floathead", nullptr,
+        if (!ImGui::Begin("##floathead", nullptr,
             ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar |
-            ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+            ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings)) {
+            ImGui::PopStyleColor(2);
+            ImGui::PopStyleVar(4);
+            return changed;
+        }
 
         ImDrawList* dl = ImGui::GetWindowDrawList();
         ImVec2 wp = ImGui::GetWindowPos();
@@ -248,7 +253,6 @@ namespace UIFx {
         dl->AddLine(ImVec2(wp.x + 14, wp.y + 1), ImVec2(wp.x + ws.x - 14, wp.y + 1),
             IM_COL32(255, 255, 255, 28), 1.f);
 
-        bool changed = false;
         for (int i = 0; i < count; i++) {
             ImGui::PushID(i);
             if (i) ImGui::SameLine(0, 4);
@@ -263,6 +267,7 @@ namespace UIFx {
                     *selectedTab = i;
                     variables::Misc::floatingPanelOpen = true;
                     variables::selectedSub = variables::Misc::selectedSubByTab[i];
+                    UIMotion::NotifyTabChanged(i);
                 }
                 changed = true;
             }

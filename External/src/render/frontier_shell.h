@@ -13,11 +13,12 @@
 
 namespace FrontierShell {
 
-    inline constexpr float kSidebarW = 270.f;
-    inline constexpr float kBrandH = 58.f;
+    inline constexpr float kSidebarW = 220.f;
+    inline constexpr float kBrandH = 52.f;
     inline constexpr float kFooterH = 23.f;
     inline constexpr float kTopH = 34.f;
-    inline constexpr float kNavItemH = 36.f;
+    inline constexpr float kNavItemH = 34.f;
+    inline constexpr float kContentHeaderH = 38.f;
 
     struct TabItem {
         const char* label;
@@ -117,29 +118,29 @@ namespace FrontierShell {
     }
 
     inline void DrawWindowChrome(ImDrawList* dl, ImVec2 wp, float ww, float wh) {
-        dl->AddRectFilled(wp, ImVec2(wp.x + ww, wp.y + wh), IM_COL32(8, 8, 10, 252), 8.f);
+        dl->AddRectFilled(wp, ImVec2(wp.x + ww, wp.y + wh), IM_COL32(10, 10, 10, 252), 6.f);
         dl->AddRectFilledMultiColor(
             wp, ImVec2(wp.x + ww, wp.y + wh),
-            IM_COL32(14, 14, 17, 255), IM_COL32(10, 10, 12, 255),
-            IM_COL32(11, 11, 14, 255), IM_COL32(8, 8, 10, 255));
+            IM_COL32(12, 12, 14, 255), IM_COL32(10, 10, 10, 255),
+            IM_COL32(10, 10, 10, 255), IM_COL32(8, 8, 10, 255));
 
         dl->AddCircleFilled(
-            ImVec2(wp.x + kSidebarW + 120.f, wp.y + 40.f), 80.f,
-            FrontierUI::U32(variables::Theme::brand, 0.06f), 48);
+            ImVec2(wp.x + kSidebarW + 100.f, wp.y + 36.f), 70.f,
+            IM_COL32(48, 104, 194, 14), 40);
 
         dl->AddLine(
             ImVec2(wp.x + kSidebarW, wp.y + 6.f),
             ImVec2(wp.x + kSidebarW, wp.y + wh - kFooterH - 4.f),
-            IM_COL32(255, 255, 255, 22));
+            IM_COL32(255, 255, 255, 18));
 
         float footY = wp.y + wh - kFooterH;
         dl->AddRectFilled(
             ImVec2(wp.x, footY), ImVec2(wp.x + ww, wp.y + wh),
-            IM_COL32(12, 12, 14, 255), 0.f, ImDrawFlags_RoundCornersBottom);
+            IM_COL32(10, 10, 10, 255), 0.f, ImDrawFlags_RoundCornersBottom);
         ImVec2 brandSz = ImGui::CalcTextSize(Frontier::kName);
         dl->AddText(
             ImVec2(wp.x + ww * 0.5f - brandSz.x * 0.5f, footY + 4.f),
-            IM_COL32(255, 255, 255, 120), Frontier::kName);
+            IM_COL32(255, 255, 255, 100), Frontier::kName);
     }
 
     inline void DrawSidebar(ImDrawList* dl, ImVec2 wp, float wh, int* selected) {
@@ -149,28 +150,33 @@ namespace FrontierShell {
         if (dt < 0.f) dt = 0.f;
         if (dt > 0.05f) dt = 0.05f;
 
-        dl->AddRectFilled(wp, sbEnd, IM_COL32(10, 10, 11, 240), 7.f, ImDrawFlags_RoundCornersTopLeft);
+        dl->AddRectFilled(wp, sbEnd, IM_COL32(10, 10, 10, 245), 6.f, ImDrawFlags_RoundCornersTopLeft);
 
         if (BrandAssets::logoSrv && BrandAssets::logoW > 0 && BrandAssets::logoH > 0) {
             float aspect = (float)BrandAssets::logoW / (float)BrandAssets::logoH;
-            float drawH = 34.f;
+            float drawH = 30.f;
             float drawW = drawH * aspect;
-            ImVec2 logoMin(wp.x + 22.f, wp.y + 12.f);
+            ImVec2 logoMin(wp.x + 18.f, wp.y + 11.f);
             dl->AddImage(BrandAssets::LogoTex(), logoMin, ImVec2(logoMin.x + drawW, logoMin.y + drawH));
         } else {
-            dl->AddText(ImVec2(wp.x + 22.f, wp.y + 16.f), FrontierUI::AccentU32(0.95f), Frontier::kName);
+            dl->AddText(ImVec2(wp.x + 18.f, wp.y + 14.f), IM_COL32(48, 104, 194, 255), Frontier::kName);
         }
 
         const TabItem* tabs = Tabs();
         int secCount = 0;
         const NavSection* sections = Sections(&secCount);
-        float navY = wp.y + kBrandH + 4.f;
-        const float navLeft = wp.x + 14.f;
-        const float navRight = wp.x + sbW - 10.f;
+        float navY = wp.y + kBrandH + 2.f;
+        const float navLeft = wp.x + 10.f;
+        const float navRight = wp.x + sbW - 8.f;
 
         for (int s = 0; s < secCount; s++) {
-            dl->AddText(ImVec2(navLeft + 4.f, navY + 2.f), IM_COL32(255, 255, 255, 210), sections[s].title);
-            navY += 22.f;
+            if (s > 0) {
+                dl->AddLine(
+                    ImVec2(navLeft + 4.f, navY + 2.f),
+                    ImVec2(navRight - 4.f, navY + 2.f),
+                    IM_COL32(255, 255, 255, 16));
+                navY += 8.f;
+            }
 
             for (int ti = 0; ti < sections[s].count; ti++) {
                 int i = sections[s].tabs[ti];
@@ -182,8 +188,13 @@ namespace FrontierShell {
 
                 ImGui::SetCursorScreenPos(a);
                 ImGui::PushID(200 + i);
-                if (ImGui::InvisibleButton("##nav", ImVec2(b.x - a.x, b.y - a.y)))
-                    *selected = i;
+                if (ImGui::InvisibleButton("##nav", ImVec2(b.x - a.x, b.y - a.y))) {
+                    if (*selected != i) {
+                        *selected = i;
+                        variables::selectedSub = variables::Misc::selectedSubByTab[i];
+                        UIMotion::NotifyTabChanged(i);
+                    }
+                }
                 bool hov = ImGui::IsItemHovered();
                 ImGui::PopID();
 
@@ -191,29 +202,42 @@ namespace FrontierShell {
                 const float hb = UIMotion::NavHover(i);
 
                 if (on) {
-                    dl->AddRectFilled(a, b, IM_COL32(255, 255, 255, (int)(8 + hb * 6)), 8.f);
+                    dl->AddRectFilled(a, b, IM_COL32(48, 104, 194, 38), 6.f);
                     dl->AddRectFilled(
-                        ImVec2(a.x - 8.f, a.y + 6.f), ImVec2(a.x - 4.f, b.y - 6.f),
-                        FrontierUI::AccentU32(0.85f + hb * 0.15f), 2.f);
-                    dl->AddRect(a, b, FrontierUI::AccentSoftU32(0.25f + hb * 0.15f), 8.f, 0, 1.f);
+                        ImVec2(a.x + 2.f, a.y + 5.f), ImVec2(a.x + 4.f, b.y - 5.f),
+                        IM_COL32(48, 104, 194, 255), 2.f);
                 } else if (hb > 0.01f) {
-                    dl->AddRectFilled(a, b, IM_COL32(255, 255, 255, (int)(hb * 10)), 8.f);
+                    dl->AddRectFilled(a, b, IM_COL32(255, 255, 255, (int)(hb * 8)), 6.f);
                 }
 
-                ImU32 icCol = on ? FrontierUI::AccentU32(0.9f + hb * 0.1f)
+                ImU32 icCol = on ? IM_COL32(94, 148, 255, 255)
                     : IM_COL32(
-                        (int)(190 + hb * 40), (int)(190 + hb * 40), (int)(200 + hb * 35),
-                        (int)(190 + hb * 40));
-                DrawNavIcon(dl, ImVec2(a.x + 16.f, a.y + kNavItemH * 0.5f), tabs[i].iconKind, icCol, 0.95f);
+                        (int)(170 + hb * 50), (int)(170 + hb * 50), (int)(180 + hb * 40),
+                        (int)(180 + hb * 50));
+                DrawNavIcon(dl, ImVec2(a.x + 14.f, a.y + kNavItemH * 0.5f), tabs[i].iconKind, icCol, 0.92f);
 
                 ImU32 txCol = on ? IM_COL32(255, 255, 255, 255)
-                    : IM_COL32((int)(200 + hb * 20), (int)(200 + hb * 20), (int)(210 + hb * 10), (int)(200 + hb * 20));
-                dl->AddText(ImVec2(a.x + 34.f, a.y + kNavItemH * 0.5f - 7.f), txCol, tabs[i].label);
+                    : IM_COL32((int)(190 + hb * 25), (int)(190 + hb * 25), (int)(200 + hb * 15), (int)(190 + hb * 30));
+                dl->AddText(ImVec2(a.x + 32.f, a.y + kNavItemH * 0.5f - 7.f), txCol, tabs[i].label);
 
                 navY += kNavItemH;
             }
-            navY += 6.f;
+            navY += 4.f;
         }
+    }
+
+    inline void DrawContentHeader(ImDrawList* dl, ImVec2 origin, float width, int tab) {
+        const char* label = TabLabel(tab);
+        ImVec2 ts = ImGui::CalcTextSize(label);
+        dl->AddText(origin, IM_COL32(255, 255, 255, 255), label);
+        dl->AddRectFilled(
+            ImVec2(origin.x, origin.y + ts.y + 6.f),
+            ImVec2(origin.x + ImMin(ts.x + 24.f, width), origin.y + ts.y + 8.f),
+            IM_COL32(48, 104, 194, 255), 1.f);
+        dl->AddLine(
+            ImVec2(origin.x, origin.y + kContentHeaderH - 1.f),
+            ImVec2(origin.x + width, origin.y + kContentHeaderH - 1.f),
+            IM_COL32(255, 255, 255, 16));
     }
 
     inline void DrawHeader(ImDrawList* dl, ImVec2 wp, float ww, float wh, int* selected) {
@@ -222,10 +246,14 @@ namespace FrontierShell {
     }
 
     inline ImVec2 ContentOrigin(ImVec2 wp) {
-        return ImVec2(wp.x + kSidebarW + 14.f, wp.y + 12.f);
+        return ImVec2(wp.x + kSidebarW + 16.f, wp.y + 12.f + kContentHeaderH + 4.f);
+    }
+
+    inline ImVec2 ContentHeaderOrigin(ImVec2 wp) {
+        return ImVec2(wp.x + kSidebarW + 16.f, wp.y + 12.f);
     }
 
     inline ImVec2 ContentSize(float ww, float wh) {
-        return ImVec2(ww - kSidebarW - 28.f, wh - kFooterH - 20.f);
+        return ImVec2(ww - kSidebarW - 32.f, wh - kFooterH - kContentHeaderH - 28.f);
     }
 }

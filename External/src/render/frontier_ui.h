@@ -467,8 +467,13 @@ namespace FrontierUI {
         ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14, 12));
 
-        ImGui::BeginChild("##sec", ImVec2(0, 0),
-            ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Borders, ImGuiWindowFlags_None);
+        if (!ImGui::BeginChild("##sec", ImVec2(0, 0),
+            ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Borders, ImGuiWindowFlags_None)) {
+            ImGui::PopStyleVar(2);
+            ImGui::PopStyleColor(2);
+            ImGui::PopID();
+            return false;
+        }
 
         if (title && title[0]) {
             ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -549,22 +554,32 @@ namespace FrontierUI {
         ImGui::PushID(names[0]);
 
         const float fullW = ImGui::GetContentRegionAvail().x;
-        const float barH = 34.f;
-        const float gap = 4.f;
-        float tabW = (fullW - gap * (count - 1)) / (float)count;
-        if (tabW < 56.f) tabW = 56.f;
+        const float barH = 36.f;
+        const float gap = 6.f;
+        const float pad = 4.f;
+        float tabW = (fullW - pad * 2.f - gap * (count - 1)) / (float)count;
+        if (tabW < 64.f) tabW = 64.f;
 
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.04f, 0.042f, 0.05f, 1.f));
-        ImGui::BeginChild("##subtabbar", ImVec2(fullW, barH), ImGuiChildFlags_Borders,
-            ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
         ImDrawList* dl = ImGui::GetWindowDrawList();
+        ImVec2 barOrigin = ImGui::GetCursorScreenPos();
+        dl->AddRectFilled(
+            ImVec2(barOrigin.x, barOrigin.y + 2.f),
+            ImVec2(barOrigin.x + fullW, barOrigin.y + barH),
+            IM_COL32(17, 17, 17, 255), 6.f);
+        dl->AddRect(
+            ImVec2(barOrigin.x, barOrigin.y + 2.f),
+            ImVec2(barOrigin.x + fullW, barOrigin.y + barH),
+            IM_COL32(255, 255, 255, 14), 6.f);
+
+        ImGui::BeginChild("##subtabbar", ImVec2(fullW, barH + 4.f), ImGuiChildFlags_None,
+            ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
         for (int i = 0; i < count; i++) {
             if (i) ImGui::SameLine(0, gap);
             bool on = (*selected == i);
             ImVec2 p = ImGui::GetCursorScreenPos();
-            ImVec2 btn(p.x, p.y + 3.f);
-            ImVec2 btnEnd(p.x + tabW, p.y + barH - 3.f);
+            ImVec2 btn(p.x, p.y + 4.f);
+            ImVec2 btnEnd(p.x + tabW, p.y + barH - 2.f);
 
             ImGui::PushID(i);
             if (ImGui::InvisibleButton("##sub", ImVec2(tabW, barH - 6.f)))
@@ -573,18 +588,14 @@ namespace FrontierUI {
             ImGui::PopID();
 
             if (on) {
-                dl->AddRectFilled(btn, btnEnd, IM_COL32(255, 255, 255, 12), 6.f);
-                dl->AddRect(btn, btnEnd, AccentSoftU32(0.8f), 6.f, 0, 1.2f);
-                dl->AddRectFilled(
-                    ImVec2(btn.x + 8.f, btnEnd.y - 2.f), ImVec2(btnEnd.x - 8.f, btnEnd.y),
-                    AccentU32(1.f), 1.f);
+                dl->AddRectFilled(btn, btnEnd, IM_COL32(48, 104, 194, 220), 5.f);
             } else if (hov) {
-                dl->AddRectFilled(btn, btnEnd, IM_COL32(255, 255, 255, 6), 6.f);
+                dl->AddRectFilled(btn, btnEnd, IM_COL32(255, 255, 255, 10), 5.f);
             }
 
             ImVec2 ts = ImGui::CalcTextSize(names[i]);
             ImU32 tc = on ? IM_COL32(255, 255, 255, 255)
-                : (hov ? IM_COL32(220, 224, 232, 255) : IM_COL32(150, 154, 166, 255));
+                : (hov ? IM_COL32(220, 224, 232, 255) : IM_COL32(140, 144, 156, 255));
             dl->AddText(
                 ImVec2(btn.x + (tabW - ts.x) * 0.5f, btn.y + (btnEnd.y - btn.y - ts.y) * 0.5f),
                 tc, names[i]);
@@ -592,9 +603,8 @@ namespace FrontierUI {
         }
 
         ImGui::EndChild();
-        ImGui::PopStyleColor();
         ImGui::PopID();
-        ImGui::Dummy(ImVec2(0, 10));
+        ImGui::Dummy(ImVec2(0, 8));
     }
 
     inline void SubTabList(const char* const names[], int count, int* selected, float width = 132.f, float height = 0.f) {
