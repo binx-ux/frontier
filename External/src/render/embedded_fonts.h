@@ -16,6 +16,9 @@ namespace EmbeddedFonts {
     inline std::vector<uint8_t> gNotoBold;
     inline std::vector<uint8_t> gCascadia;
     inline std::vector<uint8_t> gPackA, gPackB, gPackC, gPackD, gCascadiaMo;
+    inline ImFont* gBody = nullptr;
+    inline ImFont* gBold = nullptr;
+    inline ImFont* gSmall = nullptr;
 
     inline bool LoadResourceBytes(int id, std::vector<uint8_t>& out)
     {
@@ -56,13 +59,18 @@ namespace EmbeddedFonts {
         LoadResourceBytes(IDR_FONT_PACK_C, gPackC);
         LoadResourceBytes(IDR_FONT_PACK_D, gPackD);
 
-        ImFont* body = AddOwned(io, gRoboto, 16.f);
-        AddOwned(io, gRobotoBold, 18.f);
+        gBody = AddOwned(io, gRoboto, 16.f);
+        gBold = AddOwned(io, gRobotoBold, 20.f);
+        gSmall = AddOwned(io, gRoboto, 13.f);
         AddOwned(io, gMono, 14.5f);
         AddOwned(io, gNoto, 15.f);
         AddOwned(io, gCascadia, 15.f);
-        if (!body)
-            body = io.Fonts->AddFontDefault();
-        io.FontDefault = body;
+        if (!gBody)
+            gBody = io.Fonts->AddFontDefault();
+        if (!gBold)
+            gBold = gBody;
+        if (!gSmall)
+            gSmall = gBody;
+        io.FontDefault = gBody;
     }
 }

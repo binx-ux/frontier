@@ -1,4 +1,4 @@
-﻿#include "memory.h"
+#include "memory.h"
 #include <windows.h>
 #include <TlHelp32.h>
 #include <Psapi.h>

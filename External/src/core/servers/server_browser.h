@@ -201,7 +201,7 @@ namespace ServerBrowser {
                 strcpy_s(gError, "Request failed — check internet / Roblox API");
                 strcpy_s(gStatus, "Failed to load");
             }
-            else if (body.find("\"errors\"") != std::string::npos || body.find("\"code\"") != std::string::npos) {
+            else if (body.find("\"errors\"") != std::string::npos) {
                 strcpy_s(gError, "API rejected place or returned an error");
                 strcpy_s(gStatus, "API error");
             }
@@ -251,7 +251,10 @@ namespace ServerBrowser {
         }
 
         // In-client redirect kick (no browser)
+        variables::Servers::disconnectKind = 0;
         strncpy_s(variables::Servers::redirectMsg, "Match is redirecting you, please wait", _TRUNCATE);
+        strcpy_s(variables::Servers::redirectStatus, "Joining server...");
+        variables::Servers::redirectProgress = 0.f;
         variables::Servers::redirecting = true;
         variables::Servers::redirectTimer = 10.f;
         variables::Misc::floatingPanelOpen = false;
@@ -263,6 +266,85 @@ namespace ServerBrowser {
         ShellExecuteA(nullptr, "open", deep, nullptr, nullptr, SW_SHOWNORMAL);
 
         strcpy_s(gStatus, "Redirecting to server...");
+    }
+
+    inline void ShowFakeBanScreen()
+    {
+        variables::Servers::disconnectKind = 1;
+        strncpy_s(variables::Servers::redirectMsg,
+            "You have been banned from this experience.\n"
+            "Moderation message: Unauthorized third-party software detected.",
+            _TRUNCATE);
+        strcpy_s(variables::Servers::redirectStatus, "Verifying account status...");
+        variables::Servers::redirectProgress = 0.f;
+        variables::Servers::redirecting = true;
+        variables::Servers::redirectTimer = 18.f;
+        variables::Misc::floatingPanelOpen = false;
+        variables::menuOpen = false;
+    }
+
+    inline void DismissDisconnectScreen()
+    {
+        variables::Servers::redirecting = false;
+        variables::Servers::redirectTimer = 0.f;
+        variables::Servers::redirectProgress = 0.f;
+    }
+
+    inline bool IsCurrentServer(const char* jobId)
+    {
+        if (!jobId || !jobId[0] || !variables::Servers::currentId[0]) return false;
+        return _stricmp(variables::Servers::currentId, jobId) == 0;
+    }
+
+    inline void HopRandomServer()
+    {
+        auto list = Snapshot();
+        if (list.empty()) {
+            strcpy_s(gStatus, "No servers loaded — refreshing...");
+            RequestRefresh(true);
+            return;
+        }
+
+        std::vector<int> preferred;
+        std::vector<int> fallback;
+        for (int i = 0; i < (int)list.size(); i++) {
+            const auto& s = list[i];
+            if (IsCurrentServer(s.id)) continue;
+            if (s.maxPlayers > 0 && s.playing >= s.maxPlayers) continue;
+            if (s.playing >= 1)
+                preferred.push_back(i);
+            else
+                fallback.push_back(i);
+        }
+
+        const std::vector<int>* pool = &preferred;
+        if (pool->empty()) pool = &fallback;
+        if (pool->empty()) {
+            for (int i = 0; i < (int)list.size(); i++) {
+                if (!IsCurrentServer(list[i].id))
+                    fallback.push_back(i);
+            }
+            pool = &fallback;
+        }
+        if (pool->empty()) {
+            strcpy_s(gStatus, "No other servers available");
+            return;
+        }
+
+        int pick = (*pool)[(int)((unsigned)rand() % pool->size())];
+        JoinServer(list[pick].id);
+        sprintf_s(gStatus, "Hopping to server (%d players)", list[pick].playing);
+    }
+
+    inline void EnsureLoaded()
+    {
+        if (Globals::dataModel.Addr) {
+            std::string job = memory->read_string(Globals::dataModel.Addr + Offsets::DataModel::JobId);
+            if (!job.empty() && job != "Unknown")
+                strncpy_s(variables::Servers::currentId, job.c_str(), _TRUNCATE);
+        }
+        if (gServers.empty() && !gLoading.load())
+            RequestRefresh(false);
     }
 
     inline void TickAutoRefresh()

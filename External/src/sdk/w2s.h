@@ -1,11 +1,14 @@
 #pragma once
 #include "sdk.h"
+#include "offsets.h"
 #include "window_manager.h"
+#include "../memory/memory.h"
 
 namespace W2S {
 
     // Cached once per overlay frame — WorldToScreen used to call FindWindow every bone
     inline float cachedSW = 0, cachedSH = 0, cachedOX = 0, cachedOY = 0;
+    inline float renderSW = 0, renderSH = 0;
     inline bool viewportReady = false;
 
     inline void GetViewport(float& screenW, float& screenH, float& originX, float& originY) {
@@ -28,7 +31,16 @@ namespace W2S {
 
     inline void BeginFrame() {
         GetViewport(cachedSW, cachedSH, cachedOX, cachedOY);
+        renderSW = cachedSW;
+        renderSH = cachedSH;
         viewportReady = true;
+    }
+
+    inline void SetRenderDimensions(float w, float h) {
+        if (w > 50.f && h > 50.f) {
+            renderSW = w;
+            renderSH = h;
+        }
     }
 
     inline void EnsureViewport(float& screenW, float& screenH, float& originX, float& originY) {
@@ -55,8 +67,18 @@ namespace W2S {
 
         float ndcX = x / w;
         float ndcY = y / w;
-        screen.X = (screenW * 0.5f * ndcX) + (screenW * 0.5f);
-        screen.Y = -(screenH * 0.5f * ndcY) + (screenH * 0.5f);
+
+        // View matrix is built for VisualEngine render resolution — scale to overlay client size.
+        float matW = (renderSW > 50.f) ? renderSW : screenW;
+        float matH = (renderSH > 50.f) ? renderSH : screenH;
+        screen.X = (matW * 0.5f * ndcX) + (matW * 0.5f);
+        screen.Y = -(matH * 0.5f * ndcY) + (matH * 0.5f);
+
+        if (matW > 50.f && matH > 50.f &&
+            (fabsf(screenW - matW) > 1.f || fabsf(screenH - matH) > 1.f)) {
+            screen.X *= screenW / matW;
+            screen.Y *= screenH / matH;
+        }
         return screen;
     }
 
@@ -75,5 +97,9 @@ namespace W2S {
         GetCursorPos(&p);
         cx = static_cast<float>(p.x) - ox;
         cy = static_cast<float>(p.y) - oy;
+        if (cx < 0.f) cx = 0.f;
+        if (cy < 0.f) cy = 0.f;
+        if (screenW > 1.f && cx > screenW) cx = screenW;
+        if (screenH > 1.f && cy > screenH) cy = screenH;
     }
 }

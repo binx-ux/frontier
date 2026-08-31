@@ -2,6 +2,9 @@
 $root = Split-Path -Parent $PSScriptRoot
 $loaderOut = Join-Path $root "External\loader\x64\Release\FrontierLoader.exe"
 $cheatOut = Join-Path $root "External\x64\Release\Frontier.exe"
+if (-not (Test-Path $cheatOut)) {
+    $cheatOut = Join-Path $root "x64\Release\Frontier.exe"
+}
 $kernelOut = Join-Path $root "kernel\Frontier.exe"
 $stage = Join-Path $root "dist"
 
@@ -27,7 +30,7 @@ if (Test-Path $driverSys) {
 if (Test-Path $loaderOut) {
     Copy-Item $loaderOut (Join-Path $stage "FrontierLoader.exe") -Force
 } else {
-    Write-Warning "Loader not built yet — only cheat staged"
+    Write-Warning "Loader not built yet - only cheat staged"
 }
 
 Write-Host "Staged to $stage"

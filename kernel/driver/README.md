@@ -4,33 +4,37 @@ Kernel driver source for FRONTIER kernel mode memory reads/writes.
 
 ## Build (requires Windows Driver Kit)
 
-1. Install **Visual Studio** + **Windows Driver Kit (WDK)**
-2. Create a new **Kernel Mode Driver (KMDF)** empty project, or add `frontier_drv.c` to a WDK driver project
-3. Target **x64 / Release**
-4. Output: `FrontierDrv.sys`
-5. Copy to:
-
-```
-kernel/driver/FrontierDrv.sys
-```
-
-Or next to the loader:
-
-```
-dist/kernel/driver/FrontierDrv.sys
-```
+1. Install **Visual Studio** + **Windows Driver Kit (WDK)**:
+   ```powershell
+   winget install Microsoft.WindowsWDK.10.0.26100
+   ```
+2. Build from repo root:
+   ```powershell
+   .\scripts\build-driver.ps1
+   ```
+   Or open `kernel\driver\frontier_drv\frontier_drv.vcxproj` in Visual Studio (**Release | x64**).
+3. Output: `kernel\driver\FrontierDrv.sys`
 
 ## Load requirements
 
 - Run **FrontierLoader** or **kernel\Frontier.exe** as **Administrator**
-- Enable **test signing** for unsigned builds:
+- **Secure Boot must be OFF** in BIOS/UEFI. If `bcdedit` says *"protected by Secure Boot policy"*, disable Secure Boot first (Settings → Recovery → Advanced startup → UEFI Firmware Settings).
+- Enable **test signing** for unsigned builds (required — service exit code **577** means signing is blocked):
+  ```powershell
+  # Elevated PowerShell:
+  .\scripts\enable-kernel-mode.ps1
   ```
-  bcdedit /set testsigning on
+  Check status anytime:
+  ```powershell
+  .\scripts\check-kernel-mode.ps1
   ```
-  Reboot required.
-- Or sign the driver with a proper code-signing cert
+  **Reboot required** after enabling test signing. You should see "Test Mode" on the desktop.
 
-The kernel client auto-loads `driver\FrontierDrv.sys` via the Windows service manager on first attach.
+**One boot without BIOS changes:** Shift+Restart → Troubleshoot → Advanced → Startup Settings → Restart → press **7** (Disable driver signature enforcement). Must repeat every boot.
+
+- Or sign the driver with a proper EV code-signing certificate (works with Secure Boot on)
+
+If you cannot disable Secure Boot, use **Usermode** in the loader — it does not need a driver.
 
 ## Device
 

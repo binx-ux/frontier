@@ -10,9 +10,10 @@
 *.VC.db
 *.ipch
 
-# Binaries
+# Binaries — never commit to public base export
 *.exe
 *.dll
+*.sys
 *.pdb
 *.ilk
 *.obj
@@ -22,6 +23,10 @@
 *.log
 *.recipe
 *.Build.CppClean.log
+
+# Closed product staging (optional local mirror of private remote)
+private/worktree/
+export/
 
 # Local secrets — never commit webhooks or keys
 **/secrets.h

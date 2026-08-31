@@ -122,6 +122,41 @@ namespace Visuals {
         return sqrtf(dx * dx + dy * dy + dz * dz);
     }
 
+    // Reliable head/HRP screen box — used as primary ESP bounds (aimbot-accurate W2S).
+    inline bool BuildHeadHrpBox(const RBX::Vec3& head, const RBX::Vec3& hrp, bool isR6, const RBX::Mat4& vm,
+        float& minX, float& minY, float& maxX, float& maxY, RBX::Vec2& headScreen)
+    {
+        RBX::Vec3 topPos{ head.X, head.Y + 0.55f, head.Z };
+        float feetY = hrp.Y - (isR6 ? 3.15f : 2.80f);
+        RBX::Vec3 bottomPos{ hrp.X, feetY, hrp.Z };
+
+        RBX::Vec2 topScreen = W2S::WorldToScreen(topPos, vm);
+        RBX::Vec2 bottomScreen = W2S::WorldToScreen(bottomPos, vm);
+        headScreen = W2S::WorldToScreen(head, vm);
+        if ((topScreen.X == 0.f && topScreen.Y == 0.f) ||
+            (bottomScreen.X == 0.f && bottomScreen.Y == 0.f))
+            return false;
+
+        float height = bottomScreen.Y - topScreen.Y;
+        if (height < 6.f || height > 5000.f) return false;
+
+        float width = height * (isR6 ? 0.52f : 0.48f);
+        float midX = (topScreen.X + bottomScreen.X) * 0.5f;
+        if (headScreen.X != 0.f || headScreen.Y != 0.f)
+            midX = midX * 0.35f + headScreen.X * 0.65f;
+
+        minX = midX - width * 0.5f;
+        maxX = midX + width * 0.5f;
+        minY = topScreen.Y;
+        maxY = bottomScreen.Y;
+
+        float padX = width * 0.04f + 1.f;
+        float padY = height * 0.02f + 1.f;
+        minX -= padX; maxX += padX;
+        minY -= padY; maxY += padY;
+        return true;
+    }
+
     // Tight screen box from a character-local 3D AABB (never uses zeroed bones → no stretch)
     inline bool ComputeBodyScreenBox(const PlayerCache::BoneSet& bones, const RBX::Mat4& vm,
         float& minX, float& minY, float& maxX, float& maxY, RBX::Vec2& headScreen)
@@ -325,7 +360,9 @@ namespace Visuals {
         }
         if (variables::ESP::nameType == 1 && !plr.displayName.empty())
             return plr.displayName;
-        return plr.name;
+        if (!plr.name.empty())
+            return plr.name;
+        return plr.displayName.empty() ? "Player" : plr.displayName;
     }
 
     inline void DrawSkeletonBone(ImDrawList* drawList, const RBX::Vec3& pos1, const RBX::Vec3& pos2,
@@ -602,21 +639,35 @@ namespace Visuals {
                 DrawOOFArrow(drawList, edge, screenCenter, variables::ESP::oofSize, pfp);
             }
 
-            if (!variables::ESP::enabled) continue;
+            if (!variables::ESP::enabled &&
+                !variables::ESP::names &&
+                !variables::ESP::healthText &&
+                !variables::ESP::distance &&
+                !variables::ESP::equippedItem &&
+                !variables::ESP::skeleton &&
+                !variables::ESP::wireframePlayers &&
+                !variables::ESP::chamsEnabled) continue;
 
             // Live head/HRP every frame — cache alone lags and makes boxes stutter/slide off
-            if (plr.headAddr)
-                plr.bones.head = RBX::RbxInstance(plr.headAddr).GetPos();
-            if (plr.rootPartAddr) {
-                plr.bones.hrp = RBX::RbxInstance(plr.rootPartAddr).GetPos();
-                plr.position = plr.bones.hrp;
-            }
-            // Bones for full-body box + skeleton/chams
             if (needBones) {
                 if (!plr.boneParts.ready && plr.characterAddr)
                     PlayerCache::fillBoneParts(RBX::RbxInstance(plr.characterAddr), plr.boneParts);
                 if (plr.boneParts.ready)
                     PlayerCache::refreshBonePositions(plr.boneParts, plr.bones);
+            }
+            if (plr.headAddr) {
+                plr.bones.head = RBX::RbxInstance(plr.headAddr).GetPos();
+                plr.bones.hasHead = true;
+            }
+            if (plr.rootPartAddr) {
+                plr.bones.hrp = RBX::RbxInstance(plr.rootPartAddr).GetPos();
+                plr.bones.hasHrp = true;
+                plr.position = plr.bones.hrp;
+            }
+            if (!plr.bones.hasHead && plr.bones.hasHrp) {
+                plr.bones.head = plr.bones.hrp;
+                plr.bones.head.Y += 1.4f;
+                plr.bones.hasHead = true;
             }
             headOverlay = W2S::WorldToScreen(plr.bones.head, viewMatrix);
             onScreen = !(headOverlay.X == 0 && headOverlay.Y == 0) &&
@@ -630,28 +681,29 @@ namespace Visuals {
             RBX::Vec2 headScreen = headOverlay;
 
             float minX, minY, maxX, maxY;
-            if (!ComputeBodyScreenBox(plr.bones, viewMatrix, minX, minY, maxX, maxY, headScreen)) {
-                // Fallback if bones incomplete
-                float feetY = hrpPos.Y - (isR6 ? 3.2f : 2.85f);
-                RBX::Vec3 topPos{ headPos.X, headPos.Y + 0.55f, headPos.Z };
-                RBX::Vec3 bottomPos{ hrpPos.X, feetY, hrpPos.Z };
-                RBX::Vec2 topScreen = W2S::WorldToScreen(topPos, viewMatrix);
-                RBX::Vec2 bottomScreen = W2S::WorldToScreen(bottomPos, viewMatrix);
-                if ((topScreen.X == 0.f && topScreen.Y == 0.f) || (bottomScreen.X == 0.f && bottomScreen.Y == 0.f))
+            bool haveBox = BuildHeadHrpBox(headPos, hrpPos, isR6, viewMatrix, minX, minY, maxX, maxY, headScreen);
+            if (!haveBox)
+                haveBox = ComputeBodyScreenBox(plr.bones, viewMatrix, minX, minY, maxX, maxY, headScreen);
+
+            if (!haveBox) {
+                if (variables::ESP::names || variables::ESP::healthText || variables::ESP::distance) {
+                    minX = headScreen.X - 20.f;
+                    maxX = headScreen.X + 20.f;
+                    minY = headScreen.Y - 40.f;
+                    maxY = headScreen.Y + 10.f;
+                } else if (variables::ESP::skeleton || variables::ESP::wireframePlayers || variables::ESP::chamsEnabled) {
+                    minX = headScreen.X - 20.f;
+                    maxX = headScreen.X + 20.f;
+                    minY = headScreen.Y - 40.f;
+                    maxY = headScreen.Y + 10.f;
+                } else {
                     continue;
-                float height = bottomScreen.Y - topScreen.Y;
-                if (height < 6.f || height > sh * 1.5f) continue;
-                float width = height * (isR6 ? 0.55f : 0.50f);
-                float midX = (topScreen.X + bottomScreen.X) * 0.5f;
-                minX = midX - width * 0.5f;
-                maxX = midX + width * 0.5f;
-                minY = topScreen.Y;
-                maxY = bottomScreen.Y;
+                }
             }
 
             float height = maxY - minY;
             float boxW = maxX - minX;
-            if (height < 6.f || height > sh * 1.5f) continue;
+            if (variables::ESP::enabled && (height < 6.f || height > sh * 1.5f)) continue;
             if (minX < -200 || minY < -200 || maxX > sw + 200 || maxY > sh + 200) continue;
 
             ImU32 boxCol = Col4(variables::ESP::boxColor);
@@ -680,6 +732,12 @@ namespace Visuals {
             if (isTarget)
                 boxCol = IM_COL32(255, 214, 72, 255);
 
+            if (variables::ESP::skeleton && drawSkeleton)
+                RenderSkeletonCached(drawList, plr.bones, viewMatrix, MulAlpha(boxCol, 0.92f));
+            if (variables::ESP::wireframePlayers && !variables::ESP::skeleton && drawSkeleton)
+                RenderSkeletonCached(drawList, plr.bones, viewMatrix, MulAlpha(boxCol, 0.75f));
+
+            if (variables::ESP::enabled) {
             if (variables::ESP::chamsEnabled && !lowFps) {
                 float pulse = 1.f;
                 if (variables::ESP::chamsRender == 1)
@@ -693,11 +751,6 @@ namespace Visuals {
                 DrawPlayerChams(drawList, plr.bones, viewMatrix, height, cFill, cOut,
                     variables::ESP::chamsFilled, variables::ESP::chamsMode);
             }
-
-            if (variables::ESP::skeleton)
-                RenderSkeletonCached(drawList, plr.bones, viewMatrix, MulAlpha(boxCol, 0.92f));
-            if (variables::ESP::wireframePlayers && !variables::ESP::skeleton)
-                RenderSkeletonCached(drawList, plr.bones, viewMatrix, MulAlpha(boxCol, 0.75f));
 
             if (variables::ESP::boxGlow && variables::ESP::boxes) {
                 drawList->AddRect(ImVec2(minX - 3, minY - 3), ImVec2(maxX + 3, maxY + 3),
@@ -846,6 +899,14 @@ namespace Visuals {
                 if (plr.distance < 40.f) flag("NEAR", IM_COL32(120, 220, 255, 255));
             }
 
+            } // variables::ESP::enabled visuals
+
+            if ((plr.name.empty() || plr.displayName.empty()) && plr.playerAddr) {
+                RBX::RbxInstance livePlr(plr.playerAddr);
+                if (plr.name.empty()) plr.name = livePlr.GetName();
+                if (plr.displayName.empty()) plr.displayName = livePlr.GetDisplayName();
+            }
+
             float textMaxW = (boxW > 28.f) ? boxW + 28.f : 76.f;
             std::string shownName = DisplayName(plr);
             float nameY = minY - 3.f;
@@ -904,7 +965,7 @@ namespace Visuals {
                 float vy = maxY + (variables::ESP::distance ? 15.f : 2.f);
                 DrawOutlinedText(drawList, ImVec2((minX + maxX) * 0.5f - ts.x * 0.5f, vy), vb, IM_COL32(175, 195, 255, 230));
             }
-            if (variables::ESP::snaplines) {
+            if (variables::ESP::snaplines && variables::ESP::enabled) {
                 ImVec2 origin_pos;
                 switch (variables::ESP::snaplinesOrigin) {
                 case 0: origin_pos = ImVec2(sw * 0.5f, 0); break;
@@ -978,7 +1039,21 @@ namespace Visuals {
             };
 
             bool haveVm = false;
-            if (Globals::camera.Addr != 0) {
+
+            if (Globals::localPlayer.Addr != 0) {
+                auto character = Globals::localPlayer.GetModelRef();
+                if (character.Addr == 0)
+                    character = Globals::localPlayer.GetModelInstance();
+                if (character.Addr != 0) {
+                    for (auto& ch : character.GetChildList()) {
+                        if (ch.GetClass() == "Tool")
+                            collectFrom(collectFrom, ch, 0);
+                    }
+                    if (!cands.empty()) haveVm = true;
+                }
+            }
+
+            if (!haveVm && Globals::camera.Addr != 0) {
                 for (auto& ch : Globals::camera.GetChildList()) {
                     std::string cls = ch.GetClass();
                     if (cls == "Part" || cls == "MeshPart") {
@@ -989,16 +1064,6 @@ namespace Visuals {
                         if (ch.FindChildByClass("Humanoid").Addr != 0) continue;
                         collectFrom(collectFrom, ch, 0);
                         haveVm = true;
-                    }
-                }
-            }
-
-            if (!haveVm && Globals::localPlayer.Addr != 0) {
-                auto character = Globals::localPlayer.GetModelRef();
-                if (character.Addr != 0) {
-                    for (auto& ch : character.GetChildList()) {
-                        if (ch.GetClass() == "Tool")
-                            collectFrom(collectFrom, ch, 0);
                     }
                 }
             }

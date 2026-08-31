@@ -82,6 +82,7 @@
     <ClInclude Include="loader_update.h" />
     <ClInclude Include="loader_auth.h" />
     <ClInclude Include="loader_oauth.h" />
+    <ClInclude Include="loader_license.h" />
     <ClInclude Include="loader_ui.h" />
     <ClInclude Include="resource.h" />
   </ItemGroup>

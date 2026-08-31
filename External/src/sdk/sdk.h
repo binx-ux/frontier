@@ -86,17 +86,38 @@ namespace RBX {
         RbxInstance(uintptr_t addr) : Addr(addr) {}
 
         std::string GetName() {
-            uintptr_t namePtr = memory->read<uintptr_t>(Addr + Offsets::Instance::Name);
-            if (namePtr == 0) return "";
+            if (!Addr) return "";
 
-            return memory->read_string(namePtr);
+            // NameContainer (0x70) holds the instance name string object; Name (0x8) is the self pointer.
+            std::string direct = memory->read_string(Addr + Offsets::Instance::NameContainer);
+            if (!direct.empty() && direct != "Unknown")
+                return direct;
+
+            uintptr_t namePtr = memory->read<uintptr_t>(Addr + Offsets::Instance::NameContainer);
+            if (namePtr && namePtr != Addr) {
+                std::string s = memory->read_string(namePtr);
+                if (!s.empty() && s != "Unknown")
+                    return s;
+            }
+
+            return "";
         }
 
         std::string GetDisplayName() {
+            if (!Addr) return "";
+
+            std::string direct = memory->read_string(Addr + Offsets::Player::DisplayName);
+            if (!direct.empty() && direct != "Unknown")
+                return direct;
+
             uintptr_t namePtr = memory->read<uintptr_t>(Addr + Offsets::Player::DisplayName);
-            if (namePtr == 0) return GetName();
-            std::string s = memory->read_string(namePtr);
-            return s.empty() ? GetName() : s;
+            if (namePtr && namePtr != Addr) {
+                std::string s = memory->read_string(namePtr);
+                if (!s.empty() && s != "Unknown")
+                    return s;
+            }
+
+            return GetName();
         }
 
         std::string GetClass() {

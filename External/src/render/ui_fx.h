@@ -5,6 +5,7 @@
 #include "../../ext/imgui/imgui.h"
 #include "../../src/core/variables/variables.h"
 #include "frontier_ui.h"
+#include "brand_assets.h"
 
 namespace UIFx {
 
@@ -91,107 +92,45 @@ namespace UIFx {
         }
     }
 
-    inline void DrawLoadingFX(ImDrawList* dl, ImVec2 size, float progress) {
-        EnsureParticles(size.x, size.y);
-        float dt = ImGui::GetIO().DeltaTime;
-        timeAcc += dt;
+    inline float EaseOutCubic(float t) {
+        if (t < 0.f) t = 0.f;
+        if (t > 1.f) t = 1.f;
+        float u = 1.f - t;
+        return 1.f - u * u * u;
+    }
+
+    inline void DrawLoadingFX(ImDrawList* dl, ImVec2 size, float progress, float slideT) {
+        (void)slideT;
         if (progress < 0.f) progress = 0.f;
         if (progress > 1.f) progress = 1.f;
 
-        float fade = Clampf(timeAcc / 0.45f, 0.f, 1.f);
-        int ar = (int)(variables::Theme::brand[0] * 255);
-        int ag = (int)(variables::Theme::brand[1] * 255);
-        int ab = (int)(variables::Theme::brand[2] * 255);
-        float breath = 0.5f + 0.5f * sinf(timeAcc * 1.15f);
+        // Transparent — overlay shows through; logo + bar only
 
-        // Layered atmosphere
-        dl->AddRectFilled(ImVec2(0, 0), size, IM_COL32(5, 5, 7, (int)(250 * fade)));
-        dl->AddRectFilledMultiColor(
-            ImVec2(0, 0), size,
-            IM_COL32(14, 14, 18, (int)(120 * fade)),
-            IM_COL32(8, 8, 10, (int)(40 * fade)),
-            IM_COL32(18, 18, 24, (int)(130 * fade)),
-            IM_COL32(6, 6, 8, (int)(50 * fade)));
+        const float logoY = size.y * 0.42f;
+        ImVec2 c(size.x * 0.5f, logoY);
 
-        // Soft radial bloom behind the loader
-        ImVec2 bloom(size.x * 0.5f, size.y * 0.44f);
-        dl->AddCircleFilled(bloom, 320.f + breath * 28.f,
-            IM_COL32(ar, ag, ab, (int)(14 * fade)), 80);
-        dl->AddCircleFilled(bloom, 170.f,
-            IM_COL32(ar, ag, ab, (int)(10 * fade)), 64);
-
-        // Subtle perspective grid (floor cue)
-        float horizon = size.y * 0.72f;
-        for (int i = 1; i <= 10; i++) {
-            float t = (float)i / 10.f;
-            float y = horizon + (size.y - horizon) * (t * t);
-            int a = (int)((18 - i) * fade);
-            if (a < 0) a = 0;
-            dl->AddLine(ImVec2(0, y), ImVec2(size.x, y), IM_COL32(255, 255, 255, a), 1.f);
-        }
-        for (int i = -8; i <= 8; i++) {
-            float x0 = size.x * 0.5f + i * 70.f;
-            dl->AddLine(ImVec2(size.x * 0.5f, horizon - 8.f), ImVec2(x0, size.y),
-                IM_COL32(255, 255, 255, (int)(10 * fade)), 1.f);
+        if (BrandAssets::logoSrv && BrandAssets::logoW > 0 && BrandAssets::logoH > 0) {
+            float aspect = (float)BrandAssets::logoW / (float)BrandAssets::logoH;
+            float drawH = Clampf(size.y * 0.09f, 52.f, 88.f);
+            float drawW = drawH * aspect;
+            ImVec2 logoMin(c.x - drawW * 0.5f, c.y - drawH * 0.5f);
+            ImVec2 logoMax(c.x + drawW * 0.5f, c.y + drawH * 0.5f);
+            dl->AddImage(BrandAssets::LogoTex(), logoMin, logoMax,
+                ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, 235));
+        } else {
+            dl->AddText(ImVec2(c.x - 36.f, c.y - 10.f), IM_COL32(230, 230, 235, 230), "FRONTIER");
         }
 
-        // Vignette
-        dl->AddRectFilledMultiColor(ImVec2(0, 0), ImVec2(size.x, size.y * 0.18f),
-            IM_COL32(0, 0, 0, (int)(210 * fade)), IM_COL32(0, 0, 0, (int)(210 * fade)),
-            IM_COL32(0, 0, 0, 0), IM_COL32(0, 0, 0, 0));
-        dl->AddRectFilledMultiColor(ImVec2(0, size.y * 0.82f), size,
-            IM_COL32(0, 0, 0, 0), IM_COL32(0, 0, 0, 0),
-            IM_COL32(0, 0, 0, (int)(220 * fade)), IM_COL32(0, 0, 0, (int)(220 * fade)));
-
-        // Drift particles
-        for (auto& p : particles) {
-            p.y += (10.0f + p.r * 7.0f) * dt;
-            p.x += sinf(timeAcc * 0.55f + p.r) * 6.f * dt + p.vx * 0.2f * dt;
-            if (p.y > size.y + 8) {
-                p.y = -8;
-                p.x = (float)(rand() % (int)(size.x + 1));
-            }
-            int pa = (int)(p.a * 90 * fade);
-            dl->AddCircleFilled(ImVec2(p.x, p.y), p.r * 0.75f, IM_COL32(ar, ag, ab, pa), 6);
-        }
-
-        // Progress rings
-        ImVec2 c(size.x * 0.5f, size.y * 0.46f);
-        float a0 = -PI * 0.5f;
-        float a1 = a0 + progress * PI * 2.0f;
-        float spin = timeAcc * 1.8f;
-
-        dl->AddCircle(c, 72.f, IM_COL32(32, 32, 38, (int)(220 * fade)), 72, 2.0f);
-        dl->AddCircle(c, 84.f, IM_COL32(24, 24, 30, (int)(140 * fade)), 72, 1.25f);
-
-        for (int i = 0; i < 16; i++) {
-            float s0 = spin + i * (PI * 2.f / 16.f);
-            float s1 = s0 + 0.12f;
-            dl->PathClear();
-            dl->PathArcTo(c, 92.f, s0, s1, 6);
-            dl->PathStroke(IM_COL32(ar, ag, ab, (int)((28 + 22 * breath) * fade)), 0, 1.8f);
-        }
-
+        const float barW = Clampf(size.x * 0.28f, 180.f, 320.f);
+        const float barH = 2.f;
+        const float barY = logoY + (BrandAssets::logoSrv ? 56.f : 34.f);
+        ImVec2 barMin(c.x - barW * 0.5f, barY);
+        ImVec2 barMax(c.x + barW * 0.5f, barY + barH);
+        dl->AddRectFilled(barMin, barMax, IM_COL32(36, 36, 42, 255));
         if (progress > 0.001f) {
-            dl->PathClear();
-            dl->PathArcTo(c, 72.f, a0, a1, 80);
-            dl->PathStroke(IM_COL32(ar, ag, ab, (int)(255 * fade)), 0, 3.6f);
-            dl->PathClear();
-            dl->PathArcTo(c, 72.f, a0, a1, 80);
-            dl->PathStroke(IM_COL32(ar, ag, ab, (int)(55 * fade)), 0, 7.0f);
+            ImVec2 fillMax(barMin.x + barW * progress, barMax.y);
+            dl->AddRectFilled(barMin, fillMax, IM_COL32(220, 50, 50, 255));
         }
-
-        // Center emblem card
-        const float cardW = 118.f;
-        const float cardH = 148.f;
-        ImVec2 cardMin(c.x - cardW * 0.5f, c.y - cardH * 0.5f + 8.f);
-        ImVec2 cardMax(c.x + cardW * 0.5f, c.y + cardH * 0.5f + 8.f);
-        dl->AddRectFilled(cardMin, cardMax, IM_COL32(18, 18, 22, (int)(210 * fade)), 14.f);
-        dl->AddRect(cardMin, cardMax, IM_COL32(255, 255, 255, (int)(28 * fade)), 14.f, 0, 1.2f);
-        ImVec2 ic(c.x, c.y + 8.f);
-        dl->AddCircle(ic, 16.f, IM_COL32(255, 255, 255, (int)(220 * fade)), 32, 1.6f);
-        dl->AddLine(ImVec2(ic.x - 28.f, ic.y + 22.f), ImVec2(ic.x + 28.f, ic.y + 22.f),
-            IM_COL32(255, 255, 255, (int)(220 * fade)), 1.6f);
     }
 
     // Simple line icons for floating header
@@ -268,9 +207,9 @@ namespace UIFx {
     inline bool FloatingHeader(int* selectedTab) {
         const Icon icons[] = {
             Icon::Combat, Icon::Visuals, Icon::World, Icon::Character,
-            Icon::Options, Icon::Config, Icon::Servers, Icon::Music, Icon::Status
+            Icon::Options, Icon::Servers, Icon::Music, Icon::Status
         };
-        const int count = 9;
+        const int count = 8;
         const float iconSlot = 40.0f;
         const float barH = 52.0f;
         const float barW = count * iconSlot + 24.0f;

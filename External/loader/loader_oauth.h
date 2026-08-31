@@ -346,7 +346,7 @@ namespace LoaderOAuth {
 
         if (!session.allowed) {
             err = session.message[0] ? session.message : "Run /verify YourRobloxName in Discord";
-            return true;
+            return false;
         }
         return true;
     }

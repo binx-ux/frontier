@@ -1,164 +1,294 @@
 # FRONTIER
 
-**See ahead. Built open.**
 
-Open-source Roblox **external** for Windows x64 — overlay ESP, aimbot, ImGui menu. Part of [AHEAD](https://trace-host.vercel.app). MIT, no keys, no telemetry.
 
-> **Repo:** https://github.com/binx-ux/frontier  
-> **Site:** https://trace-host.vercel.app  
-> **Status:** Maintained by [binx-ux](https://github.com/binx-ux). Offsets may be stale — verify before building. Full release target: **May 10, 2028**.
+**See ahead.**
+
+
+
+Roblox **external** for Windows x64 — overlay, aimbot, ImGui menu. Part of [AHEAD](https://trace-host.vercel.app).
+
+
+
+> **Product:** closed source — distributed via loader / private releases  
+
+> **Base:** open (MIT) — memory I/O, SDK, kernel driver source, offsets  
+
+> **Site:** https://trace-host.vercel.app
+
+
 
 ---
+
+
+
+## Open vs closed
+
+
+
+| | Public (MIT) | Private (proprietary) |
+
+|---|--------------|------------------------|
+
+| Memory / syscalls / driver source | ✅ | — |
+
+| SDK + offsets | ✅ | — |
+
+| Aimbot, ESP, exploits, menu | — | ✅ |
+
+| FrontierLoader + Discord gate | — | ✅ |
+
+| Release binaries | — | ✅ |
+
+
+
+Full split: [docs/OPEN_VS_CLOSED.md](docs/OPEN_VS_CLOSED.md)
+
+
+
+To publish the public base only:
+
+
+
+```powershell
+
+.\scripts\export-public-base.ps1
+
+# → ..\frontier-base\
+
+```
+
+
+
+---
+
+
 
 ## Read this first
 
+
+
 This reads Roblox process memory from outside the client. Using it on live accounts can get you **banned**. That risk is on you. Not affiliated with Roblox.
 
-Full text: [WARNING.md](WARNING.md) · [LICENSE](LICENSE)
+
+
+Full text: [WARNING.md](WARNING.md) · Base: [LICENSE](LICENSE) · Product: [LICENSE-PROPRIETARY.md](LICENSE-PROPRIETARY.md)
+
+
 
 ---
 
-## What’s in here
+
+
+## What's in the product (closed)
+
+
 
 | Area | Notes |
+
 |------|--------|
+
 | Aimbot / trigger / silent | Game-dependent |
+
 | ESP / radar / chams | Overlay draw |
+
 | Gun mods | Where offsets allow |
+
 | Movement helpers | Disabled on some places |
+
 | ImGui menu | Insert / Right Ctrl |
 
-Supported place IDs: `External/src/core/games/arsenal.h`
+
+
+Supported place IDs: private tree — `External/src/core/games/`
+
+
 
 ---
 
-## Build
+
+
+## Build (developers with private repo access)
+
+
 
 **Need:** Visual Studio with C++ desktop workload, Windows SDK, MASM.
 
+
+
 1. Open `External.sln`
+
 2. **Release | x64**
+
 3. Build
+
+
 
 Output: `External\x64\Release\Frontier.exe`
 
+
+
 ---
 
-## Run
 
-### Option A — Loader (recommended)
 
-1. Download **FrontierLoader.exe** from [GitHub Releases](https://github.com/binx-ux/frontier/releases) (or build from `External/loader/`)
+## Run (users)
+
+
+
+### Loader (recommended)
+
+
+
+1. Get **FrontierLoader.exe** from releases (Discord / private channel — not the public base repo)
+
 2. Join [Discord](https://discord.gg/zHGKqd92Pz) and run `/verify YourRobloxUsername`
-3. Open the loader → **Sign in with Discord** → pick **Usermode** or **Kernel** → **Launch**
 
-The loader auto-updates `usermode\Frontier.exe` from the release manifest. See [External/loader/README.md](External/loader/README.md) for manifest and build details.
+3. Open the loader → **Sign in with Discord** → **Launch**
 
-### Option B — Direct exe
 
-1. Join a supported experience on a client build that matches the offsets
-2. Start `Frontier.exe` directly (no Discord gate on the raw exe)
-3. **Insert** or **Right Ctrl** — menu
-4. **Delete** — panic off (if enabled)
 
-No telemetry. No Discord webhook. Build from source or grab [GitHub Releases](https://github.com/binx-ux/frontier/releases) when published.
+See [External/loader/README.md](External/loader/README.md) (private repo).
+
+
+
+### Direct exe
+
+
+
+Shipped only with private builds — not built from the public base export alone.
+
+
 
 ---
+
+
 
 ## Usermode vs Kernel
 
-FRONTIER ships as a **usermode external** by default. The loader can also launch a **kernel** build if you have one — they share the same menu and features, but read memory differently.
 
-### Usermode (default)
-
-A normal Windows app that attaches to Roblox with `OpenProcess` / `ReadProcessMemory` and draws an overlay. No driver, no signing, unzip and run. This is what `External/` builds and what GitHub releases include.
-
-- **Pros:** Simple setup, open source, no BSOD risk from drivers  
-- **Cons:** Higher detection surface — external process + overlay are easier for anti-cheat to spot  
-- **Path:** `usermode\Frontier.exe` via the loader, or `External\x64\Release\Frontier.exe` when building
-
-### Kernel (optional, not public)
-
-Uses a kernel driver (`FrontierDrv.sys`) to read memory from Ring 0. Requires a driver bundle, admin, and usually test signing or a private distribution channel. **Driver source** is in `kernel/driver/`; **do not commit** built `.sys` files.
-
-- **Pros:** Lower-level memory access; can be harder for usermode anti-cheat to see  
-- **Cons:** Driver maintenance, signing, BSOD risk, admin required  
-- **Build client:** Visual Studio → **ReleaseKernel | x64** or `scripts\build-kernel.ps1`  
-- **Build driver:** WDK — see [kernel/driver/README.md](kernel/driver/README.md)  
-- **Path:** `kernel\Frontier.exe` + `kernel\driver\FrontierDrv.sys`
 
 | | Usermode | Kernel |
-|---|----------|--------|
-| Driver | None | `.sys` + mapper |
-| Install | Unzip → verify → launch | Driver load + kernel payload |
-| This repo | ✅ Built from `External/` | ❌ Placeholder only |
-| Loader card | Usermode (always) | Kernel (if bundle present) |
 
-Full loader + language notes: [External/loader/README.md](External/loader/README.md)
+|---|----------|--------|
+
+| Driver | None | `.sys` (source open, binaries private) |
+
+| Open base | Memory + SDK | + `kernel/driver/` source |
+
+| Product binary | Closed | Closed |
+
+
+
+Kernel driver source: [kernel/driver/README.md](kernel/driver/README.md)
+
+
 
 ---
 
-## Offsets
 
-Roblox updates break these constantly. **FRONTIER** mirrors [theo's offsets](https://offsets.imtheo.lol/) in this repo — no build required to download them.
 
-| Where | URL |
-|-------|-----|
-| Live upstream | https://offsets.imtheo.lol |
-| This repo | [`offsets/`](./offsets/) · `node scripts/sync-offsets.js` |
-| AHEAD catalog | https://trace-host.vercel.app/api/frontier-offsets |
-| Example JSON | https://trace-host.vercel.app/api/frontier-offsets?file=Offsets.json |
+## Offsets (public)
+
+
+
+Roblox updates break these constantly. Mirrors [theo's offsets](https://offsets.imtheo.lol/) in `offsets/`.
+
+
 
 | Path | What |
+
 |------|------|
+
 | `offsets/offsets.json` | Latest JSON mirror |
+
 | `offsets/offsets.hpp` | Latest C++ header mirror |
-| `offsets/sources.json` | Full route manifest |
-| `offsets/active.json` | Active Roblox client version |
+
 | `External/src/sdk/offsets.h` | Header used when you build |
 
-See [offsets/README.md](./offsets/README.md). Update after every client bump or expect a failed attach.
 
-### UI preview (no build)
 
-Open [`dev/ui-preview.html`](./dev/ui-preview.html) in Chrome or Edge — interactive HTML mockup of the menu layout (tabs, cards, toggles, floating header mode).
+See [offsets/README.md](./offsets/README.md).
+
+
 
 ---
+
+
 
 ## Layout
 
+
+
 ```
-External/           main app + ImGui
-  loader/           FrontierLoader (update + Discord verify + mode pick)
-  src/core/         aimbot, esp, cache, config…
-  src/sdk/          instances, offsets, w2s
-  ext/imgui/        Dear ImGui
-offsets/            dump json
-releases/           manifest.json for loader auto-update
+
+kernel/             driver source + IOCTL (open)
+
+offsets/            dump mirrors (open)
+
+External/src/memory/   attach + read/write (open)
+
+External/src/sdk/      instances, w2s (open)
+
+External/           full app + features (closed — private repo)
+
+  loader/           FrontierLoader (closed)
+
+docs/               OPEN_VS_CLOSED.md
+
+base/               public export manifest
+
+scripts/            export-public-base.ps1, sync-offsets.js
+
 ```
+
+
 
 Config saves to `%USERPROFILE%\Documents\FRONTIER\`
 
+
+
 ---
+
+
 
 ## Contributing
 
-PRs welcome for offsets, fixes, and docs.
 
-- Don’t commit secrets, webhooks, or license servers
-- Keep ban-risk stuff labeled in the PR
+
+**Public base:** PRs welcome for offsets, memory/SDK fixes, driver docs.
+
+
+
+**Closed product:** not accepting public PRs — contact maintainer.
+
+
+
+- Don't commit secrets, webhooks, or license servers
+
 - See [SECURITY.md](SECURITY.md)
 
+
+
 ---
+
+
 
 ## Credits
 
+
+
 - Base ideas from [metixud/RobloxExternalBase](https://github.com/metixud/RobloxExternalBase)
-- Offsets: [theo's offsets](https://offsets.imtheo.lol) · mirrored in `offsets/`
-- UI: Dear ImGui
+
+- Offsets: [theo's offsets](https://offsets.imtheo.lol)
+
 - Maintainer: [binx-ux](https://github.com/binx-ux) · [AHEAD](https://trace-host.vercel.app)
-- Original co-dev: [astwdnya](https://github.com/astwdnya)
+
+
 
 ---
 
-Educational / research use. Ban risk is real.
+
+
+Educational / research use for the **open base**. Product use at your own risk.
+

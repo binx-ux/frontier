@@ -107,6 +107,13 @@ namespace PlayerCache {
     inline RBX::RbxInstance FindRootPart(RBX::RbxInstance character)
     {
         if (!character.Addr) return RBX::RbxInstance(0);
+
+        auto humanoid = character.FindChildByClass("Humanoid");
+        if (humanoid.Addr) {
+            uintptr_t hrp = memory->read<uintptr_t>(humanoid.Addr + Offsets::Humanoid::HumanoidRootPart);
+            if (hrp) return RBX::RbxInstance(hrp);
+        }
+
         auto r = character.FindChild("HumanoidRootPart");
         if (r.Addr) return r;
         r = character.FindChild("UpperTorso");
@@ -263,6 +270,11 @@ namespace PlayerCache {
         auto children = character.GetChildList();
         bp.head = FindNamedAddr(children, "Head");
         bp.hrp = FindNamedAddr(children, "HumanoidRootPart");
+        if (!bp.hrp) {
+            auto humanoid = character.FindChildByClass("Humanoid");
+            if (humanoid.Addr)
+                bp.hrp = memory->read<uintptr_t>(humanoid.Addr + Offsets::Humanoid::HumanoidRootPart);
+        }
         bp.torso = FindNamedAddr(children, "Torso");
         bp.isR6 = (bp.torso != 0);
         if (bp.isR6) {

@@ -3,7 +3,7 @@
 
 namespace variables {
     inline bool menuOpen = false;
-    // 0 Combat 1 Visuals 2 World 3 Character 4 Options 5 Explorer 6 Servers 7 Music 8 Status
+    // 0 Combat 1 Visuals 2 World 3 Character 4 Options 5 Servers 6 Music 7 Status
     inline int selectedTab = 0;
     inline int selectedSub = 0;
     inline bool waitingForKey = false;
@@ -17,7 +17,7 @@ namespace variables {
         inline char status[128] = "Loading session";
         inline bool failed = false;
         inline char error[256] = "";
-        inline float minSeconds = 4.5f; // hold loader so brand / steps are readable
+        inline float minSeconds = 2.0f;
     }
 
     namespace Toast {
@@ -30,13 +30,13 @@ namespace variables {
     }
 
     namespace Theme {
-        inline float brand[4] = { 0.96f, 0.96f, 0.97f, 1.0f };
-        inline float accent[4] = { 0.96f, 0.96f, 0.97f, 1.0f };
-        inline float bg[4] = { 0.055f, 0.055f, 0.059f, 0.98f };
-        inline float card[4] = { 0.075f, 0.075f, 0.078f, 1.0f };
-        inline float border[4] = { 1.0f, 1.0f, 1.0f, 0.08f };
-        inline float text[4] = { 0.941f, 0.941f, 0.961f, 1.0f };
-        inline float textDim[4] = { 0.518f, 0.518f, 0.565f, 1.0f };
+        inline float brand[4] = { 0.984f, 0.106f, 0.031f, 1.0f };
+        inline float accent[4] = { 0.984f, 0.106f, 0.031f, 1.0f };
+        inline float bg[4] = { 0.047f, 0.047f, 0.047f, 0.98f };
+        inline float card[4] = { 0.067f, 0.071f, 0.071f, 1.0f };
+        inline float border[4] = { 1.0f, 1.0f, 1.0f, 0.15f };
+        inline float text[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+        inline float textDim[4] = { 1.0f, 1.0f, 1.0f, 0.92f };
         inline bool bgEffect = false;
         inline bool snowEffect = false;
         inline bool useFloatingHeader = false;
@@ -46,7 +46,7 @@ namespace variables {
         inline float menuScale = 1.0f;
         inline bool linkBrandAccent = true;
         inline bool styleDirty = true;
-        inline int preset = 3;
+        inline int preset = 0;
         inline bool showFooterLink = false;
     }
 
@@ -60,13 +60,14 @@ namespace variables {
     }
 
     namespace Aimbot {
-        inline bool enabled = true;
-        inline bool showFOV = true;
+        inline bool enabled = false;
+        inline bool showFOV = false;
+        inline int fovStyle = 0; // 0 Circle  1 Rotating dots
         inline bool fovGlow = false;
         inline bool fovFilled = false;
         inline bool stickyAim = true;
         inline bool prediction = false;
-        inline bool requireVisible = false;
+        inline bool requireVisible = false; // wall check
         inline bool alwaysOn = false;   // aim without holding key
         inline bool multiTarget = false;
         inline bool resolver = false;
@@ -74,27 +75,31 @@ namespace variables {
         inline int targetMethod = 0; // 0 Closest to crosshair  1 Force silent target
         inline bool silentAim = false; // mirrors aimType==1 for clarity / menu toggle
         inline float fovRadius = 150.0f;
+        inline float silentFovRadius = 180.0f;
         inline float holdFovScale = 1.35f; // sticky FOV hysteresis
         inline float fovOpacity = 0.5f;
         inline float fovColor[4] = { 1.f, 1.f, 1.f, 1.f };
-        inline float smoothing = 12.0f;  // higher = slower (P gain = 1/smooth)
-        inline float damping = 0.35f;    // D term — cuts overshoot
-        inline float deadzone = 2.5f;
-        inline float maxMove = 14.0f;
+        inline float smoothing = 8.0f;  // higher = slower (P gain = 1/smooth)
+        inline float damping = 0.28f;    // D term — cuts overshoot
+        inline float deadzone = 1.5f;
+        inline float maxMove = 18.0f;
         inline float predictionX = 0.10f;
         inline float predictionY = 0.08f;
         inline float maxDistance = 10000.0f;
         // Easy 0–100 UI knobs (synced to the fields above)
-        inline float uiSmoothness = 31.f;   // → smoothing 4–30
-        inline float uiStability = 41.f;    // → damping 0–0.85
-        inline float uiLockZone = 17.f;     // → deadzone 0.5–12
+        inline float uiSmoothness = 16.f;   // → smoothing 4–30 (lower = snappier)
+        inline float uiStability = 35.f;    // → damping 0–0.85
+        inline float uiLockZone = 10.f;     // → deadzone 0.5–12
         inline float uiRange = 100.f;       // → maxDistance 100–10000
-        inline float uiFov = 27.f;          // → fovRadius 20–500
+        inline float uiFov = 35.f;          // → fovRadius 20–500
+        inline float uiSilentFov = 40.f;    // → silentFovRadius 20–500
         inline float uiStickyFov = 44.f;    // → holdFovScale 1.0–1.8
-        inline float uiAimSpeed = 42.f;     // → maxMove 4–28
+        inline float uiAimSpeed = 52.f;     // → maxMove 4–28
         // 0 Head 1 Body 2 LeftLeg 3 RightLeg 4 LeftArm 5 RightArm 6 Closest
         inline int aimTarget = 0;
-        inline int aimbotKey = 2;
+        inline int aimbotKey = 0;           // none — user binds or uses Always On
+        inline int silentAimKey = 0x06;     // XBUTTON2
+        inline bool fovFollowMouse = true;
         inline bool toggleMode = false;
         inline bool toggledOn = false;
         inline int smoothProfile = 0; // 0 Custom 1 Legit 2 Smooth 3 Rage
@@ -104,11 +109,16 @@ namespace variables {
 
     namespace Trigger {
         inline bool enabled = false;
-        inline int key = 'X';
+        inline bool enableOnStart = false; // off by default; opt-in via Options
+        inline int key = 0x05; // XBUTTON1 — separate from aim RMB
         inline float delayMs = 5.0f;
         inline float releaseMs = 12.0f;
         inline bool headOnly = false;
         inline bool requireVisible = false;
+        inline bool useHotkey = true;
+        inline bool targetPlayers = true;
+        inline bool targetNpc = true;
+        inline bool targetDead = true;
         inline float hitRadius = 18.0f; // base crosshair radius (px)
     }
 
@@ -118,7 +128,7 @@ namespace variables {
         inline bool shoot = true;
         inline bool teleport = false;
         inline float tpDistance = 2.5f;
-        inline int key = 'R'; // toggle
+        inline int key = 0x47; // G — toggle rage
         inline bool unkillable = true; // behind-target TP + health stick
     }
 
@@ -129,18 +139,10 @@ namespace variables {
         inline bool noSpread = false;
         inline bool noRecoil = false;
         inline bool infiniteAmmo = false;
-        inline bool damageBoost = false;
-        inline bool longRange = false;
-        inline bool instantEquip = false;
+        inline bool maxPenetration = false;
         inline bool aggressive = true;   // Arsenal resets Values — re-apply often
-        inline bool autoReload = false;
-        inline bool noSway = false;
-        inline bool wallbangHint = false; // extend range aggressively
-        inline bool rapidPlus = false;    // push fire rate even lower
-        inline float reloadTime = 0.05f;
-        inline float fireRate = 0.05f; // Arsenal: seconds between shots; keep >= 0.04
-        inline float damageMultiplier = 3.0f;
-        inline float rangeMultiplier = 2.5f;
+        inline float reloadTime = 0.01f;
+        inline float fireRate = 0.02f; // TRACE default — seconds between shots
     }
 
     namespace Hitbox {
@@ -150,13 +152,24 @@ namespace variables {
         inline bool healthCheck = false;
         inline float size = 12.0f;
         inline int type = 1; // 0 HRP only  1 multi-part (recommended)
-        inline int key = 'J';
+        inline int key = 0x42; // B — toggle hitbox / magic bullet
         inline bool aimAssist = true; // spoof mouse to bone when crosshair in big box
+    }
+
+    // Magic Bullet — expanded hit registration (hitbox extender + aim assist)
+    namespace MagicBullet {
+        inline bool enabled = false;
+        inline int key = 0x42; // B
+        inline float uiFov = 40.f;
+        inline float fovRadius = 150.f;
+        inline int hitbox = 0; // 0 Head … 6 Closest (aim-assist bone)
+        inline bool showFov = false;
+        inline float fovColor[4] = { 0.f, 0.85f, 0.85f, 1.f };
     }
 
     namespace Desync {
         inline bool enabled = false;
-        inline int key = 0x05; // XBUTTON1
+        inline int key = 0x4E; // N — toggle desync
         inline bool removeWalkAnim = false;
         inline bool displayServerPos = false;
         inline bool resetOnOff = true;
@@ -164,16 +177,16 @@ namespace variables {
     }
 
     namespace ESP {
-        inline bool enabled = true;
-        inline bool boxes = true;
+        inline bool enabled = false;
+        inline bool boxes = false;
         inline bool fillBox = false;
         inline bool cornerBox = false;
-        inline bool names = true;
+        inline bool names = false;
         inline int nameType = 0; // 0 Name 1 DisplayName
         inline bool healthText = false;
         inline int healthTextPos = 0; // 0 Above Name 1 Below
-        inline bool distance = true;
-        inline bool healthBar = true;
+        inline bool distance = false;
+        inline bool healthBar = false;
         inline bool healthBasedColor = true;
         inline bool snaplines = false;
         inline int snaplinesOrigin = 0; // 0 Top 1 Middle 2 Bottom 3 Mouse
@@ -225,7 +238,7 @@ namespace variables {
         inline bool visibleOnly = false;
         inline bool wireframePlayers = false;
         inline bool offscreenPulse = false;
-        inline bool targetHighlight = true;
+        inline bool targetHighlight = false;
     }
 
     namespace Crosshair {
@@ -293,7 +306,7 @@ namespace variables {
         inline float killVolume = 0.65f;
         inline bool music = false;
         inline float musicVolume = 0.55f;
-        inline bool spotifyMini = true;
+        inline bool spotifyMini = false;
         inline bool musicLoop = true;
         inline int musicSource = 0; // 0 Spotify  1 Local file  2 Roblox ID
         inline char localPath[MAX_PATH] = "";
@@ -301,6 +314,8 @@ namespace variables {
         inline bool localPlaying = false;
         inline bool robloxApplied = false;
         inline bool openRobloxCatalog = false;
+        inline char playlist[8][MAX_PATH]{};
+        inline int playlistCount = 0;
     }
 
     namespace Exploits {
@@ -333,7 +348,7 @@ namespace variables {
         inline bool visualizeHitbox = false;
         inline bool infJump = false;
         inline bool autoTp = false;
-        inline int autoTpKey = 'T';
+        inline int autoTpKey = 0x59; // Y
         inline float autoTpDelay = 0.0f; // 0 = every frame (fastest)
         inline bool floatEnabled = false;
         inline float floatHeight = 10.0f;
@@ -344,7 +359,7 @@ namespace variables {
         inline float walkFlingRange = 4.5f; // touch distance
         inline int walkFlingKey = 0; // 0 = always when enabled
         inline bool clickTp = false;
-        inline int clickTpKey = 'C';
+        inline int clickTpKey = 0x48; // H
         inline bool freeze = false;
         inline int freezeKey = 0;
         inline bool spin = false;
@@ -377,7 +392,11 @@ namespace variables {
         inline int serverCount = 0;
         inline bool redirecting = false;
         inline float redirectTimer = 0.f;
-        inline char redirectMsg[96] = "Match is redirecting you, please wait";
+        inline int disconnectKind = 0; // 0 redirect, 1 ban troll
+        inline float redirectProgress = 0.f;
+        inline char redirectMsg[160] = "Match is redirecting you, please wait";
+        inline char redirectStatus[64] = "Joining server...";
+        inline char searchFilter[64] = "";
     }
 
     namespace Status {
@@ -396,11 +415,11 @@ namespace variables {
         inline bool streamProof = false;
         inline bool streamerMode = false;
         inline bool streamerModePlus = false;
-        inline bool showFps = true;
+        inline bool showFps = false;
         inline bool showKeybinds = false;
         inline bool panicKey = true;
         inline int panicVk = 0x2E;
-        inline int menuVk = 0xA3;
+        inline int menuVk = VK_INSERT;
         inline bool antiAfk = false;
         inline bool afkAssist = false; // leave-running: always-on aim + strong anti-AFK
         inline float antiAfkSeconds = 12.0f;
@@ -416,15 +435,15 @@ namespace variables {
         // Menu open/close animation (0 = closed, 1 = fully open)
         inline float menuAnim = 0.f;
         inline float menuAnimSpeed = 14.f;
-        inline bool watermark = true;
-        inline bool enemyCounter = true;
+        inline bool watermark = false;
+        inline bool enemyCounter = false;
         inline bool hitMarker = false;
         inline bool damageNumbers = false;
-        inline bool targetHud = true;
+        inline bool targetHud = false;
         inline bool autoRejoin = false;
         inline bool fpsBoost = false;
         inline bool hideGui = false;
-        inline bool discordRpc = true;
+        inline bool discordRpc = false;
     }
 
     // Extra combat / utility packs

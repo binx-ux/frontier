@@ -13,18 +13,38 @@
 namespace FrontierUI {
 
     inline ImVec4 V4(const float c[4]) { return ImVec4(c[0], c[1], c[2], c[3]); }
+
     inline ImU32 U32(const float c[4], float a = -1.f) {
         float aa = (a < 0) ? c[3] : a;
         return IM_COL32((int)(c[0] * 255), (int)(c[1] * 255), (int)(c[2] * 255), (int)(aa * 255));
     }
+    inline ImU32 AccentU32(float a = 1.f) {
+        return U32(variables::Theme::brand, a);
+    }
+
+    inline ImU32 AccentSoftU32(float a = 1.f) {
+        float aa = a < 0.f ? 0.f : (a > 1.f ? 1.f : a);
+        const float* c = variables::Theme::brand;
+        return IM_COL32(
+            (int)(c[0] * 255), (int)(c[1] * 255), (int)(c[2] * 255), (int)(180 * aa));
+    }
+
+    inline const char* VisibleLabel(const char* label) {
+        if (!label || !label[0]) return nullptr;
+        if (label[0] == '#' && label[1] == '#') return nullptr;
+        return label;
+    }
+
+    inline ImU32 LabelTextCol() { return IM_COL32(255, 255, 255, 245); }
+    inline ImU32 LabelTextDimCol() { return IM_COL32(255, 255, 255, 220); }
 
     inline void KeyNameInto(int vk, char* out, size_t outSz) {
         if (!out || outSz < 2) return;
         switch (vk) {
         case 0: strncpy_s(out, outSz, "none", _TRUNCATE); return;
-        case VK_LBUTTON: strncpy_s(out, outSz, "lmb", _TRUNCATE); return;
-        case VK_RBUTTON: strncpy_s(out, outSz, "rmb", _TRUNCATE); return;
-        case VK_MBUTTON: strncpy_s(out, outSz, "mmb", _TRUNCATE); return;
+        case VK_LBUTTON: strncpy_s(out, outSz, "Mouse 1", _TRUNCATE); return;
+        case VK_RBUTTON: strncpy_s(out, outSz, "Mouse 2", _TRUNCATE); return;
+        case VK_MBUTTON: strncpy_s(out, outSz, "Mouse 3", _TRUNCATE); return;
         case VK_XBUTTON1: strncpy_s(out, outSz, "xbutton1", _TRUNCATE); return;
         case VK_XBUTTON2: strncpy_s(out, outSz, "xbutton2", _TRUNCATE); return;
         case VK_SHIFT: strncpy_s(out, outSz, "shift", _TRUNCATE); return;
@@ -49,6 +69,62 @@ namespace FrontierUI {
         return buf;
     }
 
+    inline bool PollKeybindCapture(int* key, DWORD ignoreUntil)
+    {
+        if (!key) return false;
+        if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
+            variables::waitingForKey = false;
+            variables::keyToRebind = nullptr;
+            return true;
+        }
+        if (GetTickCount() < ignoreUntil)
+            return false;
+
+        if (GetAsyncKeyState(VK_LBUTTON) & 0x8000) {
+            *key = VK_LBUTTON;
+            variables::waitingForKey = false;
+            variables::keyToRebind = nullptr;
+            return true;
+        }
+        if (GetAsyncKeyState(VK_RBUTTON) & 0x8000) {
+            *key = VK_RBUTTON;
+            variables::waitingForKey = false;
+            variables::keyToRebind = nullptr;
+            return true;
+        }
+        if (GetAsyncKeyState(VK_MBUTTON) & 0x8000) {
+            *key = VK_MBUTTON;
+            variables::waitingForKey = false;
+            variables::keyToRebind = nullptr;
+            return true;
+        }
+        if (GetAsyncKeyState(VK_XBUTTON1) & 0x8000) {
+            *key = VK_XBUTTON1;
+            variables::waitingForKey = false;
+            variables::keyToRebind = nullptr;
+            return true;
+        }
+        if (GetAsyncKeyState(VK_XBUTTON2) & 0x8000) {
+            *key = VK_XBUTTON2;
+            variables::waitingForKey = false;
+            variables::keyToRebind = nullptr;
+            return true;
+        }
+
+        for (int vk = 8; vk < 256; vk++) {
+            if (vk == VK_LBUTTON || vk == VK_RBUTTON || vk == VK_MBUTTON ||
+                vk == VK_XBUTTON1 || vk == VK_XBUTTON2 || vk == VK_ESCAPE)
+                continue;
+            if (GetAsyncKeyState(vk) & 0x8000) {
+                *key = vk;
+                variables::waitingForKey = false;
+                variables::keyToRebind = nullptr;
+                return true;
+            }
+        }
+        return false;
+    }
+
     inline void KeybindChip(const char* id, int* key) {
         ImGui::PushID(id);
         char label[32];
@@ -68,25 +144,7 @@ namespace FrontierUI {
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
         if (waiting) {
             if (ImGui::Button("…", ImVec2(0, 0))) {}
-            if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
-                variables::waitingForKey = false; variables::keyToRebind = nullptr;
-            }
-            else if (GetTickCount() >= rebindIgnoreUntil) {
-                for (int vk = 8; vk < 255; vk++) {
-                    if (vk == VK_ESCAPE || vk == VK_LBUTTON || vk == VK_RBUTTON) continue;
-                    if (GetAsyncKeyState(vk) & 0x8000) {
-                        *key = vk; variables::waitingForKey = false; variables::keyToRebind = nullptr; break;
-                    }
-                }
-                if (variables::waitingForKey) {
-                    if (GetAsyncKeyState(VK_XBUTTON1) & 0x8000) {
-                        *key = VK_XBUTTON1; variables::waitingForKey = false; variables::keyToRebind = nullptr;
-                    }
-                    else if (GetAsyncKeyState(VK_XBUTTON2) & 0x8000) {
-                        *key = VK_XBUTTON2; variables::waitingForKey = false; variables::keyToRebind = nullptr;
-                    }
-                }
-            }
+            PollKeybindCapture(key, rebindIgnoreUntil);
         }
         else {
             if (ImGui::Button(label, ImVec2(0, 0))) {
@@ -136,7 +194,7 @@ namespace FrontierUI {
         return changed;
     }
 
-    inline bool ToggleSwitch(const char* id, bool* v, float w = 38.f, float h = 18.f) {
+    inline bool ToggleSwitch(const char* id, bool* v, float w = 44.f, float h = 22.f) {
         ImGui::PushID(id);
         ImVec2 p = ImGui::GetCursorScreenPos();
         bool pressed = ImGui::InvisibleButton("##tog", ImVec2(w, h));
@@ -144,18 +202,94 @@ namespace FrontierUI {
         bool hovered = ImGui::IsItemHovered();
 
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        ImU32 track = *v ? IM_COL32(245, 245, 248, 255)
-            : IM_COL32(hovered ? 52 : 42, hovered ? 52 : 42, hovered ? 58 : 48, 255);
-        dl->AddRectFilled(p, ImVec2(p.x + w, p.y + h), track, h * 0.5f);
+        const float r = h * 0.5f;
+        ImU32 trackOff = IM_COL32(hovered ? 46 : 36, hovered ? 48 : 38, hovered ? 56 : 46, 255);
+        ImU32 trackOn = AccentU32(hovered ? 1.f : 0.92f);
+        dl->AddRectFilled(p, ImVec2(p.x + w, p.y + h), *v ? trackOn : trackOff, r);
+        if (*v) {
+            dl->AddRect(p, ImVec2(p.x + w, p.y + h), AccentSoftU32(0.55f), r, 0, 1.2f);
+            dl->AddRectFilled(
+                ImVec2(p.x + 2.f, p.y + 2.f), ImVec2(p.x + w - 2.f, p.y + h - 2.f),
+                IM_COL32(255, 255, 255, 18), r - 2.f);
+        } else {
+            dl->AddRect(p, ImVec2(p.x + w, p.y + h), IM_COL32(255, 255, 255, 22), r, 0, 1.f);
+        }
 
-        float pad = 2.f;
-        float thumb = h - pad * 2.f;
-        float tx = *v ? (p.x + w - thumb - pad) : (p.x + pad);
-        ImU32 thumbCol = *v ? IM_COL32(18, 18, 20, 255) : IM_COL32(160, 160, 168, 255);
-        dl->AddCircleFilled(ImVec2(tx + thumb * 0.5f, p.y + h * 0.5f), thumb * 0.5f, thumbCol);
+        const float pad = 3.f;
+        const float thumb = h - pad * 2.f;
+        const float tx = *v ? (p.x + w - thumb - pad) : (p.x + pad);
+        const float ty = p.y + h * 0.5f;
+        if (*v)
+            dl->AddCircleFilled(ImVec2(tx + thumb * 0.5f, ty), thumb * 0.5f + 1.5f, AccentSoftU32(0.35f));
+        dl->AddCircleFilled(ImVec2(tx + thumb * 0.5f, ty), thumb * 0.5f,
+            *v ? IM_COL32(255, 255, 255, 250) : IM_COL32(170, 172, 182, 255));
 
         ImGui::PopID();
         return pressed;
+    }
+
+    inline bool OptionCheck(const char* label, bool* v) {
+        ImGui::PushID(label);
+        float avail = ImGui::GetContentRegionAvail().x;
+        ImVec2 p = ImGui::GetCursorScreenPos();
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const float box = 13.f;
+
+        ImGui::SetCursorScreenPos(ImVec2(p.x + avail - box, p.y));
+        bool pressed = ImGui::InvisibleButton("##opt", ImVec2(box, box));
+        if (pressed) *v = !*v;
+        bool hov = ImGui::IsItemHovered();
+
+        ImU32 fill = *v ? AccentU32(1.f) : IM_COL32(hov ? 34 : 26, hov ? 34 : 26, hov ? 36 : 28, 255);
+        dl->AddRectFilled(ImVec2(p.x + avail - box, p.y), ImVec2(p.x + avail, p.y + box), fill, 2.f);
+        dl->AddRect(
+            ImVec2(p.x + avail - box, p.y), ImVec2(p.x + avail, p.y + box),
+            *v ? AccentSoftU32(0.8f) : IM_COL32(255, 255, 255, 28), 2.f);
+        if (*v) {
+            dl->AddLine(
+                ImVec2(p.x + avail - box + 3.f, p.y + 7.f),
+                ImVec2(p.x + avail - box + 5.f, p.y + 10.f),
+                IM_COL32(255, 255, 255, 240), 1.6f);
+            dl->AddLine(
+                ImVec2(p.x + avail - box + 5.f, p.y + 10.f),
+                ImVec2(p.x + avail - 3.f, p.y + 3.f),
+                IM_COL32(255, 255, 255, 240), 1.6f);
+        }
+
+        ImU32 tc = *v ? LabelTextCol() : LabelTextDimCol();
+        if (const char* visible = VisibleLabel(label))
+            dl->AddText(ImVec2(p.x, p.y + 1), tc, visible);
+
+        ImGui::Dummy(ImVec2(0, box + 6.f));
+        ImGui::PopID();
+        return pressed;
+    }
+
+    inline void KeybindRow(const char* label, int* key) {
+        ImGui::PushID(label);
+        float avail = ImGui::GetContentRegionAvail().x;
+        ImVec2 p = ImGui::GetCursorScreenPos();
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        if (const char* visible = VisibleLabel(label))
+            dl->AddText(ImVec2(p.x, p.y + 1), LabelTextCol(), visible);
+
+        static DWORD rebindIgnoreUntil = 0;
+        const bool waiting = variables::waitingForKey && variables::keyToRebind == key;
+        const char* kn = waiting ? "…" : KeyName(*key);
+        ImVec2 ks = ImGui::CalcTextSize(kn);
+        dl->AddText(ImVec2(p.x + avail - ks.x, p.y + 1), LabelTextCol(), kn);
+
+        ImGui::SetCursorScreenPos(p);
+        if (ImGui::InvisibleButton("##kbr", ImVec2(avail, 18.f))) {
+            variables::waitingForKey = true;
+            variables::keyToRebind = key;
+            rebindIgnoreUntil = GetTickCount() + 250;
+        }
+        if (waiting) {
+            PollKeybindCapture(key, rebindIgnoreUntil);
+        }
+        ImGui::Dummy(ImVec2(0, 20.f));
+        ImGui::PopID();
     }
 
     inline bool Checkbox(const char* label, bool* v, float* color = nullptr, int* key = nullptr) {
@@ -171,8 +305,9 @@ namespace FrontierUI {
 
         ImVec2 p = ImGui::GetCursorScreenPos();
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        ImVec4 tc = *v ? V4(variables::Theme::text) : V4(variables::Theme::textDim);
-        dl->AddText(ImVec2(p.x, p.y + 1), ImGui::ColorConvertFloat4ToU32(tc), label);
+        ImVec4 tc = V4(variables::Theme::text);
+        if (const char* visible = VisibleLabel(label))
+            dl->AddText(ImVec2(p.x, p.y + 1), ImGui::ColorConvertFloat4ToU32(tc), visible);
 
         float rx = p.x + avail - rightW + 4.f;
         ImGui::SetCursorScreenPos(ImVec2(rx, p.y));
@@ -196,51 +331,58 @@ namespace FrontierUI {
     }
 
     inline bool SliderFloat(const char* label, float* v, float mn, float mx, const char* fmt = "%.2f") {
-        ImGui::PushID(label);
+        ImGui::PushID(label ? label : "##slider");
         float avail = ImGui::GetContentRegionAvail().x;
-
-        char buf[32]; sprintf_s(buf, fmt, *v);
-        ImVec2 valSz = ImGui::CalcTextSize(buf);
-        float valBoxW = valSz.x + 16.f;
-        if (valBoxW < 44.f) valBoxW = 44.f;
-
         ImVec2 rowP = ImGui::GetCursorScreenPos();
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        dl->AddText(ImVec2(rowP.x, rowP.y + 2), ImGui::ColorConvertFloat4ToU32(V4(variables::Theme::textDim)), label);
 
-        float valX = rowP.x + avail - valBoxW;
-        ImVec2 boxMin(valX, rowP.y);
-        ImVec2 boxMax(valX + valBoxW, rowP.y + 20.f);
-        dl->AddRectFilled(boxMin, boxMax, IM_COL32(22, 22, 26, 255), 5.f);
-        dl->AddRect(boxMin, boxMax, IM_COL32(255, 255, 255, 18), 5.f);
-        dl->AddText(ImVec2(valX + (valBoxW - valSz.x) * 0.5f, rowP.y + 2),
-            ImGui::ColorConvertFloat4ToU32(V4(variables::Theme::text)), buf);
+        const char* visible = VisibleLabel(label);
+        if (visible)
+            dl->AddText(ImVec2(rowP.x, rowP.y + 1), LabelTextCol(), visible);
 
-        ImGui::Dummy(ImVec2(0, 24.f));
+        char valBuf[32];
+        sprintf_s(valBuf, fmt, *v);
+        ImVec2 valSz = ImGui::CalcTextSize(valBuf);
+        dl->AddText(
+            ImVec2(rowP.x + avail - valSz.x, rowP.y + 1),
+            LabelTextDimCol(), valBuf);
 
-        float trackW = avail - valBoxW - 12.f;
-        if (trackW < 60.f) trackW = 60.f;
-        ImGui::SetCursorScreenPos(ImVec2(rowP.x, rowP.y + 24.f));
-        ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.09f, 0.09f, 0.11f, 1));
-        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.12f, 0.12f, 0.14f, 1));
-        ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(0.92f, 0.92f, 0.94f, 1));
-        ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, ImVec4(1.f, 1.f, 1.f, 1));
-        ImGui::PushStyleVar(ImGuiStyleVar_GrabRounding, 8.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 3));
-        ImGui::SetNextItemWidth(trackW);
-
-        ImVec2 sp = ImGui::GetCursorScreenPos();
+        const float labelGap = visible ? 24.f : 4.f;
+        const float trackH = 8.f;
+        const float trackY = rowP.y + labelGap;
+        const float trackW = avail;
         float t = (mx > mn) ? ((*v - mn) / (mx - mn)) : 0.f;
-        if (t < 0) t = 0; if (t > 1) t = 1;
-        dl->AddRectFilled(
-            ImVec2(sp.x, sp.y + 4), ImVec2(sp.x + trackW * t, sp.y + 10),
-            IM_COL32(245, 245, 248, 140), 3.f);
+        if (t < 0.f) t = 0.f;
+        if (t > 1.f) t = 1.f;
 
+        ImVec2 tMin(rowP.x, trackY);
+        ImVec2 tMax(rowP.x + trackW, trackY + trackH);
+        dl->AddRectFilled(tMin, tMax, IM_COL32(18, 19, 24, 255), trackH * 0.5f);
+        dl->AddRect(tMin, tMax, IM_COL32(255, 255, 255, 28), trackH * 0.5f);
+        if (t > 0.001f) {
+            ImVec2 fillMax(tMin.x + trackW * t, tMax.y);
+            dl->AddRectFilled(tMin, fillMax, AccentU32(0.95f), trackH * 0.5f);
+            dl->AddRectFilled(
+                ImVec2(tMin.x, tMin.y + 1.f), ImVec2(fillMax.x, tMin.y + 3.f),
+                IM_COL32(255, 255, 255, 35), 2.f);
+        }
+
+        const float thumbX = tMin.x + trackW * t;
+        const float thumbR = 7.f;
+        dl->AddCircleFilled(ImVec2(thumbX, trackY + trackH * 0.5f), thumbR + 2.f, AccentSoftU32(0.28f));
+        dl->AddCircleFilled(ImVec2(thumbX, trackY + trackH * 0.5f), thumbR, IM_COL32(245, 246, 252, 255));
+        dl->AddCircle(ImVec2(thumbX, trackY + trackH * 0.5f), thumbR, AccentSoftU32(0.85f), 0, 1.4f);
+
+        ImGui::SetCursorScreenPos(ImVec2(rowP.x, trackY - 4.f));
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, ImVec4(0, 0, 0, 0));
+        ImGui::SetNextItemWidth(trackW);
         bool ch = ImGui::SliderFloat("##s", v, mn, mx, "");
-        ImGui::PopStyleVar(3);
-        ImGui::PopStyleColor(4);
-        ImGui::Spacing();
+        ImGui::PopStyleColor(5);
+        ImGui::Dummy(ImVec2(0, trackH + (visible ? 12.f : 8.f)));
         ImGui::PopID();
         return ch;
     }
@@ -256,18 +398,19 @@ namespace FrontierUI {
 
     inline bool Combo(const char* label, int* current, const char* const items[], int count) {
         ImGui::PushID(label);
-        if (label && label[0])
-            ImGui::TextColored(V4(variables::Theme::textDim), "%s", label);
+        if (const char* visible = VisibleLabel(label))
+            ImGui::TextColored(V4(variables::Theme::text), "%s", visible);
 
-        ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.09f, 0.09f, 0.11f, 1));
-        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.13f, 0.13f, 0.15f, 1));
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.106f, 0.110f, 0.110f, 1));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.14f, 0.14f, 0.15f, 1));
         ImGui::PushStyleColor(ImGuiCol_PopupBg, ImVec4(0.07f, 0.07f, 0.08f, 0.98f));
         ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.16f, 0.16f, 0.19f, 1));
         ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.20f, 0.20f, 0.24f, 1));
         ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.24f, 0.24f, 0.28f, 1));
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 7.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 8.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 6.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6, 2));
         ImGui::SetNextItemWidth(-1);
 
         const char* preview = (*current >= 0 && *current < count) ? items[*current] : "";
@@ -289,7 +432,7 @@ namespace FrontierUI {
             }
             ImGui::EndCombo();
         }
-        ImGui::PopStyleVar(3);
+        ImGui::PopStyleVar(4);
         ImGui::PopStyleColor(6);
         ImGui::Spacing();
         ImGui::PopID();
@@ -299,18 +442,33 @@ namespace FrontierUI {
     inline int g_dropDepth = 0;
     inline bool g_dropOpen[24] = {};
 
-    inline bool BeginCard(const char* title, bool /*defaultOpen*/ = true) {
+    inline bool BeginCard(const char* title, bool /*defaultOpen*/ = true, bool* headerToggle = nullptr) {
         ImGui::PushID(title ? title : "section");
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.075f, 0.075f, 0.078f, 1.f));
-        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1, 1, 1, 0.06f));
-        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 10.f);
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.055f, 0.058f, 0.065f, 1.f));
+        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1.f, 1.f, 1.f, 0.10f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14, 12));
 
         ImGui::BeginChild("##sec", ImVec2(0, 0),
             ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Borders, ImGuiWindowFlags_None);
 
         if (title && title[0]) {
+            ImDrawList* dl = ImGui::GetWindowDrawList();
+            ImVec2 p = ImGui::GetCursorScreenPos();
+            dl->AddRectFilled(
+                ImVec2(p.x - 2.f, p.y + 4.f), ImVec2(p.x, p.y + 20.f),
+                AccentU32(0.95f), 2.f);
+
+            const float rowW = ImGui::GetContentRegionAvail().x;
             ImGui::TextColored(V4(variables::Theme::text), "%s", title);
+            if (headerToggle) {
+                ImGui::SameLine(rowW - 44.f);
+                ToggleSwitch("##hdr", headerToggle);
+            }
+            ImGui::Spacing();
+            ImGui::PushStyleColor(ImGuiCol_Separator, ImVec4(1.f, 1.f, 1.f, 0.08f));
+            ImGui::Separator();
+            ImGui::PopStyleColor();
             ImGui::Dummy(ImVec2(0, 4));
         }
 
@@ -335,7 +493,7 @@ namespace FrontierUI {
         if (label && label[0]) {
             ImGui::Dummy(ImVec2(0, 4));
             ImGui::Separator();
-            ImGui::TextColored(V4(variables::Theme::textDim), "%s", label);
+            ImGui::TextColored(V4(variables::Theme::text), "%s", label);
             ImGui::Dummy(ImVec2(0, 2));
         }
         if (g_dropDepth < 24)
@@ -368,27 +526,99 @@ namespace FrontierUI {
     }
 
     inline void SubTabs(const char* const names[], int count, int* selected) {
+        if (!selected || count <= 0) return;
+        ImGui::PushID(names[0]);
+
+        const float fullW = ImGui::GetContentRegionAvail().x;
+        const float barH = 34.f;
+        const float gap = 4.f;
+        float tabW = (fullW - gap * (count - 1)) / (float)count;
+        if (tabW < 56.f) tabW = 56.f;
+
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.04f, 0.042f, 0.05f, 1.f));
+        ImGui::BeginChild("##subtabbar", ImVec2(fullW, barH), ImGuiChildFlags_Borders,
+            ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+
         for (int i = 0; i < count; i++) {
-            if (i) ImGui::SameLine(0, 6);
+            if (i) ImGui::SameLine(0, gap);
             bool on = (*selected == i);
-            ImGui::PushStyleColor(ImGuiCol_Button, on ? ImVec4(0.14f, 0.14f, 0.16f, 1) : ImVec4(0.08f, 0.08f, 0.10f, 1));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.16f, 0.16f, 0.19f, 1));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.18f, 0.18f, 0.22f, 1));
-            ImGui::PushStyleColor(ImGuiCol_Border, on ? ImVec4(1, 1, 1, 0.18f) : ImVec4(1, 1, 1, 0.06f));
-            ImGui::PushStyleColor(ImGuiCol_Text, on ? V4(variables::Theme::text) : V4(variables::Theme::textDim));
-            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.f);
-            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(14, 6));
-            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.f);
-            if (ImGui::Button(names[i]))
+            ImVec2 p = ImGui::GetCursorScreenPos();
+            ImVec2 btn(p.x, p.y + 3.f);
+            ImVec2 btnEnd(p.x + tabW, p.y + barH - 3.f);
+
+            ImGui::PushID(i);
+            if (ImGui::InvisibleButton("##sub", ImVec2(tabW, barH - 6.f)))
                 *selected = i;
-            ImGui::PopStyleVar(3);
-            ImGui::PopStyleColor(5);
+            bool hov = ImGui::IsItemHovered();
+            ImGui::PopID();
+
+            if (on) {
+                dl->AddRectFilled(btn, btnEnd, IM_COL32(255, 255, 255, 12), 6.f);
+                dl->AddRect(btn, btnEnd, AccentSoftU32(0.8f), 6.f, 0, 1.2f);
+                dl->AddRectFilled(
+                    ImVec2(btn.x + 8.f, btnEnd.y - 2.f), ImVec2(btnEnd.x - 8.f, btnEnd.y),
+                    AccentU32(1.f), 1.f);
+            } else if (hov) {
+                dl->AddRectFilled(btn, btnEnd, IM_COL32(255, 255, 255, 6), 6.f);
+            }
+
+            ImVec2 ts = ImGui::CalcTextSize(names[i]);
+            ImU32 tc = on ? IM_COL32(255, 255, 255, 255)
+                : (hov ? IM_COL32(220, 224, 232, 255) : IM_COL32(150, 154, 166, 255));
+            dl->AddText(
+                ImVec2(btn.x + (tabW - ts.x) * 0.5f, btn.y + (btnEnd.y - btn.y - ts.y) * 0.5f),
+                tc, names[i]);
+            ImGui::Dummy(ImVec2(tabW, barH - 6.f));
         }
-        ImGui::Dummy(ImVec2(0, 8));
+
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+        ImGui::PopID();
+        ImGui::Dummy(ImVec2(0, 10));
+    }
+
+    inline void SubTabList(const char* const names[], int count, int* selected, float width = 132.f, float height = 0.f) {
+        if (!selected || count <= 0) return;
+        ImGui::PushID(names[0]);
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.045f, 0.048f, 0.055f, 1.f));
+        ImGui::BeginChild("##sublist", ImVec2(width, height), ImGuiChildFlags_Borders);
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+
+        for (int i = 0; i < count; i++) {
+            bool on = (*selected == i);
+            ImVec2 p = ImGui::GetCursorScreenPos();
+            float rowH = 30.f;
+            ImVec2 a(p.x + 4.f, p.y + 1.f);
+            ImVec2 b(p.x + width - 8.f, p.y + rowH);
+
+            ImGui::PushID(i);
+            if (ImGui::InvisibleButton("##subrow", ImVec2(width - 8.f, rowH)))
+                *selected = i;
+            bool hov = ImGui::IsItemHovered();
+            ImGui::PopID();
+
+            if (on) {
+                dl->AddRectFilled(a, b, IM_COL32(255, 255, 255, 10), 5.f);
+                dl->AddRectFilled(
+                    ImVec2(a.x - 4.f, a.y + 5.f), ImVec2(a.x - 1.f, b.y - 5.f),
+                    AccentU32(1.f), 2.f);
+            } else if (hov) {
+                dl->AddRectFilled(a, b, IM_COL32(255, 255, 255, 6), 5.f);
+            }
+
+            ImU32 tc = on ? IM_COL32(255, 255, 255, 255) : IM_COL32(160, 164, 176, 255);
+            dl->AddText(ImVec2(a.x + 8.f, a.y + 7.f), tc, names[i]);
+            ImGui::Dummy(ImVec2(0, rowH + 2.f));
+        }
+
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+        ImGui::PopID();
     }
 
     inline bool ThemeColorRow(const char* label, float col[4], bool syncBrand = false) {
-        ImGui::TextColored(V4(variables::Theme::textDim), "%s", label);
+        ImGui::TextColored(V4(variables::Theme::text), "%s", label);
         ImGui::SameLine();
         bool ch = ColorSquare(label, col, syncBrand);
         if (ch && syncBrand)
@@ -424,18 +654,6 @@ namespace FrontierUI {
     }
 
     inline void DrawFooter(ImDrawList* dl, ImVec2 wp, float ww, float wh) {
-        const float sbW = 196.f;
-        ImVec2 a(wp.x + sbW + 14.f, wp.y + wh - 22.f);
-        ImVec2 b(wp.x + ww - 14.f, wp.y + wh - 6.f);
-        if (a.x >= b.x) return;
-
-        char left[64];
-        sprintf_s(left, "%s online", variables::Status::playersOnline);
-        dl->AddText(a, IM_COL32(110, 110, 122, 255), left);
-
-        char buildVal[48];
-        sprintf_s(buildVal, "%s %s", Frontier::kFooterText, Frontier::kVersion);
-        ImVec2 cs = ImGui::CalcTextSize(buildVal);
-        dl->AddText(ImVec2(b.x - cs.x, a.y), IM_COL32(110, 110, 122, 255), buildVal);
+        (void)dl; (void)wp; (void)ww; (void)wh;
     }
 }

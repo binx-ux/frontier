@@ -7,18 +7,35 @@
 
 namespace {
 
+    enum : int {
+        OpHandshake = 0,
+        OpFrame = 1,
+        OpClose = 2,
+        OpPing = 3,
+        OpPong = 4,
+    };
+
     std::mutex gMutex;
     HANDLE gPipe = INVALID_HANDLE_VALUE;
     char gAppId[32]{};
     int gNonce = 1;
+
+    void ClosePipeLocked()
+    {
+        if (gPipe != INVALID_HANDLE_VALUE) {
+            CloseHandle(gPipe);
+            gPipe = INVALID_HANDLE_VALUE;
+        }
+        gAppId[0] = 0;
+    }
 
     bool WriteFrameLocked(int opcode, const std::string& json)
     {
         if (gPipe == INVALID_HANDLE_VALUE)
             return false;
 
-        uint32_t op = static_cast<uint32_t>(opcode);
-        uint32_t len = static_cast<uint32_t>(json.size());
+        const uint32_t op = static_cast<uint32_t>(opcode);
+        const uint32_t len = static_cast<uint32_t>(json.size());
         DWORD written = 0;
         if (!WriteFile(gPipe, &op, sizeof(op), &written, nullptr) || written != sizeof(op))
             return false;
@@ -46,13 +63,23 @@ namespace {
         if (len > 65536)
             return false;
 
-        opcode = (int)op;
+        opcode = static_cast<int>(op);
         json.clear();
         if (len == 0)
             return true;
 
         json.resize(len);
         if (!ReadFile(gPipe, json.data(), len, &read, nullptr) || read != len)
+            return false;
+        return true;
+    }
+
+    bool PipeAliveLocked()
+    {
+        if (gPipe == INVALID_HANDLE_VALUE)
+            return false;
+        DWORD err = 0;
+        if (!GetNamedPipeInfo(gPipe, nullptr, nullptr, nullptr, &err))
             return false;
         return true;
     }
@@ -103,14 +130,14 @@ namespace {
                     sprintf_s(buf, "\\u%04x", *p);
                     out += buf;
                 } else {
-                    out.push_back((char)*p);
+                    out.push_back(static_cast<char>(*p));
                 }
             }
         }
         return out;
     }
 
-    void AppendField(std::string& json, const char* key, const char* value, bool& first)
+    void AppendStrField(std::string& json, const char* key, const char* value, bool& first)
     {
         if (!value || !value[0]) return;
         if (!first) json += ',';
@@ -122,86 +149,62 @@ namespace {
         json += '"';
     }
 
+    bool JsonHasEvent(const std::string& json, const char* evt)
+    {
+        if (evt == nullptr || !evt[0]) return false;
+        char needle[64];
+        sprintf_s(needle, "\"evt\":\"%s\"", evt);
+        if (json.find(needle) != std::string::npos) return true;
+        sprintf_s(needle, "\"evt\": \"%s\"", evt);
+        return json.find(needle) != std::string::npos;
+    }
+
     bool WaitForReadyLocked()
     {
-        for (int i = 0; i < 24; ++i) {
+        const DWORD start = GetTickCount();
+        while (GetTickCount() - start < 5000) {
             DWORD avail = 0;
             if (!PeekNamedPipe(gPipe, nullptr, 0, nullptr, &avail, nullptr))
                 return false;
-            if (avail >= 8) {
-                int op = 0;
-                std::string json;
-                if (!ReadFrameLocked(op, json))
-                    return false;
-                if (json.find("\"READY\"") != std::string::npos)
-                    return true;
-                if (json.find("\"ERROR\"") != std::string::npos)
-                    return false;
+            if (avail < 8) {
+                Sleep(25);
+                continue;
             }
-            Sleep(50);
+
+            int op = 0;
+            std::string json;
+            if (!ReadFrameLocked(op, json))
+                return false;
+
+            if (op == OpPing) {
+                if (!WriteFrameLocked(OpPong, json))
+                    return false;
+                continue;
+            }
+            if (op == OpClose)
+                return false;
+            if (op != OpFrame)
+                continue;
+
+            if (JsonHasEvent(json, "READY"))
+                return true;
+            if (JsonHasEvent(json, "ERROR"))
+                return false;
         }
-        return true;
+        return false;
     }
 
-}
-
-namespace DiscordIPC {
-
-    bool Connect(const char* applicationId)
+    bool BuildActivityJson(const DiscordIPC::Activity& activity, std::string& act, bool nullActivity)
     {
-        if (!applicationId || !applicationId[0])
-            return false;
-
-        std::lock_guard<std::mutex> lock(gMutex);
-        if (gPipe != INVALID_HANDLE_VALUE)
+        if (nullActivity) {
+            act = "null";
             return true;
-
-        strncpy_s(gAppId, applicationId, _TRUNCATE);
-        if (!TryConnectPipeLocked())
-            return false;
-
-        char handshake[128];
-        sprintf_s(handshake, R"({"v":1,"client_id":"%s"})", gAppId);
-        if (!WriteFrameLocked(0, handshake)) {
-            CloseHandle(gPipe);
-            gPipe = INVALID_HANDLE_VALUE;
-            return false;
         }
 
-        if (!WaitForReadyLocked()) {
-            CloseHandle(gPipe);
-            gPipe = INVALID_HANDLE_VALUE;
-            return false;
-        }
-        return true;
-    }
-
-    void Disconnect()
-    {
-        std::lock_guard<std::mutex> lock(gMutex);
-        if (gPipe != INVALID_HANDLE_VALUE) {
-            CloseHandle(gPipe);
-            gPipe = INVALID_HANDLE_VALUE;
-        }
-        gAppId[0] = 0;
-    }
-
-    bool IsConnected()
-    {
-        std::lock_guard<std::mutex> lock(gMutex);
-        return gPipe != INVALID_HANDLE_VALUE;
-    }
-
-    bool SetActivity(const Activity& activity)
-    {
-        std::lock_guard<std::mutex> lock(gMutex);
-        if (gPipe == INVALID_HANDLE_VALUE)
-            return false;
-
-        std::string act = "{";
+        act = "{";
         bool first = true;
-        AppendField(act, "details", activity.details, first);
-        AppendField(act, "state", activity.state, first);
+        AppendStrField(act, "details", activity.details, first);
+        AppendStrField(act, "state", activity.state, first);
 
         if (activity.startTimestamp > 0) {
             if (!first) act += ',';
@@ -218,17 +221,17 @@ namespace DiscordIPC {
             act += "\"assets\":{";
             bool af = true;
             if (activity.largeImageKey && activity.largeImageKey[0]) {
-                AppendField(act, "large_image", activity.largeImageKey, af);
-                AppendField(act, "large_text", activity.largeImageText, af);
+                AppendStrField(act, "large_image", activity.largeImageKey, af);
+                AppendStrField(act, "large_text", activity.largeImageText, af);
             }
             if (activity.smallImageKey && activity.smallImageKey[0]) {
-                AppendField(act, "small_image", activity.smallImageKey, af);
-                AppendField(act, "small_text", activity.smallImageText, af);
+                AppendStrField(act, "small_image", activity.smallImageKey, af);
+                AppendStrField(act, "small_text", activity.smallImageText, af);
             }
             act += '}';
         }
 
-        if (activity.partyMax > 0) {
+        if (activity.partyMax > 0 && activity.partySize >= 0) {
             if (!first) act += ',';
             first = false;
             char party[64];
@@ -236,10 +239,49 @@ namespace DiscordIPC {
             act += party;
         }
 
+        const bool hasBtn1 = activity.button1Label && activity.button1Label[0] &&
+            activity.button1Url && activity.button1Url[0];
+        const bool hasBtn2 = activity.button2Label && activity.button2Label[0] &&
+            activity.button2Url && activity.button2Url[0];
+        if (hasBtn1 || hasBtn2) {
+            if (!first) act += ',';
+            first = false;
+            act += "\"buttons\":[";
+            bool bf = true;
+            if (hasBtn1) {
+                act += "{\"label\":\"";
+                act += JsonEscape(activity.button1Label);
+                act += "\",\"url\":\"";
+                act += JsonEscape(activity.button1Url);
+                act += "\"}";
+                bf = false;
+            }
+            if (hasBtn2) {
+                if (!bf) act += ',';
+                act += "{\"label\":\"";
+                act += JsonEscape(activity.button2Label);
+                act += "\",\"url\":\"";
+                act += JsonEscape(activity.button2Url);
+                act += "\"}";
+            }
+            act += ']';
+        }
+
         act += '}';
+        return true;
+    }
+
+    bool SendActivityLocked(const DiscordIPC::Activity& activity, bool nullActivity)
+    {
+        if (gPipe == INVALID_HANDLE_VALUE)
+            return false;
+
+        std::string act;
+        if (!BuildActivityJson(activity, act, nullActivity))
+            return false;
 
         std::string payload;
-        payload.reserve(act.size() + 96);
+        payload.reserve(act.size() + 128);
         char header[128];
         sprintf_s(header,
             R"({"cmd":"SET_ACTIVITY","args":{"pid":%lu,"activity":)",
@@ -249,7 +291,105 @@ namespace DiscordIPC {
         sprintf_s(header, R"(},"nonce":"%d"})", gNonce++);
         payload += header;
 
-        return WriteFrameLocked(1, payload);
+        if (!WriteFrameLocked(OpFrame, payload))
+            return false;
+
+        const DWORD start = GetTickCount();
+        while (GetTickCount() - start < 1500) {
+            DWORD avail = 0;
+            if (!PeekNamedPipe(gPipe, nullptr, 0, nullptr, &avail, nullptr))
+                return false;
+            if (avail < 8) {
+                Sleep(20);
+                continue;
+            }
+
+            int op = 0;
+            std::string json;
+            if (!ReadFrameLocked(op, json))
+                return false;
+
+            if (op == OpPing) {
+                if (!WriteFrameLocked(OpPong, json))
+                    return false;
+                continue;
+            }
+            if (op == OpClose)
+                return false;
+            if (op != OpFrame)
+                continue;
+
+            if (JsonHasEvent(json, "ERROR"))
+                return false;
+
+            const char* nonceKey = "\"nonce\":";
+            const size_t pos = json.find(nonceKey);
+            if (pos != std::string::npos)
+                return true;
+            if (json.find("SET_ACTIVITY") != std::string::npos)
+                return true;
+        }
+
+        return true;
+    }
+
+}
+
+namespace DiscordIPC {
+
+    bool Connect(const char* applicationId)
+    {
+        if (!applicationId || !applicationId[0])
+            return false;
+
+        std::lock_guard<std::mutex> lock(gMutex);
+        if (gPipe != INVALID_HANDLE_VALUE) {
+            if (PipeAliveLocked() && gAppId[0] && _stricmp(gAppId, applicationId) == 0)
+                return true;
+            ClosePipeLocked();
+        }
+
+        strncpy_s(gAppId, applicationId, _TRUNCATE);
+        if (!TryConnectPipeLocked())
+            return false;
+
+        char handshake[128];
+        sprintf_s(handshake, R"({"v":1,"client_id":"%s"})", gAppId);
+        if (!WriteFrameLocked(OpHandshake, handshake)) {
+            ClosePipeLocked();
+            return false;
+        }
+
+        if (!WaitForReadyLocked()) {
+            ClosePipeLocked();
+            return false;
+        }
+        return true;
+    }
+
+    void Disconnect()
+    {
+        std::lock_guard<std::mutex> lock(gMutex);
+        ClosePipeLocked();
+    }
+
+    bool IsConnected()
+    {
+        std::lock_guard<std::mutex> lock(gMutex);
+        return gPipe != INVALID_HANDLE_VALUE && PipeAliveLocked();
+    }
+
+    bool SetActivity(const Activity& activity)
+    {
+        std::lock_guard<std::mutex> lock(gMutex);
+        return SendActivityLocked(activity, false);
+    }
+
+    bool ClearActivity()
+    {
+        std::lock_guard<std::mutex> lock(gMutex);
+        Activity empty{};
+        return SendActivityLocked(empty, true);
     }
 
     void Pump(int maxFrames)
@@ -260,15 +400,29 @@ namespace DiscordIPC {
 
         for (int i = 0; i < maxFrames; ++i) {
             DWORD avail = 0;
-            if (!PeekNamedPipe(gPipe, nullptr, 0, nullptr, &avail, nullptr))
+            if (!PeekNamedPipe(gPipe, nullptr, 0, nullptr, &avail, nullptr)) {
+                ClosePipeLocked();
                 break;
+            }
             if (avail < 8)
                 break;
 
             int op = 0;
             std::string json;
-            if (!ReadFrameLocked(op, json))
+            if (!ReadFrameLocked(op, json)) {
+                ClosePipeLocked();
                 break;
+            }
+
+            if (op == OpPing) {
+                if (!WriteFrameLocked(OpPong, json))
+                    ClosePipeLocked();
+                continue;
+            }
+            if (op == OpClose) {
+                ClosePipeLocked();
+                break;
+            }
         }
     }
 

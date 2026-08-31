@@ -137,6 +137,6 @@ Uses a **kernel driver** (`.sys`) to read/write memory from **Ring 0**, below no
 | Ban / detection risk | Higher | Lower in theory, driver bans possible |
 | BSOD risk | Low | Non-zero |
 | Matches this repo | ✅ `usermode\Frontier.exe` | ❌ `kernel\` folder placeholder |
-| Loader mode | **Usermode** card | **Kernel** card (only if `kernel\Frontier.exe` exists) |
+| Loader mode | **Usermode** (Recommended) | **Kernel** (Testing — optional, requires driver setup) |
 
-The loader lets users pick a mode before launch. **Usermode is the default open-source path.** Kernel is optional and only appears when a kernel bundle is present locally or in the release manifest.
+The loader defaults to **Usermode**. **Kernel** stays visible for testing when the bundle is offered in the manifest or installed locally; it is not the supported path for most users (Secure Boot / test signing required).

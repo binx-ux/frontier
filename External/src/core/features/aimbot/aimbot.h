@@ -28,6 +28,90 @@ namespace Aimbot {
     inline float prevErrY = 0.0f;
     inline auto lastAimTick = std::chrono::steady_clock::now();
     inline auto lockAcquiredAt = std::chrono::steady_clock::now();
+    inline bool wasAiming = false;
+    inline bool silentSpoofActive = false;
+    inline bool cursorClipped = false;
+    inline float fovCenterX = 0.f;
+    inline float fovCenterY = 0.f;
+    inline int lockMissFrames = 0;
+
+    inline void GetAimCenter(float& ax, float& ay)
+    {
+        float sw, sh, ox, oy;
+        W2S::EnsureViewport(sw, sh, ox, oy);
+
+        if (variables::Aimbot::fovFollowMouse && WindowManager::IsRobloxFocused()) {
+            W2S::GetCursorClient(ax, ay);
+        } else {
+            ax = sw * 0.5f;
+            ay = sh * 0.5f;
+        }
+
+        if (ax < 0.f) ax = 0.f;
+        if (ay < 0.f) ay = 0.f;
+        if (ax > sw) ax = sw;
+        if (ay > sh) ay = sh;
+        fovCenterX = ax;
+        fovCenterY = ay;
+    }
+
+    inline bool CombatBlocked()
+    {
+        if (variables::waitingForKey) return true;
+        if (variables::menuOpen || variables::Misc::floatingPanelOpen) return true;
+        if (!variables::Theme::useFloatingHeader && variables::Misc::menuAnim > 0.05f)
+            return true;
+        return false;
+    }
+
+    inline void RefreshFovCenter()
+    {
+        GetAimCenter(fovCenterX, fovCenterY);
+    }
+
+    inline void ClipCursorToGame()
+    {
+        WindowManager::UpdateRobloxWindowInfo();
+        const RECT& r = WindowManager::robloxRect;
+        if ((r.right - r.left) < 50 || (r.bottom - r.top) < 50) return;
+        ClipCursor(&r);
+        cursorClipped = true;
+    }
+
+    inline void ReleaseCursorClip()
+    {
+        if (cursorClipped) {
+            ClipCursor(nullptr);
+            cursorClipped = false;
+        }
+    }
+
+    inline void ClearMoveState()
+    {
+        prevErrX = prevErrY = 0.f;
+        accumX = accumY = 0.f;
+    }
+
+    inline void ClampCursorToGameWindow()
+    {
+        POINT pt{};
+        if (!GetCursorPos(&pt)) return;
+        WindowManager::UpdateRobloxWindowInfo();
+        const RECT& r = WindowManager::robloxRect;
+        const int rw = r.right - r.left;
+        const int rh = r.bottom - r.top;
+        if (rw < 50 || rh < 50) return;
+
+        const LONG margin = 6;
+        const LONG minX = r.left + margin;
+        const LONG maxX = r.right - margin;
+        const LONG minY = r.top + margin;
+        const LONG maxY = r.bottom - margin;
+        const LONG cx = (pt.x < minX) ? minX : (pt.x > maxX ? maxX : pt.x);
+        const LONG cy = (pt.y < minY) ? minY : (pt.y > maxY ? maxY : pt.y);
+        if (cx != pt.x || cy != pt.y)
+            SetCursorPos(cx, cy);
+    }
 
     inline void MoveMouse(float x, float y)
     {
@@ -38,6 +122,28 @@ namespace Aimbot {
         if (ix == 0 && iy == 0) return;
         accumX -= (float)ix;
         accumY -= (float)iy;
+
+        POINT pt{};
+        if (GetCursorPos(&pt)) {
+            WindowManager::UpdateRobloxWindowInfo();
+            const RECT& r = WindowManager::robloxRect;
+            const int rw = r.right - r.left;
+            const int rh = r.bottom - r.top;
+            if (rw > 50 && rh > 50) {
+                const LONG margin = 6;
+                const LONG minX = r.left + margin;
+                const LONG maxX = r.right - margin;
+                const LONG minY = r.top + margin;
+                const LONG maxY = r.bottom - margin;
+                LONG tx = pt.x + ix;
+                LONG ty = pt.y + iy;
+                if (tx < minX) ix -= (tx - minX);
+                else if (tx > maxX) ix -= (tx - maxX);
+                if (ty < minY) iy -= (ty - minY);
+                else if (ty > maxY) iy -= (ty - maxY);
+                if (ix == 0 && iy == 0) return;
+            }
+        }
 
         INPUT input = {};
         input.type = INPUT_MOUSE;
@@ -99,10 +205,8 @@ namespace Aimbot {
         return v;
     }
 
-    inline bool IsAimKeyHeld()
+    inline bool IsKeyHeld(int vk)
     {
-        if (!WindowManager::IsRobloxFocused()) return false;
-        int vk = variables::Aimbot::aimbotKey;
         if (vk == 1 || vk == VK_LBUTTON) return (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
         if (vk == 2 || vk == VK_RBUTTON) return (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
         if (vk == 4 || vk == VK_MBUTTON) return (GetAsyncKeyState(VK_MBUTTON) & 0x8000) != 0;
@@ -112,8 +216,24 @@ namespace Aimbot {
         return false;
     }
 
+    inline bool IsAimKeyHeld()
+    {
+        if (!WindowManager::IsRobloxFocused()) return false;
+        return IsKeyHeld(variables::Aimbot::aimbotKey);
+    }
+
+    inline bool IsSilentAimKeyHeld()
+    {
+        if (!WindowManager::IsRobloxFocused()) return false;
+        int vk = variables::Aimbot::silentAimKey;
+        if (vk <= 0) return IsAimKeyHeld();
+        return IsKeyHeld(vk);
+    }
+
     inline bool ShouldAim()
     {
+        if (CombatBlocked()) return false;
+
         // Never aim from key/hold paths while Roblox is in the background
         const bool focused = WindowManager::IsRobloxFocused();
 
@@ -130,8 +250,9 @@ namespace Aimbot {
             return focused; // key toggles enabled in main; no hold required
         if (!variables::Aimbot::enabled) return false;
         if (!focused) return false;
+        const bool silentPath = variables::Aimbot::silentAim || variables::Aimbot::aimType == 1;
         if (variables::Aimbot::toggleMode) {
-            bool held = IsAimKeyHeld();
+            bool held = silentPath ? IsSilentAimKeyHeld() : IsAimKeyHeld();
             if (held && !aimToggleLatched) {
                 variables::Aimbot::toggledOn = !variables::Aimbot::toggledOn;
                 aimToggleLatched = true;
@@ -139,7 +260,7 @@ namespace Aimbot {
             else if (!held) aimToggleLatched = false;
             return variables::Aimbot::toggledOn;
         }
-        return IsAimKeyHeld();
+        return silentPath ? IsSilentAimKeyHeld() : IsAimKeyHeld();
     }
 
     inline RBX::Vec3 EyePos()
@@ -189,7 +310,8 @@ namespace Aimbot {
             }
             float sw, sh, ox, oy;
             W2S::GetViewport(sw, sh, ox, oy);
-            float cx = sw * 0.5f, cy = sh * 0.5f;
+            float cx = 0.f, cy = 0.f;
+            GetAimCenter(cx, cy);
             float best = 1e12f;
             RBX::Vec3 bestPos = pos;
             auto tryBone = [&](const RBX::Vec3& b) {
@@ -223,8 +345,8 @@ namespace Aimbot {
     inline bool VisibleEnough(const RBX::Vec3& eye, const PlayerCache::CachedPlayer& plr, const RBX::Vec3& aimWorld)
     {
         if (!variables::Aimbot::requireVisible) return true;
-        // No wall mesh yet → don't block lock (fail-open). Empty set used to hide all targets.
-        if (Visibility::boxCount.load() <= 0) return true;
+        Visibility::EnsureWorker();
+        if (Visibility::boxCount.load() <= 0) return false;
         return Visibility::HasLineOfSight(eye, aimWorld);
     }
 
@@ -232,22 +354,281 @@ namespace Aimbot {
     {
         lockedPlayerAddr = 0;
         hasLockScreen = false;
-        prevErrX = prevErrY = 0.f;
-        accumX = accumY = 0.f;
+        lockMissFrames = 0;
+        ClearMoveState();
     }
 
     // --- Silent aim (MouseService / InputObject mouse spoof) ---
+    // Roblox reads mouse from InputObject.MousePosition in render/viewport pixels
+    // (VisualEngine dimensions), not always 1:1 with overlay client coords.
     inline uintptr_t cachedMouseService = 0;
-    inline uintptr_t cachedInputObject = 0;
-    inline uintptr_t cachedInputObject2 = 0;
+    inline uintptr_t cachedPlayerMouse = 0;
+    inline uintptr_t cachedInputObjects[6]{};
+    inline int cachedInputObjectCount = 0;
     inline auto lastMouseResolve = std::chrono::steady_clock::now() - std::chrono::seconds(10);
 
     inline bool UseSilentAim()
     {
+        if (variables::Aimbot::aimType == 0 && !variables::Aimbot::silentAim)
+            return false;
         if (variables::Aimbot::silentAim) return true;
         if (variables::Aimbot::aimType == 1) return true;
-        if (variables::Aimbot::targetMethod == 1) return true;
         return false;
+    }
+
+    inline void ClientToRenderMouse(float clientX, float clientY, float& rx, float& ry)
+    {
+        float sw, sh, ox, oy;
+        W2S::EnsureViewport(sw, sh, ox, oy);
+        float matW = (W2S::renderSW > 50.f) ? W2S::renderSW : sw;
+        float matH = (W2S::renderSH > 50.f) ? W2S::renderSH : sh;
+        if (sw > 1.f && sh > 1.f &&
+            (fabsf(matW - sw) > 1.f || fabsf(matH - sh) > 1.f)) {
+            rx = clientX * (matW / sw);
+            ry = clientY * (matH / sh);
+        } else {
+            rx = clientX;
+            ry = clientY;
+        }
+        if (rx < 0.f) rx = 0.f;
+        if (ry < 0.f) ry = 0.f;
+        if (matW > 1.f && rx > matW) rx = matW;
+        if (matH > 1.f && ry > matH) ry = matH;
+    }
+
+    inline bool LooksLikeMousePos(float x, float y, float maxW, float maxH)
+    {
+        if (!std::isfinite(x) || !std::isfinite(y)) return false;
+        if (x < -80.f || y < -80.f) return false;
+        if (x > maxW + 200.f || y > maxH + 200.f) return false;
+        return true;
+    }
+
+    inline bool ValidateInputObject(uintptr_t io, float maxW, float maxH)
+    {
+        if (!io) return false;
+        static const uintptr_t posOffs[] = { 0xD4, 0xE4, 0xEC, 0xF4 };
+        for (uintptr_t off : posOffs) {
+            float x = memory->read<float>(io + off);
+            float y = memory->read<float>(io + off + 4);
+            if (LooksLikeMousePos(x, y, maxW, maxH)) return true;
+        }
+        return false;
+    }
+
+    inline void PushInputObject(uintptr_t io, float maxW, float maxH, bool trusted = false)
+    {
+        if (!io || io < 0x10000) return;
+        for (int i = 0; i < cachedInputObjectCount; i++)
+            if (cachedInputObjects[i] == io) return;
+        if (cachedInputObjectCount >= 6) return;
+        if (!trusted && !ValidateInputObject(io, maxW, maxH)) return;
+        cachedInputObjects[cachedInputObjectCount++] = io;
+    }
+
+    inline bool ResolveMouseService(bool force = false)
+    {
+        auto now = std::chrono::steady_clock::now();
+        if (!force && cachedInputObjectCount > 0 &&
+            std::chrono::duration<float>(now - lastMouseResolve).count() < 0.08f)
+            return true;
+
+        lastMouseResolve = now;
+        cachedMouseService = cachedPlayerMouse = 0;
+        cachedInputObjectCount = 0;
+        for (auto& io : cachedInputObjects) io = 0;
+        if (!Globals::dataModel.Addr) return false;
+
+        float sw, sh, ox, oy;
+        W2S::EnsureViewport(sw, sh, ox, oy);
+        float maxW = (W2S::renderSW > 50.f) ? W2S::renderSW : sw;
+        float maxH = (W2S::renderSH > 50.f) ? W2S::renderSH : sh;
+
+        auto ms = Globals::dataModel.FindChildByClass("MouseService");
+        if (!ms.Addr) ms = Globals::dataModel.FindChild("MouseService");
+        if (ms.Addr) {
+            cachedMouseService = ms.Addr;
+            static const uintptr_t ioOffs[] = {
+                Offsets::MouseService::InputObject,
+                Offsets::MouseService::InputObject2,
+                0xE8, 0xF8, 0x108
+            };
+            for (uintptr_t off : ioOffs) {
+                uintptr_t io = memory->read<uintptr_t>(ms.Addr + off);
+                const bool trusted = (off == Offsets::MouseService::InputObject ||
+                    off == Offsets::MouseService::InputObject2);
+                PushInputObject(io, maxW, maxH, trusted);
+            }
+        }
+
+        if (Globals::localPlayer.Addr) {
+            uintptr_t mouseInst = memory->read<uintptr_t>(
+                Globals::localPlayer.Addr + Offsets::Player::Mouse);
+            if (mouseInst) {
+                cachedPlayerMouse = mouseInst;
+                static const uintptr_t ioOffs[] = {
+                    Offsets::MouseService::InputObject,
+                    Offsets::MouseService::InputObject2,
+                    0xD4, 0xE4, 0xEC
+                };
+                for (uintptr_t off : ioOffs) {
+                    uintptr_t io = memory->read<uintptr_t>(mouseInst + off);
+                    PushInputObject(io, maxW, maxH);
+                }
+            }
+        }
+        return cachedInputObjectCount > 0 || cachedMouseService != 0 || cachedPlayerMouse != 0;
+    }
+
+    inline bool WriteMousePosToInputObject(uintptr_t inputObj, float x, float y, float maxW, float maxH)
+    {
+        if (!inputObj || inputObj < 0x10000) return false;
+        if (!ValidateInputObject(inputObj, maxW, maxH)) return false;
+        if (!LooksLikeMousePos(x, y, maxW, maxH)) return false;
+        memory->write<float>(inputObj + Offsets::MouseService::MousePosition, x);
+        memory->write<float>(inputObj + Offsets::MouseService::MousePosition + 4, y);
+        return true;
+    }
+
+    inline bool WriteMousePosToInputObject(uintptr_t inputObj, float x, float y)
+    {
+        float sw, sh, ox, oy;
+        W2S::EnsureViewport(sw, sh, ox, oy);
+        float maxW = (W2S::renderSW > 50.f) ? W2S::renderSW : sw;
+        float maxH = (W2S::renderSH > 50.f) ? W2S::renderSH : sh;
+        return WriteMousePosToInputObject(inputObj, x, y, maxW, maxH);
+    }
+
+    inline bool SetSilentMouse(float clientX, float clientY)
+    {
+        if (!ResolveMouseService(false))
+            ResolveMouseService(true);
+        if (cachedInputObjectCount <= 0) return false;
+
+        float sw, sh, ox, oy;
+        W2S::EnsureViewport(sw, sh, ox, oy);
+        if (clientX < 0.f) clientX = 0.f;
+        if (clientY < 0.f) clientY = 0.f;
+        if (clientX > sw) clientX = sw;
+        if (clientY > sh) clientY = sh;
+
+        float rx, ry;
+        ClientToRenderMouse(clientX, clientY, rx, ry);
+        float matW = (W2S::renderSW > 50.f) ? W2S::renderSW : sw;
+        float matH = (W2S::renderSH > 50.f) ? W2S::renderSH : sh;
+
+        for (int i = 0; i < cachedInputObjectCount; i++) {
+            if (WriteMousePosToInputObject(cachedInputObjects[i], rx, ry, matW, matH))
+                return true;
+        }
+        return false;
+    }
+
+    inline bool RestoreSilentMouseFromCursor()
+    {
+        POINT pt{};
+        if (!GetCursorPos(&pt)) return false;
+        float sw, sh, ox, oy;
+        W2S::EnsureViewport(sw, sh, ox, oy);
+        const float clientX = static_cast<float>(pt.x) - ox;
+        const float clientY = static_cast<float>(pt.y) - oy;
+        return SetSilentMouse(clientX, clientY);
+    }
+
+    // Shared closest-target picker for silent aim + magic bullet (screen-space FOV gate)
+    inline float HitboxPixelRadius(PlayerCache::CachedPlayer& plr, const RBX::Mat4& viewMatrix);
+
+    inline bool FindSpoofTarget(
+        const RBX::Mat4& viewMatrix,
+        std::vector<PlayerCache::CachedPlayer>& players,
+        float fovLimit,
+        int boneOverride,
+        bool useHitboxRadius,
+        bool checkWall,
+        RBX::Vec2& outScr,
+        RBX::Vec3& outWorld)
+    {
+        float aimCx = 0.f, aimCy = 0.f;
+        GetAimCenter(aimCx, aimCy);
+        RBX::Vec3 eye = EyePos();
+        float maxDist = variables::Aimbot::maxDistance;
+        if (maxDist < 50.f) maxDist = 50.f;
+
+        const int savedBone = variables::Aimbot::aimTarget;
+        if (boneOverride >= 0)
+            variables::Aimbot::aimTarget = boneOverride;
+
+        float bestPd = 1e12f;
+        bool found = false;
+
+        for (auto& plr : players) {
+            if (!plr.isValid) continue;
+            if (plr.distance > maxDist) continue;
+            if (useHitboxRadius) {
+                if (variables::Hitbox::healthCheck && plr.health <= 0.f) continue;
+                if (variables::Hitbox::teamCheck && !PlayerCache::PassesTeamFilter(plr)) continue;
+            } else {
+                if (variables::teamCheck && !PlayerCache::PassesTeamFilter(plr)) continue;
+                if (variables::healthCheck && plr.health <= 0.f) continue;
+            }
+
+            LiveRefresh(plr);
+            RBX::Vec3 world = AimPoint(plr, &viewMatrix);
+            RBX::Vec2 scr = W2S::WorldToScreen(world, viewMatrix);
+            if (scr.X == 0.f && scr.Y == 0.f) continue;
+
+            float limit = fovLimit;
+            if (useHitboxRadius) {
+                float hbR = HitboxPixelRadius(plr, viewMatrix);
+                if (hbR > limit) limit = hbR;
+            }
+
+            float pd = Dist2(aimCx, aimCy, scr.X, scr.Y);
+            if (pd > limit) continue;
+            if (checkWall && !VisibleEnough(eye, plr, world)) continue;
+
+            if (pd < bestPd) {
+                bestPd = pd;
+                outScr = scr;
+                outWorld = world;
+                found = true;
+            }
+        }
+
+        variables::Aimbot::aimTarget = savedBone;
+        return found;
+    }
+
+    // Fire-based silent aim — spoof mouse on each shot (no camera move)
+    inline void RunSilentFireAssist(const RBX::Mat4& viewMatrix, std::vector<PlayerCache::CachedPlayer>& players)
+    {
+        if (!UseSilentAim()) return;
+        if (CombatBlocked()) return;
+        if (!WindowManager::IsRobloxFocused()) return;
+        if (wasAiming && lockedPlayerAddr) return;
+
+        const bool firing = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+        const bool keyHeld = ShouldAim();
+        if (!firing && !keyHeld) return;
+
+        float t = Clamp(variables::Aimbot::uiSilentFov * 0.01f, 0.f, 1.f);
+        float acquireFov = 20.f + (500.f - 20.f) * t;
+        if (acquireFov < 15.f) acquireFov = 15.f;
+
+        RBX::Vec2 scr{};
+        RBX::Vec3 world{};
+        if (!FindSpoofTarget(viewMatrix, players, acquireFov, -1, false,
+                variables::Aimbot::requireVisible, scr, world))
+            return;
+
+        if (SetSilentMouse(scr.X, scr.Y))
+            silentSpoofActive = true;
+    }
+
+    inline void RunSilentFireAssist(const RBX::Mat4& viewMatrix)
+    {
+        auto players = PlayerCache::snapshotPlayers();
+        RunSilentFireAssist(viewMatrix, players);
     }
 
     inline void SyncUiSliders()
@@ -262,6 +643,7 @@ namespace Aimbot {
         deadzone = lerp(uiLockZone, 0.5f, 12.f);
         maxDistance = lerp(uiRange, 100.f, 10000.f);
         fovRadius = lerp(uiFov, 20.f, 500.f);
+        silentFovRadius = lerp(uiSilentFov, 20.f, 500.f);
         holdFovScale = lerp(uiStickyFov, 1.0f, 1.8f);
         maxMove = lerp(uiAimSpeed, 4.f, 28.f);
     }
@@ -269,10 +651,9 @@ namespace Aimbot {
     inline float ComputeAcquireFov()
     {
         SyncUiSliders();
-        float acquireFov = variables::Aimbot::fovRadius;
+        const bool silent = UseSilentAim();
+        float acquireFov = silent ? variables::Aimbot::silentFovRadius : variables::Aimbot::fovRadius;
         if (acquireFov < 15.f) acquireFov = 15.f;
-        if (UseSilentAim())
-            acquireFov *= 1.15f;
         if (Games::IsBloxStrike())
             acquireFov *= 1.35f;
         if (variables::Hitbox::enabled || variables::Local::hitboxEnabled) {
@@ -282,82 +663,33 @@ namespace Aimbot {
         return acquireFov;
     }
 
-    inline bool ResolveMouseService(bool force = false)
+    inline void OnAimReleased()
     {
-        auto now = std::chrono::steady_clock::now();
-        if (!force && cachedInputObject &&
-            std::chrono::duration<float>(now - lastMouseResolve).count() < 0.35f)
-            return true;
-
-        lastMouseResolve = now;
-        cachedMouseService = cachedInputObject = cachedInputObject2 = 0;
-        if (!Globals::dataModel.Addr) return false;
-
-        auto ms = Globals::dataModel.FindChildByClass("MouseService");
-        if (!ms.Addr) ms = Globals::dataModel.FindChild("MouseService");
-        if (ms.Addr) {
-            cachedMouseService = ms.Addr;
-            cachedInputObject = memory->read<uintptr_t>(ms.Addr + Offsets::MouseService::InputObject);
-            cachedInputObject2 = memory->read<uintptr_t>(ms.Addr + Offsets::MouseService::InputObject2);
-            if (!cachedInputObject) cachedInputObject = cachedInputObject2;
-        }
-
-        // Fallback: LocalPlayer.Mouse → some FPS games only keep a live InputObject here
-        if (!cachedInputObject && Globals::localPlayer.Addr) {
-            uintptr_t mouseInst = memory->read<uintptr_t>(
-                Globals::localPlayer.Addr + Offsets::Player::Mouse);
-            if (mouseInst) {
-                // PlayerMouse often embeds / points at the same InputObject layout
-                uintptr_t io = memory->read<uintptr_t>(mouseInst + Offsets::MouseService::InputObject);
-                if (!io) io = mouseInst;
-                cachedInputObject = io;
-            }
-        }
-        return cachedInputObject != 0;
-    }
-
-    inline void WriteMousePosToInputObject(uintptr_t inputObj, float x, float y)
-    {
-        if (!inputObj) return;
-        const uintptr_t off = Offsets::MouseService::MousePosition;
-        memory->write<float>(inputObj + off, x);
-        memory->write<float>(inputObj + off + 4, y);
-        // Some builds store mouse as Vector3 (Z unused)
-        memory->write<float>(inputObj + off + 8, 0.f);
-    }
-
-    // Spoof Roblox's believed mouse position (viewport / client pixels)
-    inline bool SetSilentMouse(float clientX, float clientY)
-    {
-        if (!ResolveMouseService(Games::IsBloxStrike())) return false;
-
-        float sw, sh, ox, oy;
-        W2S::EnsureViewport(sw, sh, ox, oy);
-        if (clientX < 0.f) clientX = 0.f;
-        if (clientY < 0.f) clientY = 0.f;
-        if (clientX > sw) clientX = sw;
-        if (clientY > sh) clientY = sh;
-
-        WriteMousePosToInputObject(cachedInputObject, clientX, clientY);
-        if (cachedInputObject2 && cachedInputObject2 != cachedInputObject)
-            WriteMousePosToInputObject(cachedInputObject2, clientX, clientY);
-        return true;
+        ClearMoveState();
+        if (silentSpoofActive)
+            RestoreSilentMouseFromCursor();
+        silentSpoofActive = false;
+        ReleaseCursorClip();
     }
 
     inline void RunAimbot(const RBX::Mat4& viewMatrix, std::vector<PlayerCache::CachedPlayer>& players)
     {
         SyncUiSliders();
 
-        // Menu Aim Style / Target Mode drive silentAim
-        variables::Aimbot::silentAim =
-            (variables::Aimbot::aimType == 1) || (variables::Aimbot::targetMethod == 1);
-
         if (!ShouldAim()) {
+            if (wasAiming)
+                OnAimReleased();
             if (!variables::Aimbot::stickyAim)
                 ClearLock();
+            wasAiming = false;
             lastAimTick = std::chrono::steady_clock::now();
             return;
         }
+        wasAiming = true;
+
+        // Keep physical cursor inside the Roblox client while aiming with mouse movement
+        if (!UseSilentAim() || Games::IsBloxStrike())
+            ClipCursorToGame();
 
         auto now = std::chrono::steady_clock::now();
         float dt = std::chrono::duration<float>(now - lastAimTick).count();
@@ -366,10 +698,12 @@ namespace Aimbot {
 
         float sw, sh, ox, oy;
         W2S::EnsureViewport(sw, sh, ox, oy);
-        float cx = sw * 0.5f, cy = sh * 0.5f;
+        float aimCx = 0.f, aimCy = 0.f;
+        GetAimCenter(aimCx, aimCy);
 
         float acquireFov = ComputeAcquireFov();
-        float holdFov = acquireFov * Clamp(variables::Aimbot::holdFovScale, 1.0f, 1.8f);
+        float holdFov = acquireFov * variables::Aimbot::holdFovScale;
+        if (holdFov < acquireFov) holdFov = acquireFov;
 
         float maxDist = variables::Aimbot::maxDistance;
         if (maxDist < 50.f) maxDist = 50.f;
@@ -401,7 +735,7 @@ namespace Aimbot {
             if (screenOut.X < -40.f || screenOut.Y < -40.f || screenOut.X > sw + 40.f || screenOut.Y > sh + 40.f)
                 return false;
 
-            pixelDist = Dist2(cx, cy, screenOut.X, screenOut.Y);
+            pixelDist = Dist2(aimCx, aimCy, screenOut.X, screenOut.Y);
             if (pixelDist > fovLimit) return false;
 
             if (doLos && !VisibleEnough(eye, plr, world)) return false;
@@ -469,6 +803,7 @@ namespace Aimbot {
             if (bestAddr) {
                 lockedPlayerAddr = bestAddr;
                 lockAcquiredAt = now;
+                lockMissFrames = 0;
                 prevErrX = prevErrY = 0.f;
                 (void)best;
             }
@@ -482,9 +817,13 @@ namespace Aimbot {
             RBX::Vec2 scr{};
             float pd = 0.f;
             if (!evaluate(plr, holdFov, scr, pd, true)) {
-                ClearLock();
+                lockMissFrames++;
+                if (lockMissFrames >= 5) {
+                    ClearLock();
+                }
                 return;
             }
+            lockMissFrames = 0;
             lockScreenX = scr.X;
             lockScreenY = scr.Y;
             hasLockScreen = true;
@@ -497,22 +836,26 @@ namespace Aimbot {
             // Silent spoof for bullet rays; on BloxStrike also mouse-move so camera tracks
             // (old path returned after a failed spoof → aimbot looked completely dead)
             bool silentOk = false;
-            if (wantSilent || hitboxAssist)
+            if (wantSilent || hitboxAssist) {
+                if (!ResolveMouseService(false))
+                    ResolveMouseService(true);
                 silentOk = SetSilentMouse(scr.X, scr.Y);
+                if (silentOk) silentSpoofActive = true;
+            }
 
             if (wantSilent && silentOk && !blox) {
-                prevErrX = scr.X - cx;
-                prevErrY = scr.Y - cy;
+                prevErrX = scr.X - aimCx;
+                prevErrY = scr.Y - aimCy;
                 accumX = accumY = 0.f;
                 return;
             }
 
             if (wantSilent && silentOk && blox) {
-                prevErrX = scr.X - cx;
-                prevErrY = scr.Y - cy;
+                prevErrX = scr.X - aimCx;
+                prevErrY = scr.Y - aimCy;
                 accumX = accumY = 0.f;
-                float errX = scr.X - cx;
-                float errY = scr.Y - cy;
+                float errX = scr.X - aimCx;
+                float errY = scr.Y - aimCy;
                 float dist = sqrtf(errX * errX + errY * errY);
                 if (dist > 22.f) {
                     float mx = errX * 0.05f;
@@ -522,8 +865,20 @@ namespace Aimbot {
                 return;
             }
 
-            float errX = scr.X - cx;
-            float errY = scr.Y - cy;
+            if (wantSilent && !silentOk) {
+                ResolveMouseService(true);
+                silentOk = SetSilentMouse(scr.X, scr.Y);
+                if (silentOk) {
+                    silentSpoofActive = true;
+                    prevErrX = scr.X - aimCx;
+                    prevErrY = scr.Y - aimCy;
+                    accumX = accumY = 0.f;
+                    return;
+                }
+            }
+
+            float errX = scr.X - aimCx;
+            float errY = scr.Y - aimCy;
             if (variables::Extra::humanizeAim) {
                 float amt = Clamp(variables::Extra::humanizeAmount, 0.05f, 1.f);
                 float t = (float)std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -545,7 +900,9 @@ namespace Aimbot {
             float smooth = variables::Aimbot::smoothing;
             if (smooth < 4.f) smooth = 4.f;
             float kp = 1.f / smooth;
-            kp = Clamp(kp, 0.04f, 0.38f);
+            kp = Clamp(kp, 0.08f, 0.55f);
+            if (dist > 120.f) kp = Clamp(kp * 1.35f, 0.08f, 0.55f);
+            else if (dist < 45.f) kp = Clamp(kp * 1.25f, 0.08f, 0.55f);
 
             float kd = Clamp(variables::Aimbot::damping, 0.0f, 0.85f);
             float dErrX = (errX - prevErrX) / dt;
@@ -564,11 +921,11 @@ namespace Aimbot {
             }
 
             float step = sqrtf(mx * mx + my * my);
-            if (step > dist * 0.70f && step > 0.001f) {
-                float s = (dist * 0.70f) / step;
-                mx *= s; my *= s; step = dist * 0.70f;
+            if (step > dist * 0.85f && step > 0.001f) {
+                float s = (dist * 0.85f) / step;
+                mx *= s; my *= s; step = dist * 0.85f;
             }
-            float cap = Clamp(variables::Aimbot::maxMove, 3.f, 28.f);
+            float cap = Clamp(variables::Aimbot::maxMove, 4.f, 32.f);
             if (step > cap && step > 0.001f) {
                 float s = cap / step;
                 mx *= s; my *= s;
@@ -614,6 +971,8 @@ namespace Aimbot {
     {
         PulseClickTick();
 
+        if (CombatBlocked()) return;
+
         static auto lastShot = std::chrono::steady_clock::now();
         const bool rageShoot = variables::Rage::enabled && variables::Rage::shoot;
         const bool afkTrig = variables::Misc::afkAssist && variables::Trigger::enabled;
@@ -621,7 +980,8 @@ namespace Aimbot {
             return;
         if (!WindowManager::IsRobloxFocused())
             return;
-        if (variables::Trigger::enabled && !afkTrig && !(GetAsyncKeyState(variables::Trigger::key) & 0x8000)) {
+        if (variables::Trigger::enabled && variables::Trigger::useHotkey && !afkTrig &&
+            !(GetAsyncKeyState(variables::Trigger::key) & 0x8000)) {
             if (!rageShoot) return;
         }
         // Don't queue another click while still holding — but rage can be snappier
@@ -629,7 +989,8 @@ namespace Aimbot {
 
         float sw, sh, ox, oy;
         W2S::EnsureViewport(sw, sh, ox, oy);
-        float cx = sw * 0.5f, cy = sh * 0.5f;
+        float aimCx = 0.f, aimCy = 0.f;
+        GetAimCenter(aimCx, aimCy);
         RBX::Vec3 eye = EyePos();
 
         bool hit = false;
@@ -638,13 +999,16 @@ namespace Aimbot {
         RBX::Vec3 bestWorld{};
 
         for (auto& plr : players) {
-            if (!plr.isValid || plr.health <= 0.f) continue;
+            if (!plr.isValid) continue;
+            if (!variables::Trigger::targetPlayers && plr.playerAddr) continue;
+            if (!variables::Trigger::targetNpc && !plr.playerAddr) continue;
+            if (!variables::Trigger::targetDead && plr.health <= 0.f) continue;
             if (variables::teamCheck && !PlayerCache::PassesTeamFilter(plr)) continue;
             LiveRefresh(plr);
 
             RBX::Vec3 worldHead = plr.bones.hasHead ? plr.bones.head : plr.position;
             RBX::Vec3 worldBody = plr.bones.hasHrp ? plr.bones.hrp : plr.position;
-            RBX::Vec3 world = variables::Trigger::headOnly ? worldHead : worldHead;
+            RBX::Vec3 world = variables::Trigger::headOnly ? worldHead : worldBody;
 
             RBX::Vec2 scr = W2S::WorldToScreen(world, viewMatrix);
             if (scr.X == 0.f && scr.Y == 0.f) {
@@ -661,12 +1025,12 @@ namespace Aimbot {
             float hbR = HitboxPixelRadius(plr, viewMatrix);
             if (hbR > r) r = hbR;
 
-            float pd = Dist2(cx, cy, scr.X, scr.Y);
+            float pd = Dist2(aimCx, aimCy, scr.X, scr.Y);
             // Also accept body if not head-only
             if (!variables::Trigger::headOnly) {
                 RBX::Vec2 sb = W2S::WorldToScreen(worldBody, viewMatrix);
                 if (!(sb.X == 0.f && sb.Y == 0.f)) {
-                    float pdb = Dist2(cx, cy, sb.X, sb.Y);
+                    float pdb = Dist2(aimCx, aimCy, sb.X, sb.Y);
                     if (pdb < pd) { pd = pdb; scr = sb; world = worldBody; }
                 }
             }
@@ -703,15 +1067,15 @@ namespace Aimbot {
 
         if (variables::Trigger::releaseMs > 1.f || rageShoot)
             PulseClickStart();
-        else
-            ClickMouse();
-        if (variables::Extra::burstTrigger && !rageShoot) {
+        else if (variables::Extra::burstTrigger && !rageShoot) {
             int n = variables::Extra::burstCount;
             if (n < 2) n = 2;
             if (n > 8) n = 8;
-            for (int i = 1; i < n; i++)
+            for (int i = 0; i < n; i++)
                 ClickMouse();
         }
+        else
+            ClickMouse();
         lastShot = now;
         (void)bestWorld;
     }
@@ -740,5 +1104,36 @@ namespace Aimbot {
     {
         auto players = PlayerCache::snapshotPlayers();
         RunTriggerbot(viewMatrix, players);
+    }
+
+    // Magic bullet: spoof mouse to expanded hitbox target while firing
+    inline void RunMagicBulletAssist(const RBX::Mat4& viewMatrix, std::vector<PlayerCache::CachedPlayer>& players)
+    {
+        const bool magicOn = variables::MagicBullet::enabled || variables::Hitbox::enabled;
+        if (!magicOn) return;
+        if (CombatBlocked()) return;
+        if (!WindowManager::IsRobloxFocused()) return;
+        if (!(GetAsyncKeyState(VK_LBUTTON) & 0x8000)) return;
+
+        float t = Clamp(variables::MagicBullet::uiFov * 0.01f, 0.f, 1.f);
+        float acquireFov = 20.f + (500.f - 20.f) * t;
+        variables::MagicBullet::fovRadius = acquireFov;
+        float hbBoost = variables::Hitbox::size * 6.f;
+        if (hbBoost > acquireFov) acquireFov = hbBoost;
+
+        RBX::Vec2 bestScr{};
+        RBX::Vec3 bestWorld{};
+        if (!FindSpoofTarget(viewMatrix, players, acquireFov, variables::MagicBullet::hitbox,
+                true, variables::Aimbot::requireVisible, bestScr, bestWorld))
+            return;
+
+        if (SetSilentMouse(bestScr.X, bestScr.Y))
+            silentSpoofActive = true;
+    }
+
+    inline void RunMagicBulletAssist(const RBX::Mat4& viewMatrix)
+    {
+        auto players = PlayerCache::snapshotPlayers();
+        RunMagicBulletAssist(viewMatrix, players);
     }
 }

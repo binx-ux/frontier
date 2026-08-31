@@ -79,6 +79,69 @@ namespace LoaderUpdate {
         WritePrivateProfileStringW(L"loader", L"mode", buf, ini.c_str());
     }
 
+    inline int LoadLocalVersion()
+    {
+        std::wstring ini = PathJoin(GetLoaderDir(), L"loader.ini");
+        int v = GetPrivateProfileIntW(L"loader", L"localVersion", 0, ini.c_str());
+        if (v < 0 || v > 999) {
+            v = 0;
+            WritePrivateProfileStringW(L"loader", L"localVersion", L"0", ini.c_str());
+        }
+        return v;
+    }
+
+    inline void SaveLocalVersion(int version)
+    {
+        std::wstring ini = PathJoin(GetLoaderDir(), L"loader.ini");
+        wchar_t buf[16];
+        swprintf_s(buf, L"%d", version);
+        WritePrivateProfileStringW(L"loader", L"localVersion", buf, ini.c_str());
+    }
+
+    inline std::wstring UsermodeExePath()
+    {
+        std::wstring dir = GetLoaderDir();
+        return PathJoin(PathJoin(dir, L"usermode"), LoaderConfig::kUsermodeExe);
+    }
+
+    inline bool LocalUsermodeExists()
+    {
+        return FileExists(UsermodeExePath());
+    }
+
+    inline bool ResolveUsermodeExe(std::wstring& exeOut, std::wstring& workOut)
+    {
+        const std::wstring primary = UsermodeExePath();
+        if (FileExists(primary)) {
+            exeOut = primary;
+            workOut = PathJoin(GetLoaderDir(), L"usermode");
+            return true;
+        }
+
+        std::wstring dir = GetLoaderDir();
+        const wchar_t* rel[] = {
+            L"..\\x64\\Release\\Frontier.exe",
+            L"..\\External\\x64\\Release\\Frontier.exe",
+            L"..\\..\\..\\..\\x64\\Release\\Frontier.exe",
+            L"..\\..\\..\\x64\\Release\\Frontier.exe",
+        };
+        for (const wchar_t* r : rel) {
+            std::wstring candidate = PathJoin(dir, r);
+            wchar_t full[MAX_PATH]{};
+            if (GetFullPathNameW(candidate.c_str(), MAX_PATH, full, nullptr) == 0)
+                continue;
+            if (!FileExists(full))
+                continue;
+            exeOut = full;
+            workOut = full;
+            size_t slash = workOut.find_last_of(L"\\/");
+            if (slash != std::wstring::npos)
+                workOut.resize(slash);
+            return true;
+        }
+        return false;
+    }
+
     inline bool HttpGet(const char* url, std::string& outBody, std::string& outErr)
     {
         outBody.clear();
@@ -101,6 +164,9 @@ namespace LoaderUpdate {
             WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
         if (!ses) { outErr = "WinHttpOpen failed"; return false; }
 
+        DWORD protocols = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2 | WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3;
+        WinHttpSetOption(ses, WINHTTP_OPTION_SECURE_PROTOCOLS, &protocols, sizeof(protocols));
+
         bool https = uc.nScheme == INTERNET_SCHEME_HTTPS;
         HINTERNET con = WinHttpConnect(ses, host, uc.nPort, 0);
         if (!con) { WinHttpCloseHandle(ses); outErr = "Connect failed"; return false; }
@@ -122,9 +188,13 @@ namespace LoaderUpdate {
             WinHttpCloseHandle(req);
             WinHttpCloseHandle(con);
             WinHttpCloseHandle(ses);
-            outErr = "Request failed";
+            outErr = "Network error — check your connection";
             return false;
         }
+
+        DWORD status = 0, statusLen = sizeof(status);
+        WinHttpQueryHeaders(req, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+            WINHTTP_HEADER_NAME_BY_INDEX, &status, &statusLen, WINHTTP_NO_HEADER_INDEX);
 
         DWORD avail = 0;
         do {
@@ -139,7 +209,12 @@ namespace LoaderUpdate {
         WinHttpCloseHandle(req);
         WinHttpCloseHandle(con);
         WinHttpCloseHandle(ses);
-        return !outBody.empty();
+
+        if (outBody.empty()) {
+            outErr = status >= 400 ? "Server rejected request" : "Empty response";
+            return false;
+        }
+        return true;
     }
 
     inline bool HttpPost(const char* url, const char* contentType, const std::string& body,
@@ -165,6 +240,9 @@ namespace LoaderUpdate {
             WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
         if (!ses) { outErr = "WinHttpOpen failed"; return false; }
 
+        DWORD protocols = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2 | WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3;
+        WinHttpSetOption(ses, WINHTTP_OPTION_SECURE_PROTOCOLS, &protocols, sizeof(protocols));
+
         bool https = uc.nScheme == INTERNET_SCHEME_HTTPS;
         HINTERNET con = WinHttpConnect(ses, host, uc.nPort, 0);
         if (!con) { WinHttpCloseHandle(ses); outErr = "Connect failed"; return false; }
@@ -188,7 +266,7 @@ namespace LoaderUpdate {
             WinHttpCloseHandle(req);
             WinHttpCloseHandle(con);
             WinHttpCloseHandle(ses);
-            outErr = "Request failed";
+            outErr = "Network error — check your connection";
             return false;
         }
 
@@ -205,7 +283,12 @@ namespace LoaderUpdate {
         WinHttpCloseHandle(req);
         WinHttpCloseHandle(con);
         WinHttpCloseHandle(ses);
-        return !outBody.empty();
+
+        if (outBody.empty()) {
+            outErr = "Empty server response";
+            return false;
+        }
+        return true;
     }
 
     inline bool HttpDownloadFile(const char* url, const std::wstring& dest, std::string& outErr)
@@ -278,11 +361,21 @@ namespace LoaderUpdate {
         JsonStr(body, "usermode_url", m.usermodeUrl, sizeof(m.usermodeUrl));
         JsonStr(body, "kernel_url", m.kernelUrl, sizeof(m.kernelUrl));
         m.kernelAvailable = JsonBool(body, "kernel_available", false);
-        m.accessRequired = JsonBool(body, "access_required", true);
+        m.accessRequired = JsonBool(body, "access_required", false);
         if (!JsonStr(body, "discord_invite", m.discordInvite, sizeof(m.discordInvite)))
             strncpy_s(m.discordInvite, LoaderConfig::kDiscordInvite, _TRUNCATE);
         JsonStr(body, "driver_url", m.driverUrl, sizeof(m.driverUrl));
-        return m.version > 0;
+        return m.version > 0 || m.usermodeUrl[0] != 0;
+    }
+
+    inline void ApplyFallbackManifest(Manifest& m)
+    {
+        if (!m.usermodeUrl[0])
+            strncpy_s(m.usermodeUrl, LoaderConfig::kFallbackUsermodeUrl, _TRUNCATE);
+        if (!m.display[0])
+            strncpy_s(m.display, "FRONTIER v1", _TRUNCATE);
+        if (m.version <= 0)
+            m.version = 1;
     }
 
     inline bool ProbeKernelDriverAvailable()
@@ -302,19 +395,21 @@ namespace LoaderUpdate {
 
     inline bool RunPayload(int mode, std::wstring& errMsg)
     {
-        std::wstring dir = GetLoaderDir();
-        const wchar_t* sub = (mode == 1) ? L"kernel" : L"usermode";
-        std::wstring work = PathJoin(dir, sub);
-        std::wstring exe = PathJoin(work, LoaderConfig::kUsermodeExe);
-        if (mode == 1)
+        std::wstring work;
+        std::wstring exe;
+        if (mode == 0) {
+            if (!ResolveUsermodeExe(exe, work)) {
+                errMsg = L"Missing usermode\\Frontier.exe.\nBuild External Release|x64 and copy to usermode\\.";
+                return false;
+            }
+        } else {
+            std::wstring dir = GetLoaderDir();
+            work = PathJoin(dir, L"kernel");
             exe = PathJoin(work, LoaderConfig::kKernelExe);
-
-        if (!FileExists(exe)) {
-            if (mode == 1)
+            if (!FileExists(exe)) {
                 errMsg = L"Kernel mode is not installed.\nPlace kernel\\Frontier.exe or run Update.";
-            else
-                errMsg = L"Missing usermode\\Frontier.exe.\nBuild Release|x64 or run Update.";
-            return false;
+                return false;
+            }
         }
 
         if (mode == 1 && !ProbeKernelDriverAvailable()) {
@@ -325,6 +420,19 @@ namespace LoaderUpdate {
         std::wstring cmd = L"\"" + exe + L"\"";
         std::vector<wchar_t> buf(cmd.begin(), cmd.end());
         buf.push_back(L'\0');
+
+        if (mode == 1) {
+            SHELLEXECUTEINFOW sei{};
+            sei.cbSize = sizeof(sei);
+            sei.lpVerb = L"runas";
+            sei.lpFile = exe.c_str();
+            sei.lpDirectory = work.c_str();
+            sei.nShow = SW_SHOWNORMAL;
+            if (ShellExecuteExW(&sei))
+                return true;
+            errMsg = L"Kernel mode requires Administrator.\nApprove the UAC prompt to load the driver.";
+            return false;
+        }
 
         STARTUPINFOW si{};
         si.cb = sizeof(si);
@@ -338,7 +446,7 @@ namespace LoaderUpdate {
 
         SHELLEXECUTEINFOW sei{};
         sei.cbSize = sizeof(sei);
-        sei.lpVerb = (mode == 1) ? L"runas" : L"open";
+        sei.lpVerb = L"open";
         sei.lpFile = exe.c_str();
         sei.lpDirectory = work.c_str();
         sei.nShow = SW_SHOWNORMAL;
@@ -401,6 +509,7 @@ namespace LoaderUpdate {
         }
 
         if (progress) progress(1.f, "Up to date");
+        SaveLocalVersion(m.version);
         return true;
     }
 }

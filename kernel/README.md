@@ -32,9 +32,17 @@ Output: `kernel\Frontier.exe`
 
 ## Build driver
 
-See [driver/README.md](driver/README.md). Source: `kernel/driver/frontier_drv/frontier_drv.c`
+```powershell
+.\scripts\build-driver.ps1
+```
 
-Requires WDK. Copy built `FrontierDrv.sys` to `kernel\driver\`.
+Requires WDK (`winget install Microsoft.WindowsWDK.10.0.26100`). If the VS **WindowsKernelModeDriver10.0** toolset is missing, the script falls back to a direct `cl/link` build.
+
+## Build everything (client + driver + stage)
+
+```powershell
+.\scripts\build-all-kernel.ps1
+```
 
 ## Run (local)
 

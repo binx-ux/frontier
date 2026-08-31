@@ -130,14 +130,20 @@ namespace Visibility {
         return RayHitsLocalAABB(oL, dL, maxT, b.half.X, b.half.Y, b.half.Z, outT);
     }
 
-    inline bool PartBlocksRays(uintptr_t prim)
+    inline bool PartBlocksRays(uintptr_t prim, uintptr_t instAddr = 0)
     {
         if (!prim) return false;
         uint8_t flags = memory->read<uint8_t>(prim + Offsets::Primitive::Flags);
-        // Engine raycasts hit CanCollide parts; CanQuery matters when CanCollide is off
         bool collide = (flags & Offsets::PrimitiveFlags::CanCollide) != 0;
         bool query = (flags & Offsets::PrimitiveFlags::CanQuery) != 0;
-        return collide || query;
+        bool touch = (flags & Offsets::PrimitiveFlags::CanTouch) != 0;
+        if (collide || query || touch) return true;
+        // Many games use invisible non-collide barriers — treat opaque parts as occluders.
+        if (instAddr) {
+            float tr = memory->read<float>(instAddr + Offsets::BasePart::Transparency);
+            if (tr < 0.92f) return true;
+        }
+        return false;
     }
 
     inline bool IsWallLike(const RBX::Vec3& size)
@@ -146,11 +152,10 @@ namespace Visibility {
         float mx = size.X; if (size.Y > mx) mx = size.Y; if (size.Z > mx) mx = size.Z;
         float vol = size.X * size.Y * size.Z;
         // Thin panels / long walls / solid props — keep low volume floor so thin walls aren't dropped
-        if (vol < 0.05f) return false;
+        if (vol < 0.008f) return false;
         if (vol > 250000.0f) return false;
         if (mx > 800.f) return false;
-        // Prefer anything with a real extent (skip dust)
-        if (mx < 0.35f) return false;
+        if (mx < 0.15f) return false;
         return true;
     }
 
@@ -178,7 +183,7 @@ namespace Visibility {
 
     inline void CollectParts(RBX::RbxInstance inst, int depth, int& count, std::vector<OBB>& out)
     {
-        if (inst.Addr == 0 || depth > 18 || count >= 8000) return;
+        if (inst.Addr == 0 || depth > 22 || count >= 15000) return;
         std::string cls = inst.GetClass();
         if (cls.empty()) return;
 
@@ -196,9 +201,9 @@ namespace Visibility {
 
         if (cls == "Part" || cls == "MeshPart" || cls == "UnionOperation" || cls == "WedgePart" ||
             cls == "TrussPart" || cls == "CornerWedgePart" || cls == "SpawnLocation" ||
-            cls == "Seat" || cls == "VehicleSeat") {
+            cls == "Seat" || cls == "VehicleSeat" || cls == "PartOperation") {
             auto prim = inst.GetPrimitivePtr();
-            if (prim && PartBlocksRays(prim)) {
+            if (prim && PartBlocksRays(prim, inst.Addr)) {
                 OBB box;
                 if (MakeOBB(prim, box)) {
                     out.push_back(box);
@@ -210,7 +215,7 @@ namespace Visibility {
 
         for (auto& ch : inst.GetChildList()) {
             CollectParts(ch, depth + 1, count, out);
-            if (count >= 8000) return;
+            if (count >= 15000) return;
         }
     }
 
@@ -227,7 +232,7 @@ namespace Visibility {
         }
 
         std::vector<OBB> next;
-        next.reserve(8000);
+        next.reserve(15000);
         int count = 0;
 
         // Prefer map folders first (often named Map / Arena / Stages) then everything else
@@ -244,7 +249,10 @@ namespace Visibility {
                 if (n.find("Map") != std::string::npos || n.find("map") != std::string::npos ||
                     n.find("Arena") != std::string::npos || n.find("Stage") != std::string::npos ||
                     n.find("World") != std::string::npos || n.find("Baseplate") != std::string::npos ||
-                    n.find("Building") != std::string::npos || n.find("House") != std::string::npos)
+                    n.find("Building") != std::string::npos || n.find("House") != std::string::npos ||
+                    n.find("Terrain") != std::string::npos || n.find("Geometry") != std::string::npos ||
+                    n.find("Environment") != std::string::npos || n.find("Level") != std::string::npos ||
+                    n.find("Lobby") != std::string::npos || n.find("Zone") != std::string::npos)
                     pri = true;
             }
             if (c == "Folder" || c == "Model") pri = true;
@@ -252,12 +260,12 @@ namespace Visibility {
         }
         for (auto& ch : priority) {
             CollectParts(ch, 1, count, next);
-            if (count >= 8000) break;
+            if (count >= 15000) break;
         }
-        if (count < 8000) {
+        if (count < 15000) {
             for (auto& ch : rest) {
                 CollectParts(ch, 1, count, next);
-                if (count >= 8000) break;
+                if (count >= 15000) break;
             }
         }
 
@@ -287,14 +295,15 @@ namespace Visibility {
                 bool need = variables::Aimbot::enabled || variables::Trigger::enabled
                     || variables::ESP::enabled || variables::ESP::visibleOnly
                     || variables::Aimbot::requireVisible || variables::Trigger::requireVisible
-                    || variables::Misc::afkAssist || variables::Aimbot::alwaysOn;
+                    || variables::Misc::afkAssist || variables::Aimbot::alwaysOn
+                    || variables::MagicBullet::enabled || variables::Hitbox::enabled;
                 if (!need) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(500));
                     continue;
                 }
                 auto now = std::chrono::steady_clock::now();
                 float elapsed = std::chrono::duration<float>(now - lastRefresh).count();
-                float interval = everBuilt ? 1.5f : 0.25f;
+                float interval = everBuilt ? 0.75f : 0.2f;
                 bool force = rebuildRequested.exchange(false);
                 if ((force || elapsed >= interval) && !building.exchange(true)) {
                     lastRefresh = now;
@@ -316,22 +325,20 @@ namespace Visibility {
         if (len < 0.4f) return true;
         dir.X /= len; dir.Y /= len; dir.Z /= len;
 
-        // Stop short of the target bone so we don't self-hit their character (characters aren't in the set,
-        // but inflated nearby props / seats can sit on them). Keep most of the segment.
-        float maxT = len - 0.85f;
-        if (maxT < 0.25f) return true;
+        // Stop short of the target bone so we don't self-hit their character.
+        float maxT = len - 0.35f;
+        if (maxT < 0.15f) return true;
 
-        if (!everBuilt && !building.exchange(true)) {
-            BuildNow();
-            building = false;
-            lastRefresh = std::chrono::steady_clock::now();
+        if (!everBuilt) {
+            rebuildRequested.store(true);
+            return false;
         }
 
         std::lock_guard<std::mutex> lock(boxesMutex);
 
-        // No geometry yet → fail-open so aim/ESP/trigger still work while mesh builds
+        // No geometry yet — block when wall check is active (fail-closed)
         if (!everBuilt || boxes.empty())
-            return true;
+            return false;
 
         for (const auto& b : boxes) {
             if (!b.Valid()) continue;

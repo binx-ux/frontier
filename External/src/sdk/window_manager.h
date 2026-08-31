@@ -160,4 +160,26 @@ namespace WindowManager {
             SWP_NOACTIVATE | SWP_SHOWWINDOW);
         hasAppliedRect = false;
     }
+
+    // Keep the OS cursor inside the Roblox client while the game is focused.
+    inline void ClampCursorToClient(LONG margin = 2)
+    {
+        if (!IsRobloxFocused()) return;
+        POINT pt{};
+        if (!GetCursorPos(&pt)) return;
+        UpdateRobloxWindowInfo();
+        const RECT& r = robloxRect;
+        const int rw = r.right - r.left;
+        const int rh = r.bottom - r.top;
+        if (rw < 50 || rh < 50) return;
+
+        const LONG minX = r.left + margin;
+        const LONG maxX = r.right - margin;
+        const LONG minY = r.top + margin;
+        const LONG maxY = r.bottom - margin;
+        const LONG cx = (pt.x < minX) ? minX : (pt.x > maxX ? maxX : pt.x);
+        const LONG cy = (pt.y < minY) ? minY : (pt.y > maxY ? maxY : pt.y);
+        if (cx != pt.x || cy != pt.y)
+            SetCursorPos(cx, cy);
+    }
 }

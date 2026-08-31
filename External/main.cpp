@@ -1,4 +1,5 @@
 #include <cstdint>
+#include <cstdio>
 #include <windows.h>
 #include <thread>
 #include <atomic>
@@ -11,6 +12,7 @@
 #include "src/sdk/offsets.h"
 #include "src/sdk/sdk.h"
 #include "src/sdk/scanner.h"
+#include "src/sdk/w2s.h"
 #include "src/core/cache/cache.h"
 #include "src/core/globals/globals.h"
 #include "src/core/tp_handler/tp_handler.h"
@@ -26,18 +28,24 @@
 #include "src/render/render.h"
 #include "src/discord/frontier_presence.h"
 #include "src/core/debug_log.h"
+#include "src/core/auth/session_gate.h"
+#include "src/core/config/config.h"
 
 namespace
 {
 	constexpr const char* app = "RobloxPlayerBeta.exe";
 	constexpr const wchar_t* apptitle = L"Roblox";
 
-	// Feature keybinds while Roblox is focused or while the menu is open.
+	// Feature keybinds only while Roblox is focused and the menu UI is not open.
 	inline bool GameKeyDown(int vk)
 	{
 		if ((GetAsyncKeyState(vk) & 0x8000) == 0)
 			return false;
-		return WindowManager::IsRobloxFocused() || variables::menuOpen;
+		if (!WindowManager::IsRobloxFocused())
+			return false;
+		if (variables::menuOpen || variables::Misc::floatingPanelOpen || variables::waitingForKey)
+			return false;
+		return true;
 	}
 
 	void SetLoad(float p, const char* status)
@@ -48,9 +56,34 @@ namespace
 			FrontierPresence::SetLoading(status);
 	}
 
-	bool isgamerunning(const wchar_t*)
+	inline bool RobloxIsRunning()
 	{
 		return WindowManager::IsRobloxOpen() || memory->find_process_id(app) != 0;
+	}
+
+	void ShowTimedExitPrompt(OverlayWindow& overlay, const char* message, float seconds = 4.f)
+	{
+		variables::Loading::active = true;
+		variables::Loading::failed = true;
+		variables::Loading::progress = 0.f;
+		strncpy_s(variables::Loading::error, message, _TRUNCATE);
+
+		const auto start = std::chrono::steady_clock::now();
+		while (true) {
+			const float elapsed = std::chrono::duration<float>(
+				std::chrono::steady_clock::now() - start).count();
+			if (elapsed >= seconds)
+				break;
+
+			overlay.BeginFrame();
+			overlay.RenderLoading();
+			overlay.EndFrame();
+		}
+	}
+
+	bool isgamerunning(const wchar_t*)
+	{
+		return RobloxIsRunning();
 	}
 
 	void PanicDisableAll()
@@ -84,10 +117,12 @@ namespace
 		variables::Local::autoClicker = false;
 		variables::Local::orbitPlayer = false;
 		variables::Hitbox::enabled = false;
+		variables::MagicBullet::enabled = false;
 		variables::Desync::enabled = false;
 		variables::Exploits::animation_changer = false;
 		variables::Misc::afkAssist = false;
 		variables::menuOpen = false;
+		Aimbot::OnAimReleased();
 		Aimbot::lockedPlayerAddr = 0;
 		CustomMusic::StopLocal();
 		GunMods::DisableAll();
@@ -98,6 +133,31 @@ namespace
 		auto prim = rootPart.GetPrimitivePtr();
 		if (prim == 0) return;
 		memory->write<RBX::Vec3>(prim + Offsets::Primitive::AssemblyLinearVelocity, vel);
+	}
+
+	void WriteLocalAngularVelocity(RBX::RbxInstance rootPart, const RBX::Vec3& av)
+	{
+		auto prim = rootPart.GetPrimitivePtr();
+		if (prim == 0) return;
+		memory->write<RBX::Vec3>(prim + Offsets::Primitive::AssemblyAngularVelocity, av);
+	}
+
+	// Devforum anti-fling: force Running when stuck in ragdoll / falling / physics states
+	void ForceHumanoidRunning(uintptr_t humanoidAddr)
+	{
+		if (!humanoidAddr) return;
+		const uintptr_t statePtr = memory->read<uintptr_t>(humanoidAddr + Offsets::Humanoid::HumanoidState);
+		if (!statePtr) return;
+		const int stateId = memory->read<int>(statePtr + Offsets::Humanoid::HumanoidStateID);
+		if (stateId == 0 || stateId == 5 || stateId == 6 || stateId == 10 || stateId == 15)
+			memory->write<int>(statePtr + Offsets::Humanoid::HumanoidStateID, 1);
+	}
+
+	void WritePrimVelocityBurst(uintptr_t prim, const RBX::Vec3& vel, int reps)
+	{
+		if (!prim || reps < 1) return;
+		for (int i = 0; i < reps; ++i)
+			memory->write<RBX::Vec3>(prim + Offsets::Primitive::AssemblyLinearVelocity, vel);
 	}
 
 	inline bool IsCollidablePartClass(const std::string& cls)
@@ -192,12 +252,6 @@ namespace
 
 				if (lighting.Addr != 0) {
 					if (wantLight) {
-						static auto lastLight = std::chrono::steady_clock::now();
-						auto nowL = std::chrono::steady_clock::now();
-						bool doLight = variables::World::fullbright ||
-							std::chrono::duration<float>(nowL - lastLight).count() > 0.12f;
-						if (doLight) lastLight = nowL;
-
 						if (!lightSnap.valid) {
 							lightSnap.brightness = memory->read<float>(lighting.Addr + Offsets::Lighting::Brightness);
 							lightSnap.fogStart = memory->read<float>(lighting.Addr + Offsets::Lighting::FogStart);
@@ -228,7 +282,7 @@ namespace
 						}
 						lightWasOn = true;
 
-						if (doLight) {
+						{
 							if (variables::World::fullbright) {
 								writeColor(Offsets::Lighting::Ambient, 1.f, 1.f, 1.f);
 								writeColor(Offsets::Lighting::OutdoorAmbient, 1.f, 1.f, 1.f);
@@ -253,42 +307,49 @@ namespace
 									}
 								}
 							}
-							if (variables::World::customBrightness) {
-								memory->write<float>(lighting.Addr + Offsets::Lighting::Brightness, variables::World::brightness);
-							}
-							if (variables::World::noFog) {
-								memory->write<float>(lighting.Addr + Offsets::Lighting::FogEnd, 1.0e6f);
-								memory->write<float>(lighting.Addr + Offsets::Lighting::FogStart, 0.0f);
-							}
-							if (variables::World::noShadows) {
-								memory->write<bool>(lighting.Addr + Offsets::Lighting::GlobalShadows, false);
-							}
-							if (variables::World::nightMode) {
-								memory->write<float>(lighting.Addr + Offsets::Lighting::ClockTime, 0.0f);
-								if (!variables::World::customBrightness)
-									memory->write<float>(lighting.Addr + Offsets::Lighting::Brightness, 0.35f);
-							}
-							else if (variables::World::customClock) {
-								memory->write<float>(lighting.Addr + Offsets::Lighting::ClockTime, variables::World::clockTime);
-							}
-							if (variables::World::customAmbient) {
-								float ar = variables::World::ambientColor[0];
-								float ag = variables::World::ambientColor[1];
-								float ab = variables::World::ambientColor[2];
-								variables::World::ambientR = ar;
-								variables::World::ambientG = ag;
-								variables::World::ambientB = ab;
-								writeColor(Offsets::Lighting::Ambient, ar, ag, ab);
-								writeColor(Offsets::Lighting::OutdoorAmbient, ar, ag, ab);
-								writeColor(Offsets::Lighting::ColorShift_Top, ar * 0.35f, ag * 0.35f, ab * 0.35f);
-								writeColor(Offsets::Lighting::LightColor, ar, ag, ab);
-							}
-							if (variables::World::removeAtmosphere) {
-								for (auto& ch : lighting.GetChildList()) {
-									if (ch.GetClass() == "Atmosphere") {
-										memory->write<float>(ch.Addr + Offsets::Atmosphere::Density, 0.0f);
-										memory->write<float>(ch.Addr + Offsets::Atmosphere::Haze, 0.0f);
-										memory->write<float>(ch.Addr + Offsets::Atmosphere::Glare, 0.0f);
+							else {
+								if (variables::World::nightMode) {
+									memory->write<float>(lighting.Addr + Offsets::Lighting::ClockTime, 0.0f);
+									if (!variables::World::customBrightness)
+										memory->write<float>(lighting.Addr + Offsets::Lighting::Brightness, 0.35f);
+									writeColor(Offsets::Lighting::Ambient, 0.06f, 0.06f, 0.14f);
+									writeColor(Offsets::Lighting::OutdoorAmbient, 0.04f, 0.04f, 0.10f);
+									writeColor(Offsets::Lighting::ColorShift_Top, 0.02f, 0.02f, 0.08f);
+									writeColor(Offsets::Lighting::ColorShift_Bottom, 0.01f, 0.01f, 0.05f);
+									writeColor(Offsets::Lighting::FogColor, 0.05f, 0.05f, 0.12f);
+								}
+								else if (variables::World::customClock) {
+									memory->write<float>(lighting.Addr + Offsets::Lighting::ClockTime, variables::World::clockTime);
+								}
+								if (variables::World::customBrightness) {
+									memory->write<float>(lighting.Addr + Offsets::Lighting::Brightness, variables::World::brightness);
+								}
+								if (variables::World::noFog) {
+									memory->write<float>(lighting.Addr + Offsets::Lighting::FogEnd, 1.0e6f);
+									memory->write<float>(lighting.Addr + Offsets::Lighting::FogStart, 0.0f);
+								}
+								if (variables::World::noShadows) {
+									memory->write<bool>(lighting.Addr + Offsets::Lighting::GlobalShadows, false);
+								}
+								if (variables::World::customAmbient) {
+									float ar = variables::World::ambientColor[0];
+									float ag = variables::World::ambientColor[1];
+									float ab = variables::World::ambientColor[2];
+									variables::World::ambientR = ar;
+									variables::World::ambientG = ag;
+									variables::World::ambientB = ab;
+									writeColor(Offsets::Lighting::Ambient, ar, ag, ab);
+									writeColor(Offsets::Lighting::OutdoorAmbient, ar, ag, ab);
+									writeColor(Offsets::Lighting::ColorShift_Top, ar * 0.35f, ag * 0.35f, ab * 0.35f);
+									writeColor(Offsets::Lighting::LightColor, ar, ag, ab);
+								}
+								if (variables::World::removeAtmosphere) {
+									for (auto& ch : lighting.GetChildList()) {
+										if (ch.GetClass() == "Atmosphere") {
+											memory->write<float>(ch.Addr + Offsets::Atmosphere::Density, 0.0f);
+											memory->write<float>(ch.Addr + Offsets::Atmosphere::Haze, 0.0f);
+											memory->write<float>(ch.Addr + Offsets::Atmosphere::Glare, 0.0f);
+										}
 									}
 								}
 							}
@@ -359,7 +420,7 @@ namespace
 			}
 
 			auto humanoid = character.FindChildByClass("Humanoid");
-			auto rootPart = character.FindChild("HumanoidRootPart");
+			auto rootPart = PlayerCache::FindRootPart(character);
 			if (humanoid.Addr == 0 || rootPart.Addr == 0) {
 				std::this_thread::sleep_for(std::chrono::milliseconds(20));
 				continue;
@@ -375,6 +436,7 @@ namespace
 				bool hk = GameKeyDown(variables::Hitbox::key);
 				if (hk && !hitboxKeyLatch) {
 					variables::Hitbox::enabled = !variables::Hitbox::enabled;
+					variables::MagicBullet::enabled = variables::Hitbox::enabled;
 					variables::Local::hitboxEnabled = variables::Hitbox::enabled;
 					hitboxKeyLatch = true;
 				}
@@ -499,139 +561,187 @@ namespace
 				floatArmed = false;
 			}
 
-			// Touch fling — only shove the OTHER player. Never spike your own velocity
-			// (that was launching you). Keep normal walk; kill your angular so you stay upright.
-			if (variables::Local::walkFling) {
-				auto prim = rootPart.GetPrimitivePtr();
-				if (prim)
-					memory->write<RBX::Vec3>(prim + Offsets::Primitive::AssemblyAngularVelocity, { 0, 0, 0 });
+			// Walk fling — sustained HRP velocity on nearby targets (you stay stable)
+			{
+				static uintptr_t lastVictimHum = 0;
 
-				bool keyOk = variables::Local::walkFlingKey <= 0 || GameKeyDown(variables::Local::walkFlingKey);
-				if (keyOk) {
-					RBX::Vec3 myPos = rootPart.GetPos();
-					float touchR = variables::Local::walkFlingRange;
-					if (touchR < 2.f) touchR = 2.f;
-					if (touchR > 12.f) touchR = 12.f;
-
-					float power = variables::Local::walkFlingPower;
-					if (power < 40.f) power = 40.f;
-					if (power > 500.f) power = 500.f;
-
-					// Your look / move direction helps aim the shove
-					RBX::Vec3 pushHint{};
-					if (Globals::camera.Addr) {
-						auto cf = Globals::camera.GetCameraCFrame();
-						RBX::Vec3 look = cf.GetLookVector();
-						look.X = -look.X; look.Z = -look.Z; look.Y = 0.f;
-						RBX::Vec3 right = cf.GetRightVector(); right.Y = 0.f;
-						if (GameKeyDown('W')) { pushHint.X += look.X; pushHint.Z += look.Z; }
-						if (GameKeyDown('S')) { pushHint.X -= look.X; pushHint.Z -= look.Z; }
-						if (GameKeyDown('D')) { pushHint.X += right.X; pushHint.Z += right.Z; }
-						if (GameKeyDown('A')) { pushHint.X -= right.X; pushHint.Z -= right.Z; }
-						float hl = sqrtf(pushHint.X * pushHint.X + pushHint.Z * pushHint.Z);
-						if (hl > 0.05f) { pushHint.X /= hl; pushHint.Z /= hl; }
+				auto clearFlingVictim = [&]() {
+					if (lastVictimHum) {
+						memory->write<uint8_t>(lastVictimHum + Offsets::Humanoid::PlatformStand, 0);
+						lastVictimHum = 0;
 					}
+				};
 
-					for (auto& plr : PlayerCache::snapshotPlayers()) {
-						if (!plr.isValid || plr.health <= 0.f || !plr.rootPartAddr) continue;
-						RBX::Vec3 theirPos = plr.position;
-						if (plr.rootPartAddr) {
+				if (!variables::Local::walkFling) {
+					clearFlingVictim();
+				} else {
+					const bool keyOk = variables::Local::walkFlingKey <= 0 || GameKeyDown(variables::Local::walkFlingKey);
+					auto prim = rootPart.GetPrimitivePtr();
+					if (!keyOk || !prim) {
+						clearFlingVictim();
+					} else {
+						RBX::Vec3 myPos = rootPart.GetPos();
+						float touchR = variables::Local::walkFlingRange;
+						if (touchR < 2.f) touchR = 2.f;
+						if (touchR > 16.f) touchR = 16.f;
+
+						float power = variables::Local::walkFlingPower;
+						if (power < 40.f) power = 40.f;
+						if (power > 500.f) power = 500.f;
+
+						const float acquireR = touchR * 1.5f;
+						float bestD = acquireR + 1.f;
+						RBX::Vec3 bestPos = myPos;
+						uintptr_t bestRoot = 0, bestHum = 0;
+
+						for (auto& plr : PlayerCache::snapshotPlayers()) {
+							if (!plr.isValid || plr.health <= 0.f || !plr.rootPartAddr) continue;
+							if (variables::teamCheck && !PlayerCache::PassesTeamFilter(plr)) continue;
+
+							RBX::Vec3 theirPos = plr.position;
 							RBX::RbxInstance tgtRoot(plr.rootPartAddr);
-							RBX::Vec3 live = tgtRoot.GetPos();
-							if (live.X != 0.f || live.Y != 0.f || live.Z != 0.f)
-								theirPos = live;
-						}
-						float dx = theirPos.X - myPos.X;
-						float dy = theirPos.Y - myPos.Y;
-						float dz = theirPos.Z - myPos.Z;
-						float d = sqrtf(dx * dx + dy * dy + dz * dz);
-						if (d > touchR || d < 0.05f) continue;
+							if (tgtRoot.Addr) {
+								RBX::Vec3 live = tgtRoot.GetPos();
+								if (std::isfinite(live.X) && std::isfinite(live.Y) && std::isfinite(live.Z))
+									theirPos = live;
+							}
 
-						float inv = 1.f / d;
-						RBX::Vec3 away{ dx * inv, dy * inv, dz * inv };
-
-						// Mostly away from you; blend walk direction so it feels like a bump
-						RBX::Vec3 dir = away;
-						if (pushHint.X != 0.f || pushHint.Z != 0.f) {
-							dir.X = away.X * 0.55f + pushHint.X * 0.45f;
-							dir.Z = away.Z * 0.55f + pushHint.Z * 0.45f;
-							dir.Y = 0.55f;
-							float dl = sqrtf(dir.X * dir.X + dir.Y * dir.Y + dir.Z * dir.Z);
-							if (dl > 0.001f) { dir.X /= dl; dir.Y /= dl; dir.Z /= dl; }
-						}
-						else {
-							dir.Y = 0.55f;
-							float dl = sqrtf(dir.X * dir.X + dir.Y * dir.Y + dir.Z * dir.Z);
-							if (dl > 0.001f) { dir.X /= dl; dir.Y /= dl; dir.Z /= dl; }
+							const float dx = theirPos.X - myPos.X;
+							const float dy = theirPos.Y - myPos.Y;
+							const float dz = theirPos.Z - myPos.Z;
+							const float d = sqrtf(dx * dx + dy * dy + dz * dz);
+							if (d > acquireR || d < 0.05f) continue;
+							if (d < bestD) {
+								bestD = d;
+								bestPos = theirPos;
+								bestRoot = plr.rootPartAddr;
+								bestHum = plr.humanoidAddr;
+							}
 						}
 
-						float up = power * 0.85f;
-						if (up < 70.f) up = 70.f;
-						RBX::Vec3 flingVel{ dir.X * power, up, dir.Z * power };
+						WriteLocalVelocity(rootPart, { 0.f, 0.f, 0.f });
+						WriteLocalAngularVelocity(rootPart, { 0.f, 0.f, 0.f });
 
-						auto flingPart = [&](uintptr_t partAddr) {
-							if (!partAddr) return;
-							RBX::RbxInstance part(partAddr);
-							auto pp = part.GetPrimitivePtr();
-							if (!pp) return;
-							memory->write<RBX::Vec3>(pp + Offsets::Primitive::AssemblyLinearVelocity, flingVel);
-							// Spin them (not you) so the fling "takes"
-							memory->write<RBX::Vec3>(pp + Offsets::Primitive::AssemblyAngularVelocity,
-								{ 0.f, power * 0.08f, 0.f });
-						};
+						if (bestRoot && bestD <= acquireR) {
+							RBX::Vec3 away{
+								bestPos.X - myPos.X,
+								(bestPos.Y - myPos.Y) * 0.25f + 0.75f,
+								bestPos.Z - myPos.Z
+							};
+							float al = sqrtf(away.X * away.X + away.Y * away.Y + away.Z * away.Z);
+							if (al > 0.05f) {
+								away.X /= al; away.Y /= al; away.Z /= al;
+							} else {
+								away = { 0.f, 1.f, 0.f };
+							}
 
-						flingPart(plr.rootPartAddr);
-						flingPart(plr.headAddr);
-						if (plr.characterAddr) {
-							RBX::RbxInstance ch(plr.characterAddr);
-							auto torso = ch.FindChild("UpperTorso");
-							if (!torso.Addr) torso = ch.FindChild("Torso");
-							if (torso.Addr) flingPart(torso.Addr);
+							if (Globals::camera.Addr) {
+								auto cf = Globals::camera.GetCameraCFrame();
+								RBX::Vec3 look = cf.GetLookVector();
+								look.X = -look.X; look.Z = -look.Z; look.Y = 0.f;
+								const float ll = sqrtf(look.X * look.X + look.Z * look.Z);
+								if (ll > 0.05f) {
+									look.X /= ll; look.Z /= ll;
+									away.X = away.X * 0.35f + look.X * 0.65f;
+									away.Z = away.Z * 0.35f + look.Z * 0.65f;
+									away.Y = 0.65f;
+									al = sqrtf(away.X * away.X + away.Y * away.Y + away.Z * away.Z);
+									if (al > 0.001f) { away.X /= al; away.Y /= al; away.Z /= al; }
+								}
+							}
+
+							float proximity = 1.f - (bestD / acquireR);
+							if (proximity < 0.2f) proximity = 0.2f;
+							const float launch = power * (0.9f + proximity * 0.45f);
+							const float spin = (std::min)(launch * 0.08f, 48.f);
+
+							RBX::RbxInstance victimRoot(bestRoot);
+							const uintptr_t victimPrim = victimRoot.GetPrimitivePtr();
+							if (victimPrim) {
+								const RBX::Vec3 flingVel{
+									away.X * launch,
+									launch * 0.82f,
+									away.Z * launch
+								};
+								const int reps = bestD <= touchR * 0.55f ? 10 : (bestD <= touchR ? 7 : 5);
+								WritePrimVelocityBurst(victimPrim, flingVel, reps);
+								memory->write<RBX::Vec3>(
+									victimPrim + Offsets::Primitive::AssemblyAngularVelocity,
+									{ 0.f, spin, 0.f });
+								memory->write<RBX::Vec3>(
+									victimPrim + Offsets::Primitive::AssemblyAngularVelocity,
+									{ 0.f, spin * 0.5f, 0.f });
+
+								if (bestHum) {
+									if (lastVictimHum && lastVictimHum != bestHum)
+										memory->write<uint8_t>(lastVictimHum + Offsets::Humanoid::PlatformStand, 0);
+									memory->write<uint8_t>(bestHum + Offsets::Humanoid::PlatformStand, 1);
+									memory->write<uint8_t>(bestHum + Offsets::Humanoid::Sit, 0);
+									lastVictimHum = bestHum;
+								}
+							}
+						} else {
+							clearFlingVictim();
 						}
-					}
-
-					// If a collision still kicks you, damp yourself back to walk speeds
-					if (prim) {
-						RBX::Vec3 me = memory->read<RBX::Vec3>(prim + Offsets::Primitive::AssemblyLinearVelocity);
-						float mySpd = sqrtf(me.X * me.X + me.Y * me.Y + me.Z * me.Z);
-						if (mySpd > 48.f) {
-							float s = 22.f / mySpd;
-							WriteLocalVelocity(rootPart, { me.X * s, me.Y * 0.35f, me.Z * s });
-						}
-						memory->write<RBX::Vec3>(prim + Offsets::Primitive::AssemblyAngularVelocity, { 0, 0, 0 });
 					}
 				}
 			}
 
-			// Anti-fling — kill spin + damp true fling spikes (touch handled via part flags below)
+			// Anti-fling — devforum pattern: zero spin, clamp velocity spikes, force Running state
 			if (variables::Local::antiFling) {
+				static auto antiFlingUntil = std::chrono::steady_clock::now();
 				auto prim = rootPart.GetPrimitivePtr();
 				if (prim) {
-					memory->write<RBX::Vec3>(prim + Offsets::Primitive::AssemblyAngularVelocity, { 0, 0, 0 });
+					WriteLocalAngularVelocity(rootPart, { 0.f, 0.f, 0.f });
+					memory->write<RBX::Vec3>(prim + Offsets::Primitive::AssemblyAngularVelocity, { 0.f, 0.f, 0.f });
 
-					if (!variables::Local::walkFling) {
-						RBX::Vec3 v = memory->read<RBX::Vec3>(prim + Offsets::Primitive::AssemblyLinearVelocity);
-						float horiz = sqrtf(v.X * v.X + v.Z * v.Z);
-						float expected = 22.f;
-						if (variables::Local::speedEnabled)
-							expected = (std::max)(expected, variables::Local::walkSpeed * 1.15f);
-						if (variables::Local::flyEnabled && variables::Local::flyActive)
-							expected = (std::max)(expected, variables::Local::flySpeed * 1.15f);
-						const float flingFloor = expected + 90.f;
-						const bool crazyHoriz = horiz > flingFloor;
-						const bool crazyVert = fabsf(v.Y) > 160.f;
-						if (crazyHoriz || crazyVert) {
-							float hx = v.X, hz = v.Z;
-							if (crazyHoriz && horiz > 1.f) {
-								float keep = expected / horiz;
-								hx *= keep;
-								hz *= keep;
+					RBX::Vec3 v = memory->read<RBX::Vec3>(prim + Offsets::Primitive::AssemblyLinearVelocity);
+					const float horiz = sqrtf(v.X * v.X + v.Z * v.Z);
+					float expected = 20.f;
+					if (variables::Local::speedEnabled)
+						expected = (std::max)(expected, variables::Local::walkSpeed * 1.1f);
+					if (variables::Local::flyEnabled && variables::Local::flyActive)
+						expected = (std::max)(expected, variables::Local::flySpeed * 1.1f);
+
+					const float softCap = expected + 14.f;
+					const float hardCap = expected + 38.f;
+					const float extremeCap = expected + 95.f;
+					const bool spikeHoriz = horiz > softCap;
+					const bool spikeVert = fabsf(v.Y) > 52.f;
+					const bool extreme = horiz > extremeCap || fabsf(v.Y) > 120.f;
+					bool changed = false;
+
+					if (extreme) {
+						v = { 0.f, (v.Y > 0.f && v.Y < 8.f) ? v.Y : 0.f, 0.f };
+						changed = true;
+					} else if (spikeHoriz && horiz > 1.f) {
+						const float target = horiz > hardCap ? expected : softCap;
+						const float scale = target / horiz;
+						v.X *= scale;
+						v.Z *= scale;
+						changed = true;
+					}
+					if (!extreme && spikeVert) {
+						v.Y *= 0.22f;
+						if (fabsf(v.Y) > 42.f)
+							v.Y = (v.Y > 0.f ? 42.f : -42.f);
+						changed = true;
+					}
+
+					if (changed) {
+						WriteLocalVelocity(rootPart, v);
+						memory->write<RBX::Vec3>(prim + Offsets::Primitive::AssemblyLinearVelocity, v);
+						WriteLocalAngularVelocity(rootPart, { 0.f, 0.f, 0.f });
+						if (humanoid.Addr) {
+							ForceHumanoidRunning(humanoid.Addr);
+							if (horiz > hardCap || fabsf(v.Y) > 75.f || extreme) {
+								memory->write<uint8_t>(humanoid.Addr + Offsets::Humanoid::PlatformStand, 1);
+								const int ms = extreme ? 160 : 90;
+								antiFlingUntil = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
 							}
-							float hy = v.Y;
-							if (crazyVert)
-								hy = (v.Y > 0.f ? 1.f : -1.f) * (std::min)(fabsf(v.Y), 70.f);
-							WriteLocalVelocity(rootPart, { hx, hy, hz });
 						}
+					} else if (humanoid.Addr && std::chrono::steady_clock::now() >= antiFlingUntil) {
+						memory->write<uint8_t>(humanoid.Addr + Offsets::Humanoid::PlatformStand, 0);
 					}
 				}
 			}
@@ -832,13 +942,19 @@ namespace
 				prevFlyEnabled = variables::Local::flyEnabled;
 
 				int fk = variables::Local::flyKey;
-				if (fk <= 0) fk = 'F';
-				bool flyHeld = GameKeyDown(fk);
-				if (flyHeld && !flyKeyLatched && variables::Local::flyEnabled) {
-					variables::Local::flyActive = !variables::Local::flyActive;
-					flyKeyLatched = true;
+				if (fk > 0) {
+					bool flyHeld = GameKeyDown(fk);
+					if (flyHeld && !flyKeyLatched) {
+						if (!variables::Local::flyEnabled) {
+							variables::Local::flyEnabled = true;
+							variables::Local::flyActive = true;
+						} else {
+							variables::Local::flyActive = !variables::Local::flyActive;
+						}
+						flyKeyLatched = true;
+					}
+					else if (!flyHeld) flyKeyLatched = false;
 				}
-				else if (!flyHeld) flyKeyLatched = false;
 			}
 
 			if (!Globals::camera.Addr && Globals::workspace.Addr)
@@ -974,6 +1090,11 @@ namespace
 
 					part.SetSize(want);
 					memory->write<rbx::vector3_t>(prim + Offsets::Primitive::Size, want);
+					uint8_t flags = memory->read<uint8_t>(prim + Offsets::Primitive::Flags);
+					flags = (uint8_t)(flags | Offsets::PrimitiveFlags::CanQuery);
+					flags = (uint8_t)(flags | Offsets::PrimitiveFlags::CanTouch);
+					flags = (uint8_t)(flags & ~Offsets::PrimitiveFlags::CanCollide);
+					memory->write<uint8_t>(prim + Offsets::Primitive::Flags, flags);
 				};
 
 				for (auto& plr : PlayerCache::snapshotPlayers()) {
@@ -1335,16 +1456,23 @@ namespace
 		SetLoad(0.10f, "Connecting to Roblox");
 		int tries = 0;
 		while (!memory->find_process_id(app)) {
-			if (++tries > 40)
-				return FailAttach("Roblox not found. Open Roblox, join a game, then restart.");
+			if (++tries > 5)
+				return FailAttach("Please join a game");
 			SetLoad(0.10f + (tries % 20) * 0.01f, "Waiting for Roblox");
 			std::this_thread::sleep_for(std::chrono::milliseconds(200));
 		}
 
 		SetLoad(0.25f, "Attaching process");
 #ifdef FRONTIER_KERNEL
-		if (!memory->attach_to_process(app))
-			return FailAttach("Kernel attach failed. Run as Admin and ensure kernel\\driver\\FrontierDrv.sys exists.");
+		if (!memory->attach_to_process(app)) {
+			char errBuf[384];
+			snprintf(errBuf, sizeof(errBuf),
+				"Kernel driver failed (error %lu): %s. "
+				"Run loader as Admin, enable test signing, reboot, then use kernel mode.",
+				(unsigned long)FrontierDriver::LastError(),
+				FrontierDriver::LastErrorText());
+			return FailAttach(errBuf);
+		}
 #else
 		if (!memory->attach_to_process(app) || !memory->find_module_address(app))
 			return FailAttach("Failed to attach to Roblox.");
@@ -1366,17 +1494,26 @@ namespace
 			(unsigned long long)anchors.visualEngine);
 
 		if (Globals::players.Addr == 0)
-			return FailAttach("Players service missing. Join a game first.");
+			return FailAttach("Please join a game");
 
 		SetLoad(0.55f, "Waiting for game");
 		tries = 0;
+		int homeTries = 0;
 		while (!IsGameSessionReady()) {
 			if (!memory->find_process_id(app))
-				return FailAttach("Roblox closed while waiting for a game.");
+				return FailAttach("Please join a game");
 
-			if (++tries > 600)
-				return FailAttach("Timed out. Join a game, spawn in, then restart.");
-			if ((tries % 10) == 0) {
+			const int64_t placeId = Games::ReadPlaceId();
+			if (placeId <= 0) {
+				if (++homeTries > 8)
+					return FailAttach("Please join a game");
+			} else {
+				homeTries = 0;
+				if (++tries > 150)
+					return FailAttach("Please join a game");
+			}
+
+			if (((tries + homeTries) % 10) == 0) {
 				Globals::workspace = Globals::dataModel.FindChildByClass("Workspace");
 				Globals::players = Globals::dataModel.FindChildByClass("Players");
 				if (Globals::workspace.Addr)
@@ -1393,9 +1530,12 @@ namespace
 					}
 				}
 			}
-			float pulse = 0.55f + 0.25f * ((tries % 20) / 20.0f);
+			float pulse = 0.55f + 0.25f * (((tries + homeTries) % 20) / 20.0f);
 			char waitMsg[96];
-			sprintf_s(waitMsg, "Waiting — join %s", Games::SupportedListShort());
+			if (placeId <= 0)
+				sprintf_s(waitMsg, "Please join a game");
+			else
+				sprintf_s(waitMsg, "Waiting — join %s", Games::SupportedListShort());
 			SetLoad(pulse, waitMsg);
 			std::this_thread::sleep_for(std::chrono::milliseconds(200));
 		}
@@ -1421,6 +1561,18 @@ namespace
 			(unsigned long long)Globals::players.Addr,
 			(unsigned long long)Globals::camera.Addr);
 
+		{
+			auto localChar = PlayerCache::ResolveCharacter(Globals::localPlayer);
+			auto localHrp = PlayerCache::FindRootPart(localChar);
+			auto pos = localHrp.Addr ? localHrp.GetPos() : RBX::Vec3{};
+			DebugLog::Write("Self-test: lp=%s char=%llX hrp=%llX pos=(%.1f,%.1f,%.1f) workspace=%s",
+				Globals::localPlayer.GetName().c_str(),
+				(unsigned long long)localChar.Addr,
+				(unsigned long long)localHrp.Addr,
+				pos.X, pos.Y, pos.Z,
+				Globals::workspace.GetName().c_str());
+		}
+
 		SetLoad(1.0f, readyMsg);
 		std::this_thread::sleep_for(std::chrono::milliseconds(280));
 		return true;
@@ -1445,8 +1597,23 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	if (!overlay.Initialize())
 		return 1;
 
-	FrontierPresence::gEnabled.store(variables::Misc::discordRpc);
+	ConfigIO::Load();
+
+	if (!RobloxIsRunning()) {
+		ShowTimedExitPrompt(overlay, "Please join a game");
+		overlay.Cleanup();
+		return 0;
+	}
+
+	FrontierPresence::SyncEnabled(variables::Misc::discordRpc);
 	FrontierPresence::StartWorker();
+
+	std::string licenseErr;
+	if (!SessionGate::ValidateSession(licenseErr)) {
+		ShowTimedExitPrompt(overlay, licenseErr.c_str());
+		overlay.Cleanup();
+		return 0;
+	}
 
 	std::atomic<bool> attachSucceeded{ false };
 	std::thread attachThread;
@@ -1464,22 +1631,43 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		auto aliveNow = std::chrono::steady_clock::now();
 		if (std::chrono::duration<float>(aliveNow - lastAliveCheck).count() >= 0.75f) {
 			lastAliveCheck = aliveNow;
-			if (!WindowManager::FindRobloxHwnd() && !memory->find_process_id(app))
-				break;
+			if (!WindowManager::FindRobloxHwnd() && !memory->find_process_id(app)) {
+				if (!attachSucceeded.load()) {
+					if (!variables::Loading::failed)
+						FailAttach("Please join a game");
+				} else {
+					break;
+				}
+			}
 		} else if (!WindowManager::IsRobloxOpen() && memory->get_process_id() == 0) {
-			if (!WindowManager::FindRobloxHwnd() && !memory->find_process_id(app))
-				break;
+			if (!WindowManager::FindRobloxHwnd() && !memory->find_process_id(app)) {
+				if (!attachSucceeded.load()) {
+					if (!variables::Loading::failed)
+						FailAttach("Please join a game");
+				} else {
+					break;
+				}
+			}
 		}
 
 		if (variables::Loading::failed) {
+			static auto failedSince = std::chrono::steady_clock::time_point{};
+			static bool failedTimerActive = false;
+			if (!failedTimerActive) {
+				failedSince = std::chrono::steady_clock::now();
+				failedTimerActive = true;
+			}
+
 			overlay.BeginFrame();
 			overlay.RenderLoading();
 			overlay.EndFrame();
-			if (GetAsyncKeyState(VK_ESCAPE) & 1) break;
+
+			const float failedFor = std::chrono::duration<float>(
+				std::chrono::steady_clock::now() - failedSince).count();
+			if (failedFor >= 4.f || (GetAsyncKeyState(VK_ESCAPE) & 1))
+				break;
 			continue;
 		}
-
-		// Key gate removed ΓÇö open source build starts session load immediately
 
 		if (!attachStarted) {
 			attachStarted = true;
@@ -1495,19 +1683,11 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 					} else {
 						variables::menuOpen = true;
 					}
-					variables::ESP::enabled = true;
-					variables::Aimbot::enabled = true;
-					variables::Aimbot::requireVisible = false;
-					variables::Trigger::requireVisible = false;
 					Visibility::EnsureWorker();
 					Visibility::RequestRebuild();
 					if (variables::Misc::discordRpc) {
-						FrontierPresence::gEnabled.store(true);
-						if (Globals::dataModel.Addr) {
-							const int64_t placeId = memory->read<int64_t>(
-								Globals::dataModel.Addr + Offsets::DataModel::PlaceId);
-							FrontierPresence::SetInGame(Games::Name(), placeId, 0, 0);
-						}
+						FrontierPresence::SyncEnabled(true);
+						FrontierPresence::UpdateFromSession();
 					}
 				}
 			});
@@ -1522,6 +1702,16 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 
 		int menuVk = variables::Misc::menuVk;
 		const bool gameFocused = WindowManager::IsRobloxFocused();
+		static bool wasMenuUi = false;
+		const bool menuUi = variables::menuOpen || variables::Misc::floatingPanelOpen;
+		if (wasMenuUi && !menuUi)
+			Aimbot::ReleaseCursorClip();
+		wasMenuUi = menuUi;
+		static bool wasGameFocused = false;
+		if (wasGameFocused && !gameFocused)
+			Aimbot::ReleaseCursorClip();
+		wasGameFocused = gameFocused;
+
 		if (gameFocused && ((GetAsyncKeyState(menuVk) & 1) || (GetAsyncKeyState(VK_INSERT) & 1) || (GetAsyncKeyState(VK_RCONTROL) & 1))) {
 			if (!variables::Loading::active && !Telemetry::consentPending.load()) {
 				if (variables::Theme::useFloatingHeader)
@@ -1541,30 +1731,19 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 			continue;
 		}
 
-		if (variables::Misc::discordRpc) {
-			FrontierPresence::gEnabled.store(true);
+		static bool lastDiscordRpc = variables::Misc::discordRpc;
+		if (variables::Misc::discordRpc != lastDiscordRpc) {
+			lastDiscordRpc = variables::Misc::discordRpc;
+			FrontierPresence::SyncEnabled(variables::Misc::discordRpc);
+		}
+
+		if (variables::Misc::discordRpc && attachSucceeded.load()) {
 			static auto lastPresence = std::chrono::steady_clock::now();
-			if (attachSucceeded.load()) {
-				auto nowRpc = std::chrono::steady_clock::now();
-				if (std::chrono::duration<float>(nowRpc - lastPresence).count() >= 8.f) {
-					lastPresence = nowRpc;
-					if (Globals::dataModel.Addr && Games::IsSupported()) {
-						const int64_t placeId = memory->read<int64_t>(
-							Globals::dataModel.Addr + Offsets::DataModel::PlaceId);
-						int players = 0;
-						if (Globals::renderEngine.Addr != 0) {
-							for (auto& p : PlayerCache::snapshotPlayers()) {
-								if (p.isValid && p.health > 0.f) ++players;
-							}
-						}
-						FrontierPresence::SetInGame(Games::Name(), placeId, players, 0);
-					} else {
-						FrontierPresence::SetWaiting();
-					}
-				}
+			auto nowRpc = std::chrono::steady_clock::now();
+			if (std::chrono::duration<float>(nowRpc - lastPresence).count() >= 5.f) {
+				lastPresence = nowRpc;
+				FrontierPresence::UpdateFromSession();
 			}
-		} else {
-			FrontierPresence::gEnabled.store(false);
 		}
 
 		static bool telemetryReady = false;
@@ -1585,6 +1764,11 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 			PlayerCache::refreshLivePositions();
 
 			auto viewMatrix = Globals::renderEngine.GetViewMat();
+			if (Globals::renderEngine.Addr) {
+				float rw = memory->read<float>(Globals::renderEngine.Addr + Offsets::VisualEngine::Dimensions);
+				float rh = memory->read<float>(Globals::renderEngine.Addr + Offsets::VisualEngine::Dimensions + 0x4);
+				W2S::SetRenderDimensions(rw, rh);
+			}
 			if (!Scanner::ViewMatrixLooksValid(viewMatrix)) {
 				const auto anchors = Scanner::ResolveAnchors();
 				if (anchors.success) {
@@ -1607,10 +1791,20 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 			}
 
 			Aimbot::RunAimbot(viewMatrix, players);
+			Aimbot::RunSilentFireAssist(viewMatrix, players);
+			Aimbot::RunMagicBulletAssist(viewMatrix, players);
 			Aimbot::RunTriggerbot(viewMatrix, players);
 			Aimbot::RunMeleeAura(players);
 
-			if (variables::ESP::enabled)
+			if (variables::ESP::enabled ||
+				variables::ESP::names ||
+				variables::ESP::healthText ||
+				variables::ESP::distance ||
+				variables::ESP::equippedItem ||
+				variables::ESP::skeleton ||
+				variables::ESP::chamsEnabled ||
+				variables::ESP::wireframePlayers ||
+				variables::ESP::oofArrows)
 				Visuals::RenderESP(drawList, viewMatrix, players);
 
 			if (IsInActiveGame()) {
@@ -1650,7 +1844,7 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	if (attachThread.joinable()) attachThread.join();
 	if (tpThread.joinable()) tpThread.join();
 	if (locThread.joinable()) locThread.join();
-	if (animThread.joinable()) animThread.detach();
+	if (animThread.joinable()) animThread.join();
 	overlay.Cleanup();
 	return 0;
 }

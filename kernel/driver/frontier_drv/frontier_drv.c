@@ -2,7 +2,8 @@
 #include <ntstrsafe.h>
 
 #define DEVICE_NAME L"\\Device\\FrontierDrv"
-#define SYMLINK_NAME L"\\DosDevices\\FrontierDrv"
+#define SYMLINK_NAME L"\\DosDevices\\Global\\FrontierDrv"
+#define SYMLINK_NAME_LEGACY L"\\DosDevices\\FrontierDrv"
 
 #define IOCTL_FRONTIER_READ_MEMORY \
     CTL_CODE(0x8000, 0x801, METHOD_BUFFERED, FILE_ANY_ACCESS)
@@ -28,6 +29,10 @@ NTKERNELAPI NTSTATUS NTAPI MmCopyVirtualMemory(
     SIZE_T BufferSize,
     KPROCESSOR_MODE PreviousMode,
     PSIZE_T ReturnSize);
+
+NTKERNELAPI NTSTATUS NTAPI PsLookupProcessByProcessId(
+    HANDLE ProcessId,
+    PEPROCESS* Process);
 
 static PDEVICE_OBJECT gDeviceObject = NULL;
 
@@ -142,6 +147,8 @@ static VOID DriverUnload(PDRIVER_OBJECT driverObject)
     UNICODE_STRING symlink;
     RtlInitUnicodeString(&symlink, SYMLINK_NAME);
     IoDeleteSymbolicLink(&symlink);
+    RtlInitUnicodeString(&symlink, SYMLINK_NAME_LEGACY);
+    IoDeleteSymbolicLink(&symlink);
     if (gDeviceObject)
         IoDeleteDevice(gDeviceObject);
 }
@@ -173,6 +180,9 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT driverObject, PUNICODE_STRING registryPath)
         gDeviceObject = NULL;
         return status;
     }
+
+    RtlInitUnicodeString(&symlink, SYMLINK_NAME_LEGACY);
+    (void)IoCreateSymbolicLink(&symlink, &deviceName);
 
     driverObject->MajorFunction[IRP_MJ_CREATE] = DispatchCreate;
     driverObject->MajorFunction[IRP_MJ_CLOSE] = DispatchClose;

@@ -69,6 +69,7 @@
     <ClInclude Include="src\memory\memory.h" />
     <ClInclude Include="src\render\render.h" />
     <ClInclude Include="src\render\avatar_cache.h" />
+    <ClInclude Include="src\render\brand_assets.h" />
     <ClInclude Include="src\render\ui_fx.h" />
     <ClInclude Include="src\sdk\math.h" />
     <ClInclude Include="src\sdk\offsets.h" />
@@ -209,6 +210,9 @@
       <GenerateDebugInformation>false</GenerateDebugInformation>
       <AdditionalDependencies>winhttp.lib;windowscodecs.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <PostBuildEvent>
+      <Command>xcopy /Y /I /Q "$(ProjectDir)assets" "$(OutDir)assets\"</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseKernel|x64'">
     <ClCompile>

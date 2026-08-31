@@ -13,6 +13,10 @@ namespace DiscordIPC {
         int64_t startTimestamp = 0;
         int partySize = 0;
         int partyMax = 0;
+        const char* button1Label = nullptr;
+        const char* button1Url = nullptr;
+        const char* button2Label = nullptr;
+        const char* button2Url = nullptr;
     };
 
     bool Connect(const char* applicationId);
@@ -20,6 +24,7 @@ namespace DiscordIPC {
     bool IsConnected();
 
     bool SetActivity(const Activity& activity);
-    void Pump(int maxFrames = 8);
+    bool ClearActivity();
+    void Pump(int maxFrames = 16);
 
 }

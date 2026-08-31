@@ -22,12 +22,14 @@
 #include "../../src/render/ui_fx.h"
 #include "../../src/render/spotify_player.h"
 #include "../../src/render/embedded_fonts.h"
+#include "../../src/render/brand_assets.h"
 #include "../../src/render/brand.h"
 #include "../../src/render/frontier_shell.h"
 #include "../../src/render/frontier_menu.h"
 #include "../../src/core/features/aimbot/aimbot.h"
 #include "../../src/core/telemetry/telemetry.h"
 #include "../../src/core/updater/updater.h"
+#include "../../src/core/servers/server_browser.h"
 
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "dwmapi.lib")
@@ -111,6 +113,29 @@ namespace UI {
         if (!variables::Theme::styleDirty) return;
         ApplyStyle();
         variables::Theme::styleDirty = false;
+    }
+}
+
+#ifndef WDA_EXCLUDEFROMCAPTURE
+#define WDA_EXCLUDEFROMCAPTURE 0x00000011
+#endif
+
+namespace CaptureExclusion {
+    inline void Apply(HWND hwnd, bool hide)
+    {
+        if (!hwnd || !IsWindow(hwnd)) return;
+
+        const DWORD affinity = hide ? WDA_EXCLUDEFROMCAPTURE : WDA_NONE;
+        if (!SetWindowDisplayAffinity(hwnd, affinity)) {
+            if (hide)
+                SetWindowDisplayAffinity(hwnd, WDA_MONITOR);
+            else
+                SetWindowDisplayAffinity(hwnd, WDA_NONE);
+        }
+
+        BOOL dwmHide = hide ? TRUE : FALSE;
+        DwmSetWindowAttribute(hwnd, 12, &dwmHide, sizeof(dwmHide)); // DWMWA_EXCLUDED_FROM_PEEK
+        DwmSetWindowAttribute(hwnd, 11, &dwmHide, sizeof(dwmHide)); // DWMWA_DISALLOW_PEEK
     }
 }
 
@@ -210,6 +235,8 @@ public:
         ImGui_ImplWin32_Init(windowHandle);
         ImGui_ImplDX11_Init(d3dDevice, d3dContext);
         AvatarCache::Init(d3dDevice);
+        BrandAssets::LoadLogo(d3dDevice);
+        CaptureExclusion::Apply(windowHandle, variables::Misc::streamProof || variables::Misc::streamerModePlus);
         return true;
     }
 
@@ -267,7 +294,8 @@ public:
             style |= WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
         if (!clickable) style |= WS_EX_TRANSPARENT;
         static LONG lastStyle = 0;
-        if (style != lastStyle) {
+        const bool styleChanged = (style != lastStyle);
+        if (styleChanged) {
             SetWindowLong(windowHandle, GWL_EXSTYLE, style);
             SetWindowPos(windowHandle, nullptr, 0, 0, 0, 0,
                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED | SWP_NOACTIVATE);
@@ -279,12 +307,38 @@ public:
             SetActiveWindow(windowHandle);
         }
 
-        bool hideCapture = variables::Misc::streamProof || variables::Misc::streamerModePlus;
-        SetWindowDisplayAffinity(windowHandle, hideCapture ? WDA_EXCLUDEFROMCAPTURE : WDA_NONE);
+        const bool hideCapture = variables::Misc::streamProof || variables::Misc::streamerModePlus;
+        static bool lastHideCapture = false;
+        static RECT lastOverlayRect{};
+        RECT overlayRect{};
+        if (GetWindowRect(windowHandle, &overlayRect)) {
+            const bool rectChanged =
+                overlayRect.left != lastOverlayRect.left ||
+                overlayRect.top != lastOverlayRect.top ||
+                overlayRect.right != lastOverlayRect.right ||
+                overlayRect.bottom != lastOverlayRect.bottom;
+            if (rectChanged)
+                lastOverlayRect = overlayRect;
+            if (hideCapture || hideCapture != lastHideCapture || styleChanged || rectChanged)
+                CaptureExclusion::Apply(windowHandle, hideCapture);
+        } else if (hideCapture || hideCapture != lastHideCapture || styleChanged) {
+            CaptureExclusion::Apply(windowHandle, hideCapture);
+        }
+        lastHideCapture = hideCapture;
 
         ImGui_ImplDX11_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
+
+        // When the menu is closed, don't let ImGui hold the OS cursor.
+        if (!clickable) {
+            ImGuiIO& io = ImGui::GetIO();
+            io.MouseDrawCursor = false;
+            io.WantCaptureMouse = false;
+            io.WantCaptureKeyboard = false;
+            for (int i = 0; i < IM_ARRAYSIZE(io.MouseDown); ++i)
+                io.MouseDown[i] = false;
+        }
     }
 
     void RenderLoading() {
@@ -298,7 +352,7 @@ public:
         if (target >= 0.995f || target <= displayProgress + 0.002f)
             displayProgress = target;
 
-        UIFx::DrawLoadingFX(dl, ds, displayProgress);
+        UIFx::DrawLoadingFX(dl, ds, displayProgress, 1.f);
 
         char loadLine[128];
         if (variables::Loading::failed)
@@ -313,37 +367,18 @@ public:
         ImGui::Begin("##loading", nullptr,
             ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBackground);
 
-        const float leftX = 42.f;
-        const float topY = 38.f;
-
-        ImGui::SetWindowFontScale(1.75f);
-        ImGui::SetCursorPos(ImVec2(leftX, topY));
-        ImGui::TextColored(ImVec4(0.96f, 0.96f, 0.97f, 1.f), "%s", Frontier::kName);
-        ImGui::SetWindowFontScale(1.0f);
-
-        char tagLine[64];
-        sprintf_s(tagLine, "%s - %s", Frontier::kTagline, Frontier::kBuildTag);
-        ImGui::SetCursorPos(ImVec2(leftX, topY + 34.f));
-        ImGui::TextColored(ImVec4(0.52f, 0.52f, 0.56f, 1.f), "%s", tagLine);
-
-        if (!variables::Loading::failed) {
-            char pct[12];
-            sprintf_s(pct, "%d%%", (int)(displayProgress * 100.f + 0.5f));
-            ImGui::SetWindowFontScale(1.35f);
-            ImGui::SetCursorPos(ImVec2(leftX, topY + 62.f));
-            ImGui::TextColored(ImVec4(0.92f, 0.92f, 0.94f, 1.f), "%s", pct);
-            ImGui::SetWindowFontScale(1.0f);
-        }
-
-        ImGui::SetCursorPos(ImVec2(leftX, topY + 92.f));
+        const float textY = ds.y * 0.42f + 72.f;
+        ImVec2 ls = ImGui::CalcTextSize(loadLine);
+        ImGui::SetCursorPos(ImVec2((ds.x - ls.x) * 0.5f, textY));
         if (variables::Loading::failed)
             ImGui::TextColored(ImVec4(1.f, 0.45f, 0.42f, 0.95f), "%s", loadLine);
         else
-            ImGui::TextColored(ImVec4(0.58f, 0.58f, 0.64f, 0.95f), "%s", loadLine);
+            ImGui::TextColored(ImVec4(0.52f, 0.52f, 0.58f, 0.9f), "%s", loadLine);
 
         if (variables::Loading::failed) {
-            const char* hint = "Press Esc to exit";
-            ImGui::SetCursorPos(ImVec2(leftX, topY + 118.f));
+            const char* hint = "Closing automatically…";
+            ImVec2 hs = ImGui::CalcTextSize(hint);
+            ImGui::SetCursorPos(ImVec2((ds.x - hs.x) * 0.5f, textY + 22.f));
             ImGui::TextColored(ImVec4(0.48f, 0.48f, 0.54f, 0.85f), "%s", hint);
         }
 
@@ -408,10 +443,9 @@ public:
         case 2: w = 700.f; h = 520.f; break;
         case 3: w = 760.f; h = maxH; break;
         case 4: w = 660.f; h = 600.f; break;
-        case 5: w = 780.f; h = maxH; break; // Explorer — own scroll panes
-        case 6: w = 660.f; h = 600.f; break;
-        case 7: w = 500.f; h = maxH < 700.f ? maxH : 700.f; break;
-        case 8: w = 520.f; h = maxH < 740.f ? maxH : 740.f; break;
+        case 5: w = 660.f; h = 600.f; break;
+        case 6: w = 500.f; h = maxH < 700.f ? maxH : 700.f; break;
+        case 7: w = 640.f; h = maxH < 720.f ? maxH : 720.f; break;
         default: break;
         }
 
@@ -435,7 +469,7 @@ public:
 
         static const char* tabNames[] = {
             "Combat", "Visuals", "World", "Character", "Options",
-            "Explorer", "Servers", "Music", "Status"
+            "Servers", "Music", "Status", "Configs"
         };
 
         ImVec2 ds = ImGui::GetIO().DisplaySize;
@@ -448,7 +482,7 @@ public:
         ImGui::SetNextWindowSize(sz, ImGuiCond_Always);
         ImGui::SetNextWindowSizeConstraints(ImVec2(380.f, 200.f), ImVec2(ds.x - 16.f, ds.y - 8.f));
         {
-            static bool placed[9] = {};
+            static bool placed[8] = {};
             if (!placed[tab]) {
                 ImGui::SetNextWindowPos(ImVec2(px, py), ImGuiCond_Always);
                 placed[tab] = true;
@@ -486,18 +520,13 @@ public:
         wdl->AddRectFilled(ImVec2(wp.x, wp.y + 8), ImVec2(wp.x + 2.5f, wp.y + 34),
             FrontierUI::U32(variables::Theme::brand, 0.65f), 2.f);
 
-        // Explorer manages its own panes; everything else gets a scroll frame
-        if (tab == 5) {
-            FrontierMenu::RenderTab(tab);
-        } else {
-            ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
-            ImGui::BeginChild("##mwscroll", ImVec2(0, 0), ImGuiChildFlags_NavFlattened,
-                ImGuiWindowFlags_AlwaysVerticalScrollbar);
-            FrontierMenu::RenderTab(tab);
-            ImGui::Dummy(ImVec2(0, 8)); // bottom pad so last controls aren't flush
-            ImGui::EndChild();
-            ImGui::PopStyleColor();
-        }
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
+        ImGui::BeginChild("##mwscroll", ImVec2(0, 0), ImGuiChildFlags_NavFlattened,
+            ImGuiWindowFlags_AlwaysVerticalScrollbar);
+        FrontierMenu::RenderTab(tab);
+        ImGui::Dummy(ImVec2(0, 8)); // bottom pad so last controls aren't flush
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
 
         variables::Misc::floatingPanelOpen = open;
         variables::Misc::menuHovered =
@@ -518,60 +547,157 @@ public:
         if (dt > 0.05f) dt = 0.05f;
         variables::Servers::redirectTimer -= dt;
         if (variables::Servers::redirectTimer <= 0.f) {
-            variables::Servers::redirecting = false;
+            ServerBrowser::DismissDisconnectScreen();
             return;
+        }
+
+        const bool banTroll = variables::Servers::disconnectKind == 1;
+        const float t = (float)ImGui::GetTime();
+
+        // Progress animation — redirect pulses; ban troll crawls then stalls near the end
+        float& prog = variables::Servers::redirectProgress;
+        if (banTroll) {
+            const float target = 0.87f + 0.03f * sinf(t * 0.7f);
+            prog += (target - prog) * (1.f - expf(-dt * 1.4f));
+            if (prog > 0.895f) prog = 0.895f + 0.004f * sinf(t * 2.2f);
+
+            const int phase = (int)(t * 0.22f) % 3;
+            const char* phases[] = {
+                "Verifying account status...",
+                "Contacting moderation services...",
+                "Processing moderation action..."
+            };
+            strcpy_s(variables::Servers::redirectStatus, phases[phase]);
+        } else {
+            const float pulse = 0.42f + 0.38f * (0.5f + 0.5f * sinf(t * 3.2f));
+            prog += (pulse - prog) * (1.f - expf(-dt * 8.f));
         }
 
         ImVec2 ds = ImGui::GetIO().DisplaySize;
         ImDrawList* dl = ImGui::GetForegroundDrawList();
-        dl->AddRectFilled(ImVec2(0, 0), ds, IM_COL32(0, 0, 0, 170));
+        dl->AddRectFilled(ImVec2(0, 0), ds, IM_COL32(0, 0, 0, 185));
 
-        const float boxW = 420.f;
-        const float boxH = 168.f;
-        ImVec2 box(ds.x * 0.5f - boxW * 0.5f, ds.y * 0.5f - boxH * 0.5f);
+        const float boxW = 492.f;
+        const float padX = 26.f;
+        const float padY = 22.f;
+        const float iconCol = 58.f;
+
+        ImFont* bold = EmbeddedFonts::gBold ? EmbeddedFonts::gBold : ImGui::GetFont();
+        ImFont* body = EmbeddedFonts::gBody ? EmbeddedFonts::gBody : ImGui::GetFont();
+        ImFont* fontSmall = EmbeddedFonts::gSmall ? EmbeddedFonts::gSmall : ImGui::GetFont();
+        const float boldSize = 20.f;
+        const float bodySize = 16.f;
+        const float smallSize = 13.f;
+
+        const char* title = "Disconnected";
+        const char* message = nullptr;
+        if (variables::Servers::redirectMsg[0])
+            message = variables::Servers::redirectMsg;
+        else if (banTroll)
+            message = "You have been banned from this experience.\nModeration message: Unauthorized third-party software detected.";
+        else
+            message = "Match is redirecting you, please wait";
+
+        const char* status = nullptr;
+        if (variables::Servers::redirectStatus[0])
+            status = variables::Servers::redirectStatus;
+        else if (banTroll)
+            status = "Verifying account status...";
+        else
+            status = "Joining server...";
+
+        const float wrapW = boxW - padX * 2.f - iconCol - 8.f;
+        ImVec2 msgSize = body->CalcTextSizeA(bodySize, FLT_MAX, wrapW, message);
+
+        const float barH = 7.f;
+        const float barGap = 14.f;
+        const float statusGap = 10.f;
+        const float errGap = banTroll ? 16.f : 0.f;
+        const float boxH = padY + 34.f + msgSize.y + barGap + barH + statusGap + 18.f + errGap + padY;
+        ImVec2 box(ds.x * 0.5f - boxW * 0.5f, ds.y * 0.5f - (boxH + 54.f) * 0.5f);
         ImVec2 boxMax(box.x + boxW, box.y + boxH);
 
-        dl->AddRectFilled(box, boxMax, IM_COL32(18, 18, 22, 250), 12.f);
-        dl->AddRect(box, boxMax, IM_COL32(255, 255, 255, 32), 12.f, 0, 1.2f);
-        dl->AddRectFilled(ImVec2(box.x, box.y + 12), ImVec2(box.x + 3, box.y + boxH - 12),
-            IM_COL32(240, 200, 80, 255), 2.f);
+        // Roblox native dialog shell
+        dl->AddRectFilled(box, boxMax, IM_COL32(35, 37, 39, 252), 10.f);
+        dl->AddRect(box, boxMax, IM_COL32(255, 255, 255, 28), 10.f, 0, 1.f);
+        dl->AddRectFilled(ImVec2(box.x, box.y + 10.f), ImVec2(box.x + 4.f, box.y + boxH - 10.f),
+            IM_COL32(248, 217, 109, 255), 2.f);
 
-        // Warning triangle
-        ImVec2 tip(box.x + 42.f, box.y + 38.f);
-        ImVec2 t1(tip.x, tip.y - 16.f), t2(tip.x - 18.f, tip.y + 16.f), t3(tip.x + 18.f, tip.y + 16.f);
-        dl->AddTriangleFilled(t1, t2, t3, IM_COL32(245, 188, 66, 255));
-        dl->AddText(ImVec2(tip.x - 3.f, tip.y - 8.f), IM_COL32(18, 18, 22, 255), "!");
+        // Warning triangle (Roblox yellow)
+        ImVec2 tip(box.x + padX + 22.f, box.y + padY + 22.f);
+        ImVec2 t1(tip.x, tip.y - 17.f), t2(tip.x - 19.f, tip.y + 15.f), t3(tip.x + 19.f, tip.y + 15.f);
+        dl->AddTriangle(t1, t2, t3, IM_COL32(0, 0, 0, 180), 1.4f);
+        dl->AddTriangleFilled(t1, t2, t3, IM_COL32(248, 217, 109, 255));
+        if (bold)
+            dl->AddText(bold, boldSize * 0.72f, ImVec2(tip.x - 4.f, tip.y - 9.f),
+                IM_COL32(35, 37, 39, 255), "!");
 
-        dl->AddText(ImVec2(box.x + 74.f, box.y + 28.f), IM_COL32(255, 255, 255, 255), "Disconnected");
-        dl->AddText(ImVec2(box.x + 74.f, box.y + 54.f), IM_COL32(190, 190, 200, 255),
-            variables::Servers::redirectMsg[0] ? variables::Servers::redirectMsg
-            : "Match is redirecting you, please wait");
+        const float textX = box.x + padX + iconCol;
+        if (bold)
+            dl->AddText(bold, boldSize, ImVec2(textX, box.y + padY), IM_COL32(255, 255, 255, 255), title);
+        dl->AddText(body, bodySize, ImVec2(textX, box.y + padY + 30.f), IM_COL32(200, 203, 208, 255),
+            message, nullptr, wrapW);
 
-        float t = (float)ImGui::GetTime();
-        float pulse = 0.5f + 0.5f * sinf(t * 4.f);
-        float barX = box.x + 28.f;
-        float barY = box.y + 100.f;
-        float barW = boxW - 56.f;
-        dl->AddRectFilled(ImVec2(barX, barY), ImVec2(barX + barW, barY + 8.f), IM_COL32(28, 28, 34, 255), 4.f);
-        dl->AddRectFilled(ImVec2(barX, barY), ImVec2(barX + barW * (0.35f + pulse * 0.45f), barY + 8.f),
-            IM_COL32(230, 230, 240, 220), 4.f);
+        float barX = box.x + padX;
+        float barY = box.y + padY + 34.f + msgSize.y + barGap;
+        float barW = boxW - padX * 2.f;
+        dl->AddRectFilled(ImVec2(barX, barY), ImVec2(barX + barW, barY + barH), IM_COL32(57, 59, 63, 255), 3.f);
 
-        dl->AddText(ImVec2(box.x + 28.f, box.y + 122.f), IM_COL32(140, 145, 155, 255),
-            "Joining server...");
+        float fillW = barW * prog;
+        if (fillW > 2.f) {
+            dl->AddRectFilled(ImVec2(barX, barY), ImVec2(barX + fillW, barY + barH),
+                IM_COL32(235, 237, 240, 245), 3.f);
+            if (!banTroll) {
+                const float shimmer = barX + 6.f + fmodf(t * 120.f, (fillW > 24.f ? fillW - 24.f : 1.f));
+                dl->AddRectFilled(ImVec2(shimmer, barY + 1.f), ImVec2(shimmer + 16.f, barY + barH - 1.f),
+                    IM_COL32(255, 255, 255, 70), 2.f);
+            }
+        }
+
+        dl->AddText(fontSmall, smallSize, ImVec2(barX, barY + barH + statusGap),
+            IM_COL32(151, 155, 162, 255), status);
+
+        if (banTroll) {
+            dl->AddText(fontSmall, smallSize, ImVec2(barX, boxMax.y - padY - smallSize),
+                IM_COL32(120, 124, 132, 255), "Error Code: 600");
+        }
+
+        // Cancel button (native Roblox outline style)
+        const float btnW = 132.f;
+        const float btnH = 34.f;
+        ImVec2 btnMin(ds.x * 0.5f - btnW * 0.5f, boxMax.y + 16.f);
+        ImVec2 btnMax(btnMin.x + btnW, btnMin.y + btnH);
 
         ImGui::SetNextWindowPos(ImVec2(0, 0));
         ImGui::SetNextWindowSize(ds);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         ImGui::Begin("##redirectkick", nullptr,
             ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
             ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBackground);
-        // Block clicks under the kick UI
+        ImGui::PopStyleVar();
+
+        ImGui::SetCursorScreenPos(ImVec2(0, 0));
         ImGui::InvisibleButton("##redirectblock", ds);
+
+        ImGui::SetCursorScreenPos(btnMin);
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1, 1, 1, 0.06f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1, 1, 1, 0.10f));
+        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1, 1, 1, 0.55f));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.92f, 0.92f, 0.94f, 1.f));
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.f);
+        if (ImGui::Button("Cancel", ImVec2(btnW, btnH)))
+            ServerBrowser::DismissDisconnectScreen();
+        ImGui::PopStyleVar(2);
+        ImGui::PopStyleColor(5);
         ImGui::End();
     }
 
     void RenderMenu() {
         if (variables::Loading::active) return;
 
+        variables::Misc::menuHovered = false;
         UI::ApplyIfDirty();
 
         RenderUpdateBanner();
@@ -643,32 +769,27 @@ public:
         float uiScale = variables::Theme::menuScale;
         if (uiScale < 0.85f) uiScale = 0.85f;
         if (uiScale > 1.15f) uiScale = 1.15f;
-        float scale = (0.88f + 0.12f * ease) * uiScale;
-        float baseW = 960.f * uiScale, baseH = 620.f * uiScale;
-        float winW = baseW * scale;
-        float winH = baseH * scale;
-        float rise = (1.f - ease) * 28.f;
+        float baseW = 849.f * uiScale;
+        float baseH = 538.f * uiScale;
 
-        ImGui::SetNextWindowSize(ImVec2(winW, winH), ImGuiCond_Always);
-        ImGui::SetNextWindowSizeConstraints(ImVec2(780, 520), ImVec2(1200, 900));
-        // Appearing only ? Never Always (that centered every frame and blocked drag).
+        ImGui::SetNextWindowSize(ImVec2(baseW, baseH), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSizeConstraints(ImVec2(720.f, 460.f), ImVec2(ds.x - 16.f, ds.y - 8.f));
         {
             static bool haveDragPos = false;
             float px = haveDragPos ? variables::Misc::menuX : (ds.x * 0.5f - baseW * 0.5f);
             float py = haveDragPos ? variables::Misc::menuY : (ds.y * 0.5f - baseH * 0.5f);
             ImGui::SetNextWindowPos(ImVec2(px, py), ImGuiCond_Appearing);
-            (void)rise; // open anim is size/alpha only so drag stays free
             if (variables::Misc::menuW > 1.f && variables::Misc::menuH > 1.f)
                 haveDragPos = true;
         }
 
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ease);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 12.0f);
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.055f, 0.055f, 0.059f, 0.98f));
-        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1.f, 1.f, 1.f, 0.08f));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 7.0f);
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, UI::V4(variables::Theme::bg));
+        ImGui::PushStyleColor(ImGuiCol_Border, UI::V4(variables::Theme::border));
         ImGui::Begin("##mw", &variables::menuOpen,
-            ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize);
+            ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
 
         ImDrawList* wdl = ImGui::GetWindowDrawList();
         ImVec2 wp = ImGui::GetWindowPos();
@@ -688,7 +809,7 @@ public:
         ImVec2 contentOrigin = FrontierShell::ContentOrigin(wp);
         ImVec2 contentSize = FrontierShell::ContentSize(ww, wh);
         ImGui::SetCursorScreenPos(contentOrigin);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4, 4));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 8));
         ImGui::BeginChild("##content", contentSize, ImGuiChildFlags_None,
             ImGuiWindowFlags_AlwaysVerticalScrollbar);
         FrontierMenu::RenderBody();
@@ -981,28 +1102,56 @@ public:
             drawList->AddText(ImVec2(x, 10), FrontierUI::U32(variables::Theme::text), buf);
         }
 
-        if (variables::Aimbot::enabled && variables::Aimbot::showFOV && !variables::Loading::active) {
-            float screenW, screenH, ox, oy;
-            W2S::GetViewport(screenW, screenH, ox, oy);
-            // Always center ? must match aimbot FOV check
-            ImVec2 c(screenW * 0.5f, screenH * 0.5f);
+        if (variables::Aimbot::showFOV && !variables::Loading::active) {
+            Aimbot::RefreshFovCenter();
+            ImVec2 c(Aimbot::fovCenterX, Aimbot::fovCenterY);
             int a = (int)(variables::Aimbot::fovOpacity * 255);
-            float fr = variables::Aimbot::fovColor[0];
-            float fg = variables::Aimbot::fovColor[1];
-            float fb = variables::Aimbot::fovColor[2];
-            if (variables::Extra::fovRainbow) {
+            Aimbot::SyncUiSliders();
+            const bool silentActive = variables::Aimbot::silentAim || variables::Aimbot::aimType == 1;
+            float fr = silentActive ? variables::Theme::brand[0] : variables::Aimbot::fovColor[0];
+            float fg = silentActive ? variables::Theme::brand[1] : variables::Aimbot::fovColor[1];
+            float fb = silentActive ? variables::Theme::brand[2] : variables::Aimbot::fovColor[2];
+            if (!silentActive && variables::Extra::fovRainbow) {
                 float hue = fmodf((float)ImGui::GetTime() * 0.45f, 1.f);
                 ImGui::ColorConvertHSVtoRGB(hue, 0.9f, 1.f, fr, fg, fb);
             }
             ImU32 col = IM_COL32((int)(fr * 255), (int)(fg * 255), (int)(fb * 255), a);
-            float fovDraw = Aimbot::ComputeAcquireFov();
-            if (variables::Aimbot::fovFilled)
-                drawList->AddCircleFilled(c, fovDraw,
-                    IM_COL32((int)(fr * 255), (int)(fg * 255), (int)(fb * 255), a / 4), 64);
-            if (variables::Aimbot::fovGlow)
-                drawList->AddCircle(c, fovDraw,
-                    IM_COL32((int)(fr * 255), (int)(fg * 255), (int)(fb * 255), a / 3), 64, 4.0f);
-            drawList->AddCircle(c, fovDraw, col, 64, 1.5f);
+            float fovDraw = silentActive ? variables::Aimbot::silentFovRadius : variables::Aimbot::fovRadius;
+            if (variables::Aimbot::fovStyle == 1) {
+                const int dots = 56;
+                const float spin = (float)ImGui::GetTime() * 1.35f;
+                const float dotR = 2.4f;
+                constexpr float kPi = 3.14159265358979323846f;
+                for (int i = 0; i < dots; i++) {
+                    float ang = spin + (i / (float)dots) * kPi * 2.f;
+                    float x = c.x + cosf(ang) * fovDraw;
+                    float y = c.y + sinf(ang) * fovDraw;
+                    drawList->AddCircleFilled(ImVec2(x, y), dotR, col, 8);
+                }
+            } else {
+                if (variables::Aimbot::fovFilled)
+                    drawList->AddCircleFilled(c, fovDraw,
+                        IM_COL32((int)(fr * 255), (int)(fg * 255), (int)(fb * 255), a / 4), 64);
+                if (variables::Aimbot::fovGlow)
+                    drawList->AddCircle(c, fovDraw,
+                        IM_COL32((int)(fr * 255), (int)(fg * 255), (int)(fb * 255), a / 3), 64, 4.0f);
+                drawList->AddCircle(c, fovDraw, col, 64, silentActive ? 1.8f : 1.5f);
+            }
+            drawList->AddCircleFilled(c, 2.2f, IM_COL32(255, 255, 255, 180), 12);
+        }
+
+        if (variables::MagicBullet::showFov && variables::Hitbox::enabled && !variables::Loading::active) {
+            Aimbot::RefreshFovCenter();
+            ImVec2 c(Aimbot::fovCenterX, Aimbot::fovCenterY);
+            float fr = variables::MagicBullet::fovColor[0];
+            float fg = variables::MagicBullet::fovColor[1];
+            float fb = variables::MagicBullet::fovColor[2];
+            int a = (int)(variables::MagicBullet::fovColor[3] * 255);
+            if (a < 40) a = 200;
+            ImU32 col = IM_COL32((int)(fr * 255), (int)(fg * 255), (int)(fb * 255), a);
+            float fovDraw = variables::MagicBullet::fovRadius;
+            if (fovDraw < 20.f) fovDraw = 20.f;
+            drawList->AddCircle(c, fovDraw, col, 64, 1.6f);
         }
     }
 
@@ -1052,6 +1201,7 @@ public:
     }
 
     void Cleanup() {
+        Aimbot::OnAimReleased();
         SpotifyPlayer::Shutdown();
         ImGui_ImplDX11_Shutdown();
         ImGui_ImplWin32_Shutdown();

@@ -37,12 +37,37 @@ namespace CustomMusic {
         variables::Audio::localPlaying = false;
     }
 
+    inline void AddToPlaylist(const char* path)
+    {
+        if (!path || !path[0]) return;
+        for (int i = 0; i < variables::Audio::playlistCount; i++) {
+            if (_stricmp(variables::Audio::playlist[i], path) == 0) return;
+        }
+        if (variables::Audio::playlistCount >= 8) {
+            for (int i = 1; i < 8; i++)
+                strncpy_s(variables::Audio::playlist[i - 1], variables::Audio::playlist[i], _TRUNCATE);
+            variables::Audio::playlistCount = 7;
+        }
+        strncpy_s(variables::Audio::playlist[variables::Audio::playlistCount], path, _TRUNCATE);
+        variables::Audio::playlistCount++;
+    }
+
+    inline const char* PlaylistBaseName(const char* path)
+    {
+        if (!path || !path[0]) return "Track";
+        const char* slash = strrchr(path, '\\');
+        if (!slash) slash = strrchr(path, '/');
+        return slash ? slash + 1 : path;
+    }
+
     inline bool PlayLocalPath(const char* path)
     {
         if (!path || !path[0]) {
             strcpy_s(status, "No local file selected");
             return false;
         }
+        strncpy_s(variables::Audio::localPath, path, _TRUNCATE);
+        AddToPlaylist(path);
         StopLocal();
 
         char cmd[MAX_PATH + 64]{};
@@ -161,6 +186,19 @@ namespace CustomMusic {
         return found;
     }
 
+    inline void OpenRobloxCatalog()
+    {
+        std::string id = NormalizeAssetId(variables::Audio::robloxId);
+        if (id.empty()) {
+            strcpy_s(status, "Enter a Roblox audio asset ID");
+            return;
+        }
+        char url[128]{};
+        sprintf_s(url, "https://www.roblox.com/library/%s", id.c_str());
+        ShellExecuteA(nullptr, "open", url, nullptr, nullptr, SW_SHOWNORMAL);
+        strcpy_s(status, "Opened catalog page");
+    }
+
     inline bool ApplyRobloxId()
     {
         std::string id = NormalizeAssetId(variables::Audio::robloxId);
@@ -214,9 +252,10 @@ namespace CustomMusic {
         return true;
     }
 
+    inline void PlayPlaylistOffset(int delta);
+
     inline void Tick()
     {
-        // keep volume in sync while local plays
         if (mciOpen && variables::Audio::localPlaying) {
             int vol = (int)(variables::Audio::musicVolume * 1000.f);
             if (vol < 0) vol = 0;
@@ -224,6 +263,48 @@ namespace CustomMusic {
             char vcmd[64]{};
             sprintf_s(vcmd, "setaudio mwmusic volume to %d", vol);
             Mci(vcmd);
+
+            char mode[32]{};
+            if (mciSendStringA("status mwmusic mode", mode, sizeof(mode), nullptr) == 0) {
+                if (strstr(mode, "stopped")) {
+                    variables::Audio::localPlaying = false;
+                    if (!variables::Audio::musicLoop && variables::Audio::playlistCount > 1)
+                        PlayPlaylistOffset(1);
+                }
+            }
         }
+    }
+
+    inline void TogglePauseLocal()
+    {
+        if (!mciOpen) return;
+        char mode[32]{};
+        if (mciSendStringA("status mwmusic mode", mode, sizeof(mode), nullptr) != 0) return;
+        if (strstr(mode, "playing"))
+            Mci("pause mwmusic");
+        else if (strstr(mode, "paused"))
+            Mci("resume mwmusic");
+    }
+
+    inline bool IsLocalPaused()
+    {
+        if (!mciOpen) return true;
+        char mode[32]{};
+        if (mciSendStringA("status mwmusic mode", mode, sizeof(mode), nullptr) != 0) return true;
+        return strstr(mode, "paused") != nullptr;
+    }
+
+    inline void PlayPlaylistOffset(int delta)
+    {
+        if (variables::Audio::playlistCount <= 0) return;
+        int idx = 0;
+        for (int i = 0; i < variables::Audio::playlistCount; i++) {
+            if (_stricmp(variables::Audio::playlist[i], variables::Audio::localPath) == 0) {
+                idx = i;
+                break;
+            }
+        }
+        idx = (idx + delta + variables::Audio::playlistCount) % variables::Audio::playlistCount;
+        PlayLocalPath(variables::Audio::playlist[idx]);
     }
 }
