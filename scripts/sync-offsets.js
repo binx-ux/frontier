@@ -22,12 +22,12 @@ const FILES = [
   { remote: "Types.json", local: "types.json" },
 ];
 
-function fetchBuffer(url) {
+function fetchBuffer(url, headers) {
   return new Promise((resolve, reject) => {
     https
-      .get(url, (res) => {
+      .get(url, headers ? { headers } : undefined, (res) => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          fetchBuffer(res.headers.location).then(resolve, reject);
+          fetchBuffer(res.headers.location, headers).then(resolve, reject);
           return;
         }
         if (res.statusCode !== 200) {
@@ -51,6 +51,52 @@ function parseVersion(jsonText) {
   } catch (_) {
     return null;
   }
+}
+
+// Upstream dump omits attribute + desync RVAs — merge FRONTIER extensions after sync.
+function patchSdkHeader(headerPath) {
+  let text = fs.readFileSync(headerPath, "utf8");
+  if (!text.includes("namespace Attribute")) {
+    text = text.replace(
+      /(\s+namespace Instance \{)/,
+      [
+        "",
+        "    namespace Attribute {",
+        "         inline constexpr uintptr_t Key = 0x0;",
+        "         inline constexpr uintptr_t Size = 0x58;",
+        "         inline constexpr uintptr_t Value = 0x18;",
+        "         inline constexpr uintptr_t TypeDescriptor = 0x8;",
+        "    }",
+        "",
+        "    namespace AttributesMap {",
+        "         inline constexpr uintptr_t Attributes = 0x18;",
+        "         inline constexpr uintptr_t Length = 0x0;",
+        "    }",
+        "",
+        "    namespace Instance {",
+      ].join("\n")
+    );
+  }
+  if (!text.includes("AttributeContainer")) {
+    text = text.replace(
+      /(\s+inline constexpr uintptr_t Parent = 0x[0-9a-fA-F]+;\r?\n)/,
+      "$1         inline constexpr uintptr_t AttributeContainer = 0x48;\n"
+    );
+  }
+  if (!text.includes("namespace Desync")) {
+    text = text.replace(
+      /\}\s*$/,
+      [
+        "",
+        "    namespace Desync {",
+        "         inline constexpr uintptr_t PhysicsSenderMaxBandwidthBps = 0x7b9fb88;",
+        "    }",
+        "",
+        "}",
+      ].join("\n")
+    );
+  }
+  fs.writeFileSync(headerPath, text);
 }
 
 async function main() {
@@ -91,6 +137,7 @@ async function main() {
 
     if (entry.sdk) {
       fs.writeFileSync(SDK_HEADER, buf);
+      patchSdkHeader(SDK_HEADER);
       console.log("  sdk -> External/src/sdk/offsets.h");
     }
 
@@ -107,6 +154,7 @@ async function main() {
   const manifest = {
     project: "FRONTIER",
     source: BASE,
+    weao: "https://weao.xyz/api/versions/current",
     syncedAt,
     activeVersion,
     activeArchive: activeArchive ? "offsets/" + activeArchive : null,
@@ -120,6 +168,22 @@ async function main() {
   console.log("\nsynced FRONTIER offsets");
   console.log("  version:", activeVersion || "unknown");
   console.log("  active:", activeArchive || "n/a");
+
+  // Cross-check against WEAO live Roblox Windows channel
+  try {
+    const weaoBuf = await fetchBuffer("https://weao.xyz/api/versions/current", {
+      "User-Agent": "WEAO-3PService",
+    });
+    const weao = JSON.parse(weaoBuf.toString("utf8"));
+    const live = weao && weao.Windows ? String(weao.Windows).trim() : "";
+    if (live && activeVersion && live !== activeVersion) {
+      console.warn("  WEAO mismatch: live=" + live + " synced=" + activeVersion);
+    } else if (live) {
+      console.log("  WEAO verified:", live);
+    }
+  } catch (err) {
+    console.log("  WEAO check skipped:", err.message);
+  }
 }
 
 main().catch((err) => {

@@ -50,18 +50,6 @@ namespace Offsets {
          inline constexpr uintptr_t Position = 0xc4;
     }
 
-    namespace Attribute {
-         inline constexpr uintptr_t Key = 0x0;
-         inline constexpr uintptr_t Size = 0x58;
-         inline constexpr uintptr_t Value = 0x18;
-         inline constexpr uintptr_t TypeDescriptor = 0x8;
-    }
-
-    namespace AttributesMap {
-         inline constexpr uintptr_t Attributes = 0x18;
-         inline constexpr uintptr_t Length = 0x0;
-    }
-
     namespace BasePart {
          inline constexpr uintptr_t CastShadow = 0x135;
          inline constexpr uintptr_t Color3 = 0x1a8;
@@ -253,6 +241,18 @@ namespace Offsets {
          inline constexpr uintptr_t WalkspeedCheck = 0x3bc;
     }
 
+    namespace Attribute {
+         inline constexpr uintptr_t Key = 0x0;
+         inline constexpr uintptr_t Size = 0x58;
+         inline constexpr uintptr_t Value = 0x18;
+         inline constexpr uintptr_t TypeDescriptor = 0x8;
+    }
+
+    namespace AttributesMap {
+         inline constexpr uintptr_t Attributes = 0x18;
+         inline constexpr uintptr_t Length = 0x0;
+    }
+
     namespace Instance {
          inline constexpr uintptr_t ChildrenEnd = 0x8;
          inline constexpr uintptr_t ChildrenStart = 0x78;
@@ -262,9 +262,8 @@ namespace Offsets {
          inline constexpr uintptr_t Name = 0x8;
          inline constexpr uintptr_t NameContainer = 0x70;
          inline constexpr uintptr_t Parent = 0x68;
-         inline constexpr uintptr_t This = 0x8;
-         inline constexpr uintptr_t ComponentMap = 0x38;
          inline constexpr uintptr_t AttributeContainer = 0x48;
+         inline constexpr uintptr_t This = 0x8;
     }
 
     namespace Lighting {
@@ -626,8 +625,9 @@ namespace Offsets {
          inline constexpr uintptr_t worldStepsPerSec = 0x0;
     }
 
-}
+    // FFlag RVAs (version-f5a60436d48947d3) — used by desync / bandwidth exploits
+    namespace Desync {
+         inline constexpr uintptr_t PhysicsSenderMaxBandwidthBps = 0x7b9fb88;
+    }
 
-namespace Desync {
-    inline constexpr uintptr_t PhysicsSenderMaxBandwidthBps = 0x7b9fb88;
 }

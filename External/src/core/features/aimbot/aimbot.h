@@ -266,8 +266,16 @@ namespace Aimbot {
 
     inline RBX::Vec3 EyePos()
     {
-        if (Globals::camera.Addr)
-            return Globals::camera.GetCameraCFrame().GetPosition();
+        if (Globals::camera.Addr) {
+            auto cf = Globals::camera.GetCameraCFrame();
+            RBX::Vec3 p = cf.GetPosition();
+            RBX::Vec3 look = cf.GetLookVector();
+            // Nudge origin forward so wall rays don't self-hit near the camera
+            p.X += look.X * 0.45f;
+            p.Y += look.Y * 0.45f;
+            p.Z += look.Z * 0.45f;
+            return p;
+        }
         RBX::Vec3 p = PlayerCache::localPlayerPos;
         p.Y += 1.5f;
         return p;
@@ -370,7 +378,7 @@ namespace Aimbot {
     // (VisualEngine dimensions), not always 1:1 with overlay client coords.
     inline uintptr_t cachedMouseService = 0;
     inline uintptr_t cachedPlayerMouse = 0;
-    inline uintptr_t cachedInputObjects[12]{};
+    inline uintptr_t cachedInputObjects[16]{};
     inline int cachedInputObjectCount = 0;
     inline uintptr_t cachedUserInputState = 0;
     inline auto lastMouseResolve = std::chrono::steady_clock::now() - std::chrono::seconds(10);
@@ -429,7 +437,7 @@ namespace Aimbot {
         if (!io || io < 0x10000) return;
         for (int i = 0; i < cachedInputObjectCount; i++)
             if (cachedInputObjects[i] == io) return;
-        if (cachedInputObjectCount >= 12) return;
+        if (cachedInputObjectCount >= 16) return;
         if (!trusted && !ValidateInputObject(io, maxW, maxH)) return;
         cachedInputObjects[cachedInputObjectCount++] = io;
     }
@@ -536,7 +544,8 @@ namespace Aimbot {
     {
         if (!ResolveMouseService(false))
             ResolveMouseService(true);
-        if (cachedInputObjectCount <= 0) return false;
+        if (cachedInputObjectCount <= 0 && !cachedMouseService && !cachedPlayerMouse)
+            return false;
 
         float sw, sh, ox, oy;
         W2S::EnsureViewport(sw, sh, ox, oy);
@@ -554,6 +563,11 @@ namespace Aimbot {
         if (cachedMouseService) {
             memory->write<float>(cachedMouseService + Offsets::MouseService::MousePosition, rx);
             memory->write<float>(cachedMouseService + Offsets::MouseService::MousePosition + 4, ry);
+            any = true;
+        }
+        if (cachedPlayerMouse) {
+            memory->write<float>(cachedPlayerMouse + Offsets::MouseService::MousePosition, rx);
+            memory->write<float>(cachedPlayerMouse + Offsets::MouseService::MousePosition + 4, ry);
             any = true;
         }
 

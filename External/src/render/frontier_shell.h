@@ -8,6 +8,7 @@
 #include "brand.h"
 #include "brand_assets.h"
 #include "frontier_theme.h"
+#include "ui_motion.h"
 #include "frontier_ui.h"
 
 namespace FrontierShell {
@@ -144,6 +145,9 @@ namespace FrontierShell {
     inline void DrawSidebar(ImDrawList* dl, ImVec2 wp, float wh, int* selected) {
         const float sbW = kSidebarW;
         ImVec2 sbEnd(wp.x + sbW, wp.y + wh - kFooterH);
+        float dt = ImGui::GetIO().DeltaTime;
+        if (dt < 0.f) dt = 0.f;
+        if (dt > 0.05f) dt = 0.05f;
 
         dl->AddRectFilled(wp, sbEnd, IM_COL32(10, 10, 11, 240), 7.f, ImDrawFlags_RoundCornersTopLeft);
 
@@ -183,21 +187,27 @@ namespace FrontierShell {
                 bool hov = ImGui::IsItemHovered();
                 ImGui::PopID();
 
+                UIMotion::SetNavHoverTarget(i, hov || on, dt);
+                const float hb = UIMotion::NavHover(i);
+
                 if (on) {
-                    dl->AddRectFilled(a, b, IM_COL32(255, 255, 255, 10), 8.f);
+                    dl->AddRectFilled(a, b, IM_COL32(255, 255, 255, (int)(8 + hb * 6)), 8.f);
                     dl->AddRectFilled(
                         ImVec2(a.x - 8.f, a.y + 6.f), ImVec2(a.x - 4.f, b.y - 6.f),
-                        FrontierUI::AccentU32(1.f), 2.f);
-                    dl->AddRect(a, b, FrontierUI::AccentSoftU32(0.35f), 8.f, 0, 1.f);
-                } else if (hov) {
-                    dl->AddRectFilled(a, b, IM_COL32(255, 255, 255, 8), 8.f);
+                        FrontierUI::AccentU32(0.85f + hb * 0.15f), 2.f);
+                    dl->AddRect(a, b, FrontierUI::AccentSoftU32(0.25f + hb * 0.15f), 8.f, 0, 1.f);
+                } else if (hb > 0.01f) {
+                    dl->AddRectFilled(a, b, IM_COL32(255, 255, 255, (int)(hb * 10)), 8.f);
                 }
 
-                ImU32 icCol = on ? FrontierUI::AccentU32(1.f)
-                    : (hov ? IM_COL32(230, 230, 235, 230) : IM_COL32(255, 255, 255, 190));
+                ImU32 icCol = on ? FrontierUI::AccentU32(0.9f + hb * 0.1f)
+                    : IM_COL32(
+                        (int)(190 + hb * 40), (int)(190 + hb * 40), (int)(200 + hb * 35),
+                        (int)(190 + hb * 40));
                 DrawNavIcon(dl, ImVec2(a.x + 16.f, a.y + kNavItemH * 0.5f), tabs[i].iconKind, icCol, 0.95f);
 
-                ImU32 txCol = on ? IM_COL32(255, 255, 255, 255) : IM_COL32(255, 255, 255, 220);
+                ImU32 txCol = on ? IM_COL32(255, 255, 255, 255)
+                    : IM_COL32((int)(200 + hb * 20), (int)(200 + hb * 20), (int)(210 + hb * 10), (int)(200 + hb * 20));
                 dl->AddText(ImVec2(a.x + 34.f, a.y + kNavItemH * 0.5f - 7.f), txCol, tabs[i].label);
 
                 navY += kNavItemH;

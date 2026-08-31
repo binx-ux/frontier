@@ -71,6 +71,7 @@
     <ClInclude Include="src\render\avatar_cache.h" />
     <ClInclude Include="src\render\brand_assets.h" />
     <ClInclude Include="src\render\ui_fx.h" />
+    <ClInclude Include="src\render\ui_motion.h" />
     <ClInclude Include="src\sdk\math.h" />
     <ClInclude Include="src\sdk\offsets.h" />
     <ClInclude Include="src\sdk\scanner.h" />

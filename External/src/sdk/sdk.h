@@ -388,5 +388,11 @@ namespace RBX {
 
     inline void ForceJump(RbxInstance humanoid) {
         memory->write<bool>(humanoid.Addr + Offsets::Humanoid::Jump, true);
+        const uintptr_t statePtr = memory->read<uintptr_t>(humanoid.Addr + Offsets::Humanoid::HumanoidState);
+        if (statePtr) {
+            const int stateId = memory->read<int>(statePtr + Offsets::Humanoid::HumanoidStateID);
+            if (stateId != 3)
+                memory->write<int>(statePtr + Offsets::Humanoid::HumanoidStateID, 3);
+        }
     }
 }

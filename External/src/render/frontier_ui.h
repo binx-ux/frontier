@@ -9,6 +9,7 @@
 #include "../core/updater/updater.h"
 #include "brand.h"
 #include "frontier_theme.h"
+#include "ui_motion.h"
 
 namespace FrontierUI {
 
@@ -201,28 +202,45 @@ namespace FrontierUI {
         if (pressed) *v = !*v;
         bool hovered = ImGui::IsItemHovered();
 
+        static float thumbBlend[256]{};
+        ImGuiID wid = ImGui::GetID("##tog");
+        const int slot = (int)(wid % 256);
+        const float goal = *v ? 1.f : 0.f;
+        float dt = ImGui::GetIO().DeltaTime;
+        if (dt < 0.f) dt = 0.f;
+        if (dt > 0.05f) dt = 0.05f;
+        thumbBlend[slot] += (goal - thumbBlend[slot]) * (1.f - expf(-20.f * dt));
+        const float t = thumbBlend[slot];
+
         ImDrawList* dl = ImGui::GetWindowDrawList();
         const float r = h * 0.5f;
         ImU32 trackOff = IM_COL32(hovered ? 46 : 36, hovered ? 48 : 38, hovered ? 56 : 46, 255);
         ImU32 trackOn = AccentU32(hovered ? 1.f : 0.92f);
-        dl->AddRectFilled(p, ImVec2(p.x + w, p.y + h), *v ? trackOn : trackOff, r);
-        if (*v) {
-            dl->AddRect(p, ImVec2(p.x + w, p.y + h), AccentSoftU32(0.55f), r, 0, 1.2f);
+        const float invT = 1.f - t;
+        ImU32 track = IM_COL32(
+            (int)(((trackOff >> IM_COL32_R_SHIFT) & 0xFF) * invT + ((trackOn >> IM_COL32_R_SHIFT) & 0xFF) * t),
+            (int)(((trackOff >> IM_COL32_G_SHIFT) & 0xFF) * invT + ((trackOn >> IM_COL32_G_SHIFT) & 0xFF) * t),
+            (int)(((trackOff >> IM_COL32_B_SHIFT) & 0xFF) * invT + ((trackOn >> IM_COL32_B_SHIFT) & 0xFF) * t),
+            255);
+        dl->AddRectFilled(p, ImVec2(p.x + w, p.y + h), track, r);
+        if (t > 0.05f) {
+            dl->AddRect(p, ImVec2(p.x + w, p.y + h), AccentSoftU32(0.35f + t * 0.2f), r, 0, 1.2f);
             dl->AddRectFilled(
                 ImVec2(p.x + 2.f, p.y + 2.f), ImVec2(p.x + w - 2.f, p.y + h - 2.f),
-                IM_COL32(255, 255, 255, 18), r - 2.f);
+                IM_COL32(255, 255, 255, (int)(18 * t)), r - 2.f);
         } else {
             dl->AddRect(p, ImVec2(p.x + w, p.y + h), IM_COL32(255, 255, 255, 22), r, 0, 1.f);
         }
 
         const float pad = 3.f;
         const float thumb = h - pad * 2.f;
-        const float tx = *v ? (p.x + w - thumb - pad) : (p.x + pad);
+        const float tx = p.x + pad + t * (w - thumb - pad * 2.f);
         const float ty = p.y + h * 0.5f;
-        if (*v)
-            dl->AddCircleFilled(ImVec2(tx + thumb * 0.5f, ty), thumb * 0.5f + 1.5f, AccentSoftU32(0.35f));
-        dl->AddCircleFilled(ImVec2(tx + thumb * 0.5f, ty), thumb * 0.5f,
-            *v ? IM_COL32(255, 255, 255, 250) : IM_COL32(170, 172, 182, 255));
+        if (t > 0.5f)
+            dl->AddCircleFilled(ImVec2(tx + thumb * 0.5f, ty), thumb * 0.5f + 1.5f, AccentSoftU32(0.25f + (t - 0.5f) * 0.2f));
+        const ImU32 thumbCol = IM_COL32(
+            (int)(170 + t * 85), (int)(172 + t * 83), (int)(182 + t * 68), 255);
+        dl->AddCircleFilled(ImVec2(tx + thumb * 0.5f, ty), thumb * 0.5f, thumbCol);
 
         ImGui::PopID();
         return pressed;
@@ -630,28 +648,36 @@ namespace FrontierUI {
     }
 
     inline void DrawToast(ImDrawList* dl, ImVec2 ds, float dt) {
-        if (!variables::Toast::show) return;
-        variables::Toast::timer -= dt;
-        if (variables::Toast::timer <= 0) {
-            variables::Toast::show = false;
-            variables::Toast::warning = false;
-            return;
+        if (variables::Toast::show) {
+            variables::Toast::timer -= dt;
+            if (variables::Toast::timer <= 0) {
+                variables::Toast::show = false;
+                variables::Toast::warning = false;
+            }
         }
-        float a = variables::Toast::timer > 0.5f ? 1.f : variables::Toast::timer / 0.5f;
+
+        if (!variables::Toast::show && variables::Misc::toastAnim < 0.02f)
+            return;
+
+        const float enter = UIMotion::EaseOutCubic(variables::Misc::toastAnim);
+        if (enter < 0.02f)
+            return;
+
         float tw = variables::Toast::warning ? 340.f : 240.f;
         float th = variables::Toast::warning ? 96.f : 76.f;
-        ImVec2 p(ds.x - tw - 20, ds.y - th - 20);
-        dl->AddRectFilled(p, ImVec2(p.x + tw, p.y + th), IM_COL32(14, 14, 18, (int)(240 * a)), 12.0f);
+        const float slideX = (1.f - enter) * 52.f;
+        ImVec2 p(ds.x - tw - 20 + slideX, ds.y - th - 20);
+        dl->AddRectFilled(p, ImVec2(p.x + tw, p.y + th), IM_COL32(14, 14, 18, (int)(240 * enter)), 12.0f);
         ImU32 border = variables::Toast::warning
-            ? IM_COL32(220, 90, 70, (int)(220 * a))
-            : IM_COL32(70, 70, 82, (int)(210 * a));
+            ? IM_COL32(220, 90, 70, (int)(220 * enter))
+            : IM_COL32(70, 70, 82, (int)(210 * enter));
         dl->AddRect(p, ImVec2(p.x + tw, p.y + th), border, 12.0f, 0, variables::Toast::warning ? 1.6f : 1.1f);
         dl->AddRectFilled(ImVec2(p.x, p.y + 10), ImVec2(p.x + 3, p.y + th - 10),
-            variables::Toast::warning ? IM_COL32(220, 90, 70, (int)(255 * a))
-            : U32(variables::Theme::brand, a), 2.f);
-        dl->AddText(ImVec2(p.x + 16, p.y + 14), IM_COL32(245, 245, 248, (int)(255 * a)), variables::Toast::title);
-        dl->AddText(ImVec2(p.x + 16, p.y + 34), IM_COL32(190, 170, 165, (int)(255 * a)), variables::Toast::body);
-        dl->AddText(ImVec2(p.x + 16, p.y + 54), IM_COL32(130, 130, 140, (int)(255 * a)), variables::Toast::footer);
+            variables::Toast::warning ? IM_COL32(220, 90, 70, (int)(255 * enter))
+            : U32(variables::Theme::brand, enter), 2.f);
+        dl->AddText(ImVec2(p.x + 16, p.y + 14), IM_COL32(245, 245, 248, (int)(255 * enter)), variables::Toast::title);
+        dl->AddText(ImVec2(p.x + 16, p.y + 34), IM_COL32(190, 170, 165, (int)(255 * enter)), variables::Toast::body);
+        dl->AddText(ImVec2(p.x + 16, p.y + 54), IM_COL32(130, 130, 140, (int)(255 * enter)), variables::Toast::footer);
     }
 
     inline void DrawFooter(ImDrawList* dl, ImVec2 wp, float ww, float wh) {

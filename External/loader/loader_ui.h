@@ -80,6 +80,14 @@ namespace LoaderUI {
         char authStatus[256] = "Enter your lifetime license key to activate.";
         char signedInAs[64] = "";
         LoaderUpdate::Manifest manifest{};
+
+        // Motion / transitions
+        float windowIntro = 0.f;
+        float windowOutro = 0.f;
+        bool closing = false;
+        Screen prevScreen = ScreenDownloading;
+        float screenBlend = 1.f;
+        float hoverBlend[10]{};
     };
 
     inline bool ShowKernelMode(const State* s)
@@ -103,6 +111,60 @@ namespace LoaderUI {
     inline HBRUSH gEditBrush = nullptr;
     inline const UINT_PTR kAnimTimerId = 1;
     inline const UINT WM_AUTH_DONE = WM_USER + 10;
+
+    inline const UINT WM_DEFERRED_CLOSE = WM_USER + 11;
+
+    inline float Clamp01(float v)
+    {
+        if (v < 0.f) return 0.f;
+        if (v > 1.f) return 1.f;
+        return v;
+    }
+
+    inline float EaseOutCubic(float t)
+    {
+        t = Clamp01(t);
+        const float u = 1.f - t;
+        return 1.f - u * u * u;
+    }
+
+    inline float EaseOutQuart(float t)
+    {
+        t = Clamp01(t);
+        const float u = 1.f - t;
+        return 1.f - u * u * u * u;
+    }
+
+    inline float EaseInOutCubic(float t)
+    {
+        t = Clamp01(t);
+        return t < 0.5f ? 4.f * t * t * t : 1.f - powf(-2.f * t + 2.f, 3.f) * 0.5f;
+    }
+
+    inline void TransitionToScreen(State* s, Screen next);
+    inline void BeginClose(HWND hwnd, State* s);
+
+    inline void TickHoverAnimation(State* s, float dt)
+    {
+        if (!s) return;
+        const int targets[10] = {
+            gHover == HoverPrimary ? 1 : 0,
+            gHover == HoverMode0 ? 1 : 0,
+            gHover == HoverMode1 ? 1 : 0,
+            gHover == HoverMin ? 1 : 0,
+            gHover == HoverClose ? 1 : 0,
+            gHover == HoverDiscord ? 1 : 0,
+            gHover == HoverActivate ? 1 : 0,
+            gHover == HoverSignOut ? 1 : 0,
+            gHover == HoverSupport ? 1 : 0,
+            0
+        };
+        const float speed = 1.f - expf(-dt * 14.f);
+        for (int i = 0; i < 10; i++) {
+            const float goal = targets[i] ? 1.f : 0.f;
+            s->hoverBlend[i] += (goal - s->hoverBlend[i]) * speed;
+        }
+    }
 
     struct AuthDonePayload {
         bool ok;
@@ -133,6 +195,19 @@ namespace LoaderUI {
         if (dt > 0.05f) dt = 0.05f;
         s->animTime += dt;
 
+        if (s->windowIntro < 1.f)
+            s->windowIntro = Clamp01(s->windowIntro + dt * 3.2f);
+
+        if (s->closing) {
+            s->windowOutro = Clamp01(s->windowOutro + dt * 5.5f);
+            return;
+        }
+
+        if (s->screenBlend < 1.f)
+            s->screenBlend = Clamp01(s->screenBlend + dt * 4.2f);
+
+        TickHoverAnimation(s, dt);
+
         if (s->indeterminate) {
             const float wave = 0.5f + 0.5f * sinf(s->animTime * 3.2f);
             s->progressAnim = 0.06f + wave * 0.38f;
@@ -150,10 +225,15 @@ namespace LoaderUI {
     inline bool NeedsAnimation(const State* s)
     {
         if (!s) return false;
+        if (s->closing) return s->windowOutro < 1.f;
+        if (s->windowIntro < 0.999f) return true;
+        if (s->screenBlend < 0.999f) return true;
         if (s->indeterminate || s->progressActive) return true;
         if (s->screen == ScreenDownloading) return true;
         if (s->screen == ScreenReady && s->filesReady)
             return fabsf(s->progressAnim - 1.f) > 0.002f;
+        for (int i = 0; i < 10; i++)
+            if (s->hoverBlend[i] > 0.02f && s->hoverBlend[i] < 0.98f) return true;
         return false;
     }
 
@@ -309,6 +389,32 @@ namespace LoaderUI {
         EnableWindow(gKeyEdit, visible && !(gState && gState->authBusy));
     }
 
+    inline void TransitionToScreen(State* s, Screen next)
+    {
+        if (!s || s->screen == next) return;
+        s->prevScreen = s->screen;
+        s->screen = next;
+        s->screenBlend = 0.f;
+        if (gWnd) {
+            StartAnimTimer(gWnd);
+            InvalidateRect(gWnd, nullptr, FALSE);
+        }
+        if (next == ScreenAuth)
+            SetKeyEditVisible(true);
+        else
+            SetKeyEditVisible(false);
+        RepositionKeyEdit();
+    }
+
+    inline void BeginClose(HWND hwnd, State* s)
+    {
+        if (!hwnd || !s || s->closing) return;
+        s->closing = true;
+        s->windowOutro = 0.f;
+        StartAnimTimer(hwnd);
+        InvalidateRect(hwnd, nullptr, FALSE);
+    }
+
     inline void RefreshAuthUi(State* s)
     {
         s->authenticated = s->licenseToken[0] != 0;
@@ -431,17 +537,20 @@ namespace LoaderUI {
         GradientFill(hdc, vert, 2, &gRect, 1, GRADIENT_FILL_RECT_V);
     }
 
-    inline void DrawLeftBrandPanel(HDC hdc, float animTime)
+    inline void DrawLeftBrandPanel(HDC hdc, float animTime, float introEase)
     {
-        (void)animTime;
         RECT client{};
         GetClientRect(gWnd, &client);
         const int h = client.bottom - client.top;
 
         RECT left{ 0, 0, LoaderConfig::kSplitX, h };
-        HBRUSH panelBrush = CreateSolidBrush(LoaderConfig::kPanelLeft);
-        FillRect(hdc, &left, panelBrush);
-        DeleteObject(panelBrush);
+        FillVerticalGradient(hdc, left, LoaderConfig::kPanelLeft, RGB(8, 8, 10));
+
+        const float pulse = 0.55f + 0.45f * sinf(animTime * 1.6f);
+        const int barH = (int)(72.f * EaseOutCubic(introEase));
+        const int cy = h / 2;
+        RECT accentBar{ 20, cy - barH / 2, 24, cy + barH / 2 };
+        FillRoundRectSolid(hdc, accentBar, BlendRgb(LoaderConfig::kAccentDim, LoaderConfig::kAccent, pulse), 3);
 
         HPEN pen = CreatePen(PS_SOLID, 1, LoaderConfig::kBorder);
         HGDIOBJ op = SelectObject(hdc, pen);
@@ -450,18 +559,19 @@ namespace LoaderUI {
         SelectObject(hdc, op);
         DeleteObject(pen);
 
-        const int cx = LoaderConfig::kSplitX / 2;
-        const int cy = h / 2 - 8;
+        const int logoCy = cy - 10 + (int)((1.f - introEase) * 10.f);
 
         SelectObject(hdc, gFontLogo);
         SetTextColor(hdc, LoaderConfig::kText);
-        RECT logoRc{ 0, cy - 20, LoaderConfig::kSplitX, cy + 12 };
+        RECT logoRc{ 0, logoCy - 22, LoaderConfig::kSplitX, logoCy + 14 };
         DrawTextA(hdc, "FRONTIER", -1, &logoRc, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
 
         SelectObject(hdc, gFont);
         SetTextColor(hdc, LoaderConfig::kTextMuted);
-        RECT tagRc{ 0, cy + 14, LoaderConfig::kSplitX, cy + 34 };
-        DrawTextA(hdc, "External  v1.2.7", -1, &tagRc, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
+        char tagLine[64];
+        sprintf_s(tagLine, "%s  %s", LoaderConfig::kProductLine, LoaderConfig::kDisplayVersion);
+        RECT tagRc{ 0, logoCy + 16, LoaderConfig::kSplitX, logoCy + 36 };
+        DrawTextA(hdc, tagLine, -1, &tagRc, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
     }
 
     inline void DrawRightBackdrop(HDC hdc, float animTime)
@@ -480,26 +590,32 @@ namespace LoaderUI {
         (void)hdc;
     }
 
-    inline void DrawBackground(HDC hdc, float animTime)
+    inline void DrawBackground(HDC hdc, State* s)
     {
+        const float introEase = s ? EaseOutQuart(s->windowIntro) : 1.f;
+        const float animTime = s ? s->animTime : 0.f;
         RECT client{};
         GetClientRect(gWnd, &client);
         FillRect(hdc, &client, gBgBrush);
         DrawRightBackdrop(hdc, animTime);
-        DrawLeftBrandPanel(hdc, animTime);
+        DrawLeftBrandPanel(hdc, animTime, introEase);
         DrawContentCard(hdc);
     }
 
-    inline void DrawWindowControls(HDC hdc)
+    inline void DrawWindowControls(HDC hdc, State* s)
     {
+        const float minT = s ? s->hoverBlend[3] : 0.f;
+        const float closeT = s ? s->hoverBlend[4] : 0.f;
         RECT minRc = MinButtonRect();
         RECT closeRc = CloseButtonRect();
-        FillRoundRectSolid(hdc, minRc, gHover == HoverMin ? RGB(36, 36, 40) : RGB(24, 24, 28), 6);
-        FillRoundRectSolid(hdc, closeRc, gHover == HoverClose ? RGB(196, 52, 52) : RGB(24, 24, 28), 6);
+        FillRoundRectSolid(hdc, minRc,
+            BlendRgb(RGB(24, 24, 28), RGB(40, 40, 46), minT), 6);
+        FillRoundRectSolid(hdc, closeRc,
+            BlendRgb(RGB(24, 24, 28), RGB(196, 52, 52), closeT), 6);
         SelectObject(hdc, gFontBold);
-        SetTextColor(hdc, RGB(210, 214, 222));
+        SetTextColor(hdc, BlendRgb(RGB(210, 214, 222), RGB(240, 242, 246), minT));
         DrawTextA(hdc, "-", -1, &minRc, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
-        SetTextColor(hdc, RGB(240, 242, 246));
+        SetTextColor(hdc, BlendRgb(RGB(240, 242, 246), RGB(255, 255, 255), closeT));
         DrawTextA(hdc, "x", -1, &closeRc, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
     }
 
@@ -544,22 +660,32 @@ namespace LoaderUI {
         DeleteObject(pen);
     }
 
-    inline void DrawGradientButton(HDC hdc, const RECT& btn, const char* label, bool enabled, bool hover)
+    inline void DrawGradientButton(HDC hdc, const RECT& btn, const char* label, bool enabled, float hoverT)
     {
-        COLORREF fill = enabled ? (hover ? LoaderConfig::kAccentHover : LoaderConfig::kAccent) : LoaderConfig::kAccentDim;
-        COLORREF border = BlendRgb(fill, RGB(255, 255, 255), hover ? 0.18f : 0.10f);
-        FillRoundRect(hdc, btn, fill, border, 12);
+        hoverT = Clamp01(hoverT);
+        RECT drawBtn = btn;
+        const int lift = (int)(hoverT * 2.f);
+        drawBtn.top -= lift;
+        drawBtn.bottom -= lift;
 
-        HPEN hi = CreatePen(PS_SOLID, 1, LoaderConfig::kAccentLight);
-        HGDIOBJ op = SelectObject(hdc, hi);
-        MoveToEx(hdc, btn.left + 14, btn.top + 1, nullptr);
-        LineTo(hdc, btn.right - 14, btn.top + 1);
-        SelectObject(hdc, op);
-        DeleteObject(hi);
+        COLORREF base = enabled ? LoaderConfig::kAccent : LoaderConfig::kAccentDim;
+        COLORREF hot = enabled ? LoaderConfig::kAccentHover : LoaderConfig::kAccentDim;
+        COLORREF fill = BlendRgb(base, hot, hoverT);
+        COLORREF border = BlendRgb(fill, RGB(255, 255, 255), 0.08f + hoverT * 0.14f);
+        FillRoundRect(hdc, drawBtn, fill, border, 12);
+
+        if (enabled && hoverT > 0.05f) {
+            HPEN hi = CreatePen(PS_SOLID, 1, BlendRgb(LoaderConfig::kAccentLight, RGB(255, 255, 255), hoverT * 0.35f));
+            HGDIOBJ op = SelectObject(hdc, hi);
+            MoveToEx(hdc, drawBtn.left + 14, drawBtn.top + 1, nullptr);
+            LineTo(hdc, drawBtn.right - 14, drawBtn.top + 1);
+            SelectObject(hdc, op);
+            DeleteObject(hi);
+        }
 
         SelectObject(hdc, gFontBold);
         SetTextColor(hdc, RGB(255, 255, 255));
-        DrawTextA(hdc, label, -1, const_cast<RECT*>(&btn), DT_CENTER | DT_SINGLELINE | DT_VCENTER);
+        DrawTextA(hdc, label, -1, const_cast<RECT*>(&drawBtn), DT_CENTER | DT_SINGLELINE | DT_VCENTER);
     }
 
     inline void DrawProgressBar(HDC hdc, State* s, bool successTone, bool showPercent = true)
@@ -570,8 +696,7 @@ namespace LoaderUI {
         float pct = s->progressAnim;
         if (s->screen == ScreenReady && s->filesReady && !s->indeterminate)
             pct = s->progressAnim;
-        if (pct < 0.f) pct = 0.f;
-        if (pct > 1.f) pct = 1.f;
+        pct = Clamp01(pct);
 
         const int barW = barBg.right - barBg.left;
         if (pct > 0.005f && barW > 0) {
@@ -582,6 +707,19 @@ namespace LoaderUI {
 
             COLORREF fill = successTone ? LoaderConfig::kSuccess : LoaderConfig::kAccent;
             FillRoundRectSolid(hdc, barFg, fill, 6);
+
+            if (!successTone && s->indeterminate) {
+                const float wave = 0.5f + 0.5f * sinf(s->animTime * 4.5f);
+                const int shimmerW = (std::max)(barW / 6, 24);
+                const int travel = barW - shimmerW;
+                if (travel > 0) {
+                    RECT shine = barFg;
+                    shine.left = barBg.left + (int)(travel * wave);
+                    shine.right = shine.left + shimmerW;
+                    if (shine.right > barFg.right) shine.right = barFg.right;
+                    FillRoundRectSolid(hdc, shine, BlendRgb(fill, RGB(255, 255, 255), 0.28f), 6);
+                }
+            }
         }
 
         if (showPercent && !successTone) {
@@ -595,23 +733,27 @@ namespace LoaderUI {
         }
     }
 
-    inline void DrawButtonAt(HDC hdc, const RECT& btn, const char* label, bool enabled, bool hover)
+    inline void DrawButtonAt(HDC hdc, const RECT& btn, const char* label, bool enabled, float hoverT)
     {
-        DrawGradientButton(hdc, btn, label, enabled, hover);
+        DrawGradientButton(hdc, btn, label, enabled, hoverT);
     }
 
-    inline void DrawPrimaryButton(HDC hdc, const char* label, bool enabled, bool hover)
+    inline void DrawPrimaryButton(HDC hdc, State* s, const char* label, bool enabled)
     {
-        DrawGradientButton(hdc, PrimaryButtonRect(), label, enabled, hover);
+        DrawGradientButton(hdc, PrimaryButtonRect(), label, enabled, s ? s->hoverBlend[0] : 0.f);
     }
 
-    inline void DrawGhostButton(HDC hdc, const RECT& btn, const char* label, bool hover)
+    inline void DrawGhostButton(HDC hdc, const RECT& btn, const char* label, float hoverT)
     {
-        COLORREF fill = hover ? LoaderConfig::kCardHover : LoaderConfig::kCard;
-        FillRoundRect(hdc, btn, fill, LoaderConfig::kBorder, 10);
+        hoverT = Clamp01(hoverT);
+        RECT drawBtn = btn;
+        drawBtn.top -= (int)(hoverT * 1.f);
+        drawBtn.bottom -= (int)(hoverT * 1.f);
+        COLORREF fill = BlendRgb(LoaderConfig::kCard, LoaderConfig::kCardHover, hoverT);
+        FillRoundRect(hdc, drawBtn, fill, BlendRgb(LoaderConfig::kBorder, LoaderConfig::kTextMuted, hoverT * 0.35f), 10);
         SelectObject(hdc, gFont);
-        SetTextColor(hdc, LoaderConfig::kTextDim);
-        DrawTextA(hdc, label, -1, const_cast<RECT*>(&btn), DT_CENTER | DT_SINGLELINE | DT_VCENTER);
+        SetTextColor(hdc, BlendRgb(LoaderConfig::kTextDim, LoaderConfig::kText, hoverT * 0.45f));
+        DrawTextA(hdc, label, -1, const_cast<RECT*>(&drawBtn), DT_CENTER | DT_SINGLELINE | DT_VCENTER);
     }
 
     inline void DrawLoginHint(HDC hdc)
@@ -626,19 +768,20 @@ namespace LoaderUI {
     }
 
     inline void DrawModeCard(HDC hdc, State* s, int displayIndex, int modeValue,
-        const char* label, const char* tag, const char* subtitle = nullptr)
+        const char* label, const char* tag, const char* subtitle, float hoverT)
     {
         RECT card = ModeCardRect(s, displayIndex);
         bool sel = (s->selectedMode == modeValue);
-        bool hover = false;
-        if (displayIndex == 0)
-            hover = (gHover == HoverMode0);
-        else
-            hover = (gHover == HoverMode1);
+        hoverT = Clamp01(hoverT);
 
-        COLORREF fill = sel ? BlendRgb(LoaderConfig::kCard, LoaderConfig::kAccentGlow, 0.35f)
-            : (hover ? LoaderConfig::kCardHover : LoaderConfig::kCard);
-        COLORREF border = sel ? LoaderConfig::kBorderActive : LoaderConfig::kBorder;
+        const int lift = (int)(hoverT * 3.f);
+        card.top -= lift;
+        card.bottom -= lift;
+
+        COLORREF fill = sel ? BlendRgb(LoaderConfig::kCard, LoaderConfig::kAccentGlow, 0.35f + hoverT * 0.12f)
+            : BlendRgb(LoaderConfig::kCard, LoaderConfig::kCardHover, hoverT);
+        COLORREF border = sel ? LoaderConfig::kBorderActive
+            : BlendRgb(LoaderConfig::kBorder, LoaderConfig::kAccentLight, hoverT * 0.25f);
         FillRoundRect(hdc, card, fill, border, 12);
 
         if (sel) {
@@ -651,7 +794,7 @@ namespace LoaderUI {
         }
 
         SelectObject(hdc, gFontBold);
-        SetTextColor(hdc, LoaderConfig::kText);
+        SetTextColor(hdc, BlendRgb(LoaderConfig::kText, RGB(255, 255, 255), hoverT * 0.08f));
         TextOutA(hdc, card.left + 18, card.top + 12, label, (int)strlen(label));
 
         if (subtitle && subtitle[0]) {
@@ -672,9 +815,8 @@ namespace LoaderUI {
 
     inline void DrawDownloadingScreen(HDC hdc, State* s)
     {
-        DrawWindowControls(hdc);
-        DrawBrandPanel(hdc, s->animTime);
-        DrawRightTitle(hdc, "Updating");
+        DrawWindowControls(hdc, s);
+        DrawRightTitle(hdc, "Update", "Checking for the latest build");
         RECT r = RightContentRect();
         SelectObject(hdc, gFont);
         SetTextColor(hdc, LoaderConfig::kTextDim);
@@ -685,21 +827,21 @@ namespace LoaderUI {
 
     inline void DrawReadyScreen(HDC hdc, State* s)
     {
-        DrawWindowControls(hdc);
-        DrawBrandPanel(hdc, s->animTime);
-        DrawRightTitle(hdc, s->filesReady ? "Ready" : "Setup");
-        RECT r = RightContentRect();
-        const char* sub = s->filesReady ? "All files are up to date." : s->status;
-        SelectObject(hdc, gFont);
-        SetTextColor(hdc, s->filesReady ? LoaderConfig::kSuccess : LoaderConfig::kTextDim);
-        RECT subRc{ r.left, r.top + 40, r.right, r.top + 90 };
-        DrawTextA(hdc, sub, -1, &subRc, DT_LEFT | DT_WORDBREAK);
+        DrawWindowControls(hdc, s);
+        DrawRightTitle(hdc, s->filesReady ? "Ready to go" : "First-time setup",
+            s->filesReady ? "Your install is up to date." : "Downloading required files.");
+        if (!s->filesReady) {
+            RECT r = RightContentRect();
+            SelectObject(hdc, gFont);
+            SetTextColor(hdc, LoaderConfig::kTextDim);
+            RECT subRc{ r.left, r.top + 56, r.right, r.top + 96 };
+            DrawTextA(hdc, s->status, -1, &subRc, DT_LEFT | DT_WORDBREAK);
+        }
         if (!s->filesReady)
             DrawProgressBar(hdc, s, false, true);
         else
             DrawProgressBar(hdc, s, true, false);
-        DrawPrimaryButton(hdc, s->filesReady ? "Continue" : "Download",
-            true, gHover == HoverPrimary);
+        DrawPrimaryButton(hdc, s, s->filesReady ? "Continue" : "Download", true);
     }
 
     inline void DrawAuthStatusBanner(HDC hdc, State* s)
@@ -713,63 +855,61 @@ namespace LoaderUI {
 
     inline void DrawAuthScreen(HDC hdc, State* s)
     {
-        DrawWindowControls(hdc);
-        DrawBrandPanel(hdc, s->animTime);
-        DrawRightTitle(hdc, "Sign in", "Enter your lifetime license key");
+        DrawWindowControls(hdc, s);
+        DrawRightTitle(hdc, "Activate", "Paste your lifetime license key below");
         DrawInputChrome(hdc);
         DrawLoginHint(hdc);
         DrawAuthStatusBanner(hdc, s);
         if (s->authenticated) {
-            DrawGradientButton(hdc, AuthContinueRect(), "Continue", true, gHover == HoverPrimary);
-            DrawGhostButton(hdc, SignOutButtonRect(), "Sign out", gHover == HoverSignOut);
+            DrawGradientButton(hdc, AuthContinueRect(), "Continue", true, s->hoverBlend[0]);
+            DrawGhostButton(hdc, SignOutButtonRect(), "Sign out", s->hoverBlend[7]);
         } else {
             DrawGradientButton(hdc, ActivateButtonRect(),
                 s->authBusy ? "Please wait..." : "Activate License",
-                !s->authBusy, gHover == HoverActivate);
+                !s->authBusy, s->hoverBlend[6]);
             if (LoaderConfig::kDiscordOAuthEnabled) {
                 DrawGhostButton(hdc, DiscordButtonRect(),
                     s->authBusy ? "Discord..." : "Sign in with Discord",
-                    gHover == HoverDiscord);
+                    s->hoverBlend[5]);
             }
         }
     }
 
     inline void DrawLauncherScreen(HDC hdc, State* s)
     {
-        DrawWindowControls(hdc);
-        DrawBrandPanel(hdc, s->animTime);
-        DrawRightTitle(hdc, "Launch");
+        DrawWindowControls(hdc, s);
+        DrawRightTitle(hdc, "Launch", "Pick how FRONTIER attaches to Roblox");
         RECT r = RightContentRect();
         SelectObject(hdc, gFont);
         SetTextColor(hdc, LoaderConfig::kTextDim);
-        TextOutA(hdc, r.left, r.top + 40, "Select how FRONTIER attaches to Roblox", 38);
+        TextOutA(hdc, r.left, r.top + 40,
+            "Usermode works on every game. Kernel is experimental.", 44);
 
         int display = 0;
         if (ShowKernelMode(s)) {
             DrawModeCard(hdc, s, display++, 1, "Kernel", LoaderConfig::kKernelModeTag,
-                "Driver attach — testing only");
+                "Driver-level attach — limited support", s->hoverBlend[1]);
         }
         DrawModeCard(hdc, s, display, 0, "Usermode", "Recommended",
-            "Standard external — best for most games");
-        DrawGradientButton(hdc, LaunchButtonRect(), "Launch", true, gHover == HoverPrimary);
+            "Standard external — works everywhere", s->hoverBlend[ShowKernelMode(s) ? 2 : 1]);
+        DrawGradientButton(hdc, LaunchButtonRect(), "Launch", true, s->hoverBlend[0]);
     }
 
     inline void DrawFooter(HDC hdc, State* s)
     {
         RECT support = SupportLinkRect();
         SelectObject(hdc, gFont);
-        SetTextColor(hdc, gHover == HoverSupport ? LoaderConfig::kAccentHover : LoaderConfig::kAccent);
-        DrawTextA(hdc, "support", -1, &support, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+        const float supportT = s ? s->hoverBlend[8] : 0.f;
+        SetTextColor(hdc, BlendRgb(LoaderConfig::kAccent, LoaderConfig::kAccentHover, supportT));
+        DrawTextA(hdc, "Get support", -1, &support, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
 
         char ver[64];
         if (s->remoteDisplay[0]) {
-            strncpy_s(ver, s->remoteDisplay, _TRUNCATE);
+            sprintf_s(ver, "%s", s->remoteDisplay);
         } else if (s->remoteVersion > 0) {
-            sprintf_s(ver, "v%d", s->remoteVersion);
-        } else if (s->localVersion > 0) {
-            sprintf_s(ver, "v%d", s->localVersion);
+            sprintf_s(ver, "Build %d", s->remoteVersion);
         } else {
-            sprintf_s(ver, "v1.2.7");
+            sprintf_s(ver, "%s", LoaderConfig::kDisplayVersion);
         }
 
         SetTextColor(hdc, LoaderConfig::kTextMuted);
@@ -801,10 +941,17 @@ namespace LoaderUI {
         HBITMAP bmp = CreateCompatibleBitmap(hdc, w, h);
         HGDIOBJ oldBmp = SelectObject(mem, bmp);
 
-        FillRect(mem, &client, gBgBrush);
-        DrawBackground(mem, s ? s->animTime : 0.f);
+        DrawBackground(mem, s);
 
+        const float introEase = s ? EaseOutQuart(s->windowIntro) : 1.f;
+        const float screenEase = s ? EaseOutCubic(s->screenBlend) : 1.f;
+        const int slideY = (int)((1.f - screenEase) * 26.f) + (int)((1.f - introEase) * 14.f);
+
+        POINT oldOrg{};
+        SetViewportOrgEx(mem, 0, slideY, &oldOrg);
         PaintContent(mem, s);
+        SetViewportOrgEx(mem, oldOrg.x, oldOrg.y, nullptr);
+
         BitBlt(hdc, 0, 0, w, h, mem, 0, 0, SRCCOPY);
 
         SelectObject(mem, oldBmp);
@@ -814,7 +961,7 @@ namespace LoaderUI {
 
     inline void GoReady(State* s, bool ready = true)
     {
-        s->screen = ScreenReady;
+        TransitionToScreen(s, ScreenReady);
         s->filesReady = ready;
         s->updating = false;
         s->checking = false;
@@ -837,7 +984,7 @@ namespace LoaderUI {
     {
         if (s->checking) return;
         s->checking = true;
-        s->screen = ScreenDownloading;
+        TransitionToScreen(s, ScreenDownloading);
         SetIndeterminateProgress(s, true);
         SetStatus(s, "Checking files...");
         std::thread([s]() {
@@ -904,7 +1051,7 @@ namespace LoaderUI {
         }
 
         s->updating = true;
-        s->screen = ScreenDownloading;
+        TransitionToScreen(s, ScreenDownloading);
         SetProgressTarget(s, 0.f);
         SetStatus(s, "Downloading usermode...");
         LoaderUpdate::Manifest m = s->manifest;
@@ -968,7 +1115,7 @@ namespace LoaderUI {
         if (!LoaderUpdate::RunPayload(s->selectedMode, err))
             MessageBoxW(gWnd, err.c_str(), LoaderConfig::kAppName, MB_OK | MB_ICONWARNING);
         else
-            PostMessage(gWnd, WM_CLOSE, 0, 0);
+            BeginClose(gWnd, s);
     }
 
     inline void FinishAuthUi(State* s, AuthDonePayload* payload)
@@ -1114,6 +1261,7 @@ namespace LoaderUI {
         int next = HitTestHover(s, pt);
         if (next != gHover) {
             gHover = next;
+            StartAnimTimer(hwnd);
             InvalidateRect(hwnd, nullptr, FALSE);
         }
     }
@@ -1162,7 +1310,17 @@ namespace LoaderUI {
             return 0;
         }
         case WM_TIMER:
+            if (wp == 2) {
+                KillTimer(hwnd, 2);
+                AnimateWindow(hwnd, 160, AW_HIDE | AW_BLEND);
+                DestroyWindow(hwnd);
+                return 0;
+            }
             if (wp == kAnimTimerId && s) {
+                if (s->closing && s->windowOutro >= 1.f) {
+                    SetTimer(hwnd, 2, 1, nullptr);
+                    return 0;
+                }
                 static DWORD lastTick = 0;
                 DWORD now = GetTickCount();
                 if (!lastTick) lastTick = now;
@@ -1173,6 +1331,12 @@ namespace LoaderUI {
                     InvalidateRect(hwnd, nullptr, FALSE);
             }
             return 0;
+        case WM_CLOSE:
+            if (s && !s->closing) {
+                BeginClose(hwnd, s);
+                return 0;
+            }
+            break;
         case WM_ERASEBKGND:
             return 1;
         case WM_NCHITTEST: {
@@ -1215,7 +1379,7 @@ namespace LoaderUI {
         case WM_LBUTTONDOWN: {
             POINT pt{ GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
             if (PtInRect(&CloseButtonRect(), pt)) {
-                PostMessage(hwnd, WM_CLOSE, 0, 0);
+                BeginClose(hwnd, s);
                 return 0;
             }
             if (PtInRect(&MinButtonRect(), pt)) {
@@ -1231,8 +1395,7 @@ namespace LoaderUI {
             if (s->screen == ScreenReady && PtInRect(&PrimaryButtonRect(), pt)) {
                 if (s->filesReady) {
                     s->selectedMode = 0;
-                    s->screen = ScreenAuth;
-                    SetKeyEditVisible(true);
+                    TransitionToScreen(s, ScreenAuth);
                     gHover = HoverNone;
                     InvalidateRect(hwnd, nullptr, FALSE);
                 } else {
@@ -1255,10 +1418,9 @@ namespace LoaderUI {
                     return 0;
                 }
                 if (s->authenticated && PtInRect(&AuthContinueRect(), pt)) {
-                    s->screen = ScreenLauncher;
                     s->selectedMode = 0;
                     LoaderUpdate::SaveMode(0);
-                    SetKeyEditVisible(false);
+                    TransitionToScreen(s, ScreenLauncher);
                     gHover = HoverNone;
                     InvalidateRect(hwnd, nullptr, FALSE);
                     return 0;
@@ -1303,6 +1465,7 @@ namespace LoaderUI {
             break;
         case WM_DESTROY:
             StopAnimTimer(hwnd);
+            KillTimer(hwnd, 2);
             PostQuitMessage(0);
             return 0;
         }
@@ -1332,21 +1495,21 @@ namespace LoaderUI {
 
         gBgBrush = CreateSolidBrush(LoaderConfig::kBg);
         gEditBrush = CreateSolidBrush(LoaderConfig::kInputBg);
-        gFont = CreateFontW(-15, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+        gFont = CreateFontW(-14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
-        gFontBold = CreateFontW(-16, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
-            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-            CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
-        gFontBrand = CreateFontW(-20, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
-            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-            CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
-        gFontHero = CreateFontW(-42, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
-            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-            CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
-        gFontLogo = CreateFontW(-34, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+        gFontBold = CreateFontW(-15, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI Semibold");
+        gFontBrand = CreateFontW(-19, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+            CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI Semibold");
+        gFontHero = CreateFontW(-40, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+            CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
+        gFontLogo = CreateFontW(-32, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+            CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
         if (!gFontLogo)
             gFontLogo = gFontHero;
 
@@ -1371,10 +1534,12 @@ namespace LoaderUI {
         int x = (sx - w) / 2;
         int y = (sy - h) / 2;
 
+        wchar_t wndTitle[64];
+        swprintf_s(wndTitle, L"FRONTIER %hs", LoaderConfig::kDisplayVersion);
         gWnd = CreateWindowExW(
             WS_EX_APPWINDOW,
             wc.lpszClassName,
-            LoaderConfig::kAppName,
+            wndTitle,
             WS_POPUP,
             x, y, w, h,
             nullptr, nullptr, inst, nullptr);
@@ -1386,6 +1551,7 @@ namespace LoaderUI {
 
         ShowWindow(gWnd, SW_SHOW);
         UpdateWindow(gWnd);
+        AnimateWindow(gWnd, 280, AW_BLEND);
 
         MSG msg{};
         while (GetMessageW(&msg, nullptr, 0, 0)) {

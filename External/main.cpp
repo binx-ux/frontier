@@ -632,18 +632,26 @@ namespace
 			}
 
 			// Inf jump — velocity + humanoid jump (works across R6/R15/custom)
+			static bool infJumpWasSpace = false;
+			const bool spaceDown = (GetAsyncKeyState(VK_SPACE) & 0x8000) != 0;
+			const bool spaceEdge = spaceDown && !infJumpWasSpace;
+			infJumpWasSpace = spaceDown;
 			if (variables::Local::infJump && WindowManager::IsRobloxFocused() &&
-				(GetAsyncKeyState(VK_SPACE) & 0x8000)) {
+				(spaceEdge || spaceDown)) {
+				ForceHumanoidRunning(humanoid.Addr);
+				memory->write<uint8_t>(humanoid.Addr + Offsets::Humanoid::Sit, 0);
+				memory->write<uint8_t>(humanoid.Addr + Offsets::Humanoid::PlatformStand, 0);
 				float jp = variables::Local::jumpPower > 1.f ? variables::Local::jumpPower : 50.f;
 				RBX::ModifyJumpPower(humanoid, jp);
 				memory->write<float>(humanoid.Addr + Offsets::Humanoid::JumpHeight, jp * 0.18f);
-				RBX::ForceJump(humanoid);
+				if (spaceEdge)
+					RBX::ForceJump(humanoid);
 				auto prim = rootPart.GetPrimitivePtr();
 				if (prim) {
 					RBX::Vec3 vel = memory->read<RBX::Vec3>(prim + Offsets::Primitive::AssemblyLinearVelocity);
 					float boost = jp * 0.75f;
 					if (boost < 42.f) boost = 42.f;
-					if (vel.Y < boost * 0.8f)
+					if (spaceEdge || vel.Y < boost * 0.65f)
 						vel.Y = boost;
 					WriteLocalVelocity(rootPart, vel);
 				}
@@ -1010,6 +1018,8 @@ namespace
 				if (humanoid.Addr) {
 					memory->write<uint8_t>(humanoid.Addr + Offsets::Humanoid::PlatformStand, 0);
 					memory->write<uint8_t>(humanoid.Addr + Offsets::Humanoid::AutoRotate, 0);
+					memory->write<uint8_t>(humanoid.Addr + Offsets::Humanoid::Sit, 0);
+					ForceHumanoidRunning(humanoid.Addr);
 					flyHumanoidSet = true;
 				}
 				auto cf = Globals::camera.GetCameraCFrame();
@@ -1043,7 +1053,10 @@ namespace
 					auto prim = rootPart.GetPrimitivePtr();
 					if (prim) {
 						RBX::Vec3 vel = memory->read<RBX::Vec3>(prim + Offsets::Primitive::AssemblyLinearVelocity);
-						WriteLocalVelocity(rootPart, { 0.f, vel.Y > -1.f ? 0.f : vel.Y * 0.5f, 0.f });
+						if (vel.Y < -8.f)
+							WriteLocalVelocity(rootPart, { 0.f, 0.f, 0.f });
+						else
+							WriteLocalVelocity(rootPart, { 0.f, vel.Y > -1.f ? 0.f : vel.Y * 0.5f, 0.f });
 					}
 				}
 				auto prim = rootPart.GetPrimitivePtr();
@@ -1185,10 +1198,10 @@ namespace
 			}
 
 			static bool lastDesync = false;
-			if (Desync::PhysicsSenderMaxBandwidthBps != 0 && variables::Local::desyncEnabled != lastDesync) {
+			if (Offsets::Desync::PhysicsSenderMaxBandwidthBps != 0 && variables::Local::desyncEnabled != lastDesync) {
 				auto base = memory->get_module_address();
 				if (base) {
-					auto addr = base + Desync::PhysicsSenderMaxBandwidthBps;
+					auto addr = base + Offsets::Desync::PhysicsSenderMaxBandwidthBps;
 					memory->write<float>(addr, variables::Local::desyncEnabled ? 0.0f : 5.431432847722991e-41f);
 					lastDesync = variables::Local::desyncEnabled;
 				}
@@ -1282,7 +1295,7 @@ namespace
 				}
 			}
 
-			// TP walk — nudge HRP while holding WASD (keep Y, damp fall)
+			// TP walk — nudge HRP while holding WASD (dt-scaled, keep Y)
 			if (variables::Local::tpWalk && Globals::camera.Addr) {
 				auto cf = Globals::camera.GetCameraCFrame();
 				RBX::Vec3 look = cf.GetLookVector();
@@ -1292,11 +1305,12 @@ namespace
 				if (flat > 0.001f) { look.X /= flat; look.Z /= flat; }
 				RBX::Vec3 right = cf.GetRightVector();
 				RBX::Vec3 step{};
-				float amt = variables::Local::tpWalkStep;
-				if (GameKeyDown('W')) { step.X += look.X * amt; step.Z += look.Z * amt; }
-				if (GameKeyDown('S')) { step.X -= look.X * amt; step.Z -= look.Z * amt; }
-				if (GameKeyDown('D')) { step.X += right.X * amt; step.Z += right.Z * amt; }
-				if (GameKeyDown('A')) { step.X -= right.X * amt; step.Z -= right.Z * amt; }
+				const float rate = (std::max)(variables::Local::tpWalkStep, 0.5f);
+				const float stepScale = rate * dt * 60.f;
+				if (GameKeyDown('W')) { step.X += look.X * stepScale; step.Z += look.Z * stepScale; }
+				if (GameKeyDown('S')) { step.X -= look.X * stepScale; step.Z -= look.Z * stepScale; }
+				if (GameKeyDown('D')) { step.X += right.X * stepScale; step.Z += right.Z * stepScale; }
+				if (GameKeyDown('A')) { step.X -= right.X * stepScale; step.Z -= right.Z * stepScale; }
 				if (step.X != 0.f || step.Z != 0.f) {
 					auto pos = rootPart.GetPos();
 					pos.X += step.X;
@@ -1305,7 +1319,7 @@ namespace
 					auto prim = rootPart.GetPrimitivePtr();
 					if (prim) {
 						RBX::Vec3 vel = memory->read<RBX::Vec3>(prim + Offsets::Primitive::AssemblyLinearVelocity);
-						WriteLocalVelocity(rootPart, { vel.X * 0.15f, vel.Y, vel.Z * 0.15f });
+						WriteLocalVelocity(rootPart, { vel.X * 0.12f, vel.Y, vel.Z * 0.12f });
 					}
 				}
 			}

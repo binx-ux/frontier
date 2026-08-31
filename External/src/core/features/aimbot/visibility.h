@@ -173,19 +173,30 @@ namespace Visibility {
         return out.Valid();
     }
 
+    inline bool IsCharacterFolderName(const std::string& n)
+    {
+        if (n.empty()) return false;
+        return n == "Characters" || n == "characters" || n == "Players" ||
+            n == "NPCs" || n == "Npcs" || n == "Living" || n == "Entities" ||
+            n == "Dummies" || n == "Bots" || n == "Agents";
+    }
+
     inline void CollectParts(RBX::RbxInstance inst, int depth, int& count, std::vector<OBB>& out)
     {
-        if (inst.Addr == 0 || depth > 22 || count >= 15000) return;
+        if (inst.Addr == 0 || depth > 20 || count >= 8000) return;
         std::string cls = inst.GetClass();
         if (cls.empty()) return;
 
-        // Skip non-geometry / characters
+        // Skip non-geometry / characters / live player folders
         if (cls == "Humanoid" || cls == "Camera" || cls == "Terrain" ||
             cls == "Players" || cls == "Sound" || cls == "Script" || cls == "LocalScript" ||
             cls == "ModuleScript" || cls == "Beam" || cls == "Trail" || cls == "ParticleEmitter" ||
             cls == "Attachment" || cls == "Bone" || cls == "Motor6D" || cls == "Weld" ||
             cls == "Decal" || cls == "Texture" || cls == "Fire" || cls == "Smoke" ||
             cls == "Sparkles" || cls == "PointLight" || cls == "SpotLight" || cls == "SurfaceLight")
+            return;
+
+        if ((cls == "Folder" || cls == "Model") && IsCharacterFolderName(inst.GetName()))
             return;
 
         if (cls == "Model" && inst.FindChildByClass("Humanoid").Addr != 0)
@@ -207,7 +218,7 @@ namespace Visibility {
 
         for (auto& ch : inst.GetChildList()) {
             CollectParts(ch, depth + 1, count, out);
-            if (count >= 15000) return;
+            if (count >= 8000) return;
         }
     }
 
@@ -224,7 +235,7 @@ namespace Visibility {
         }
 
         std::vector<OBB> next;
-        next.reserve(15000);
+        next.reserve(8000);
         int count = 0;
 
         // Prefer map folders first (often named Map / Arena / Stages) then everything else
@@ -235,6 +246,7 @@ namespace Visibility {
             if (c == "Camera" || c == "Terrain") continue;
             if (ch.FindChildByClass("Humanoid").Addr != 0) continue;
             std::string n = ch.GetName();
+            if (IsCharacterFolderName(n)) continue;
             bool pri = false;
             if (!n.empty()) {
                 // case-insensitive-ish cheap checks
@@ -252,12 +264,12 @@ namespace Visibility {
         }
         for (auto& ch : priority) {
             CollectParts(ch, 1, count, next);
-            if (count >= 15000) break;
+            if (count >= 8000) break;
         }
-        if (count < 15000) {
+        if (count < 8000) {
             for (auto& ch : rest) {
                 CollectParts(ch, 1, count, next);
-                if (count >= 15000) break;
+                if (count >= 8000) break;
             }
         }
 
@@ -295,7 +307,7 @@ namespace Visibility {
                 }
                 auto now = std::chrono::steady_clock::now();
                 float elapsed = std::chrono::duration<float>(now - lastRefresh).count();
-                float interval = everBuilt ? 0.75f : 0.2f;
+                float interval = everBuilt ? 1.2f : 0.35f;
                 bool force = rebuildRequested.exchange(false);
                 if ((force || elapsed >= interval) && !building.exchange(true)) {
                     lastRefresh = now;
@@ -335,7 +347,8 @@ namespace Visibility {
 
             float t = 0.f;
             if (RayHitsOBB(from, dir, maxT, b, t)) {
-                if (t >= 0.5f && t <= maxT)
+                // Ignore hits very close to the ray origin (self-geometry / camera clip)
+                if (t >= 0.85f && t <= maxT)
                     return false;
             }
         }

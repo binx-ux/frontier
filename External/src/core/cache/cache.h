@@ -131,13 +131,26 @@ namespace PlayerCache {
     }
 
     // BloxStrike / custom FPS often live under Workspace.Characters, not Player.Character.
+    inline RBX::RbxInstance FindCharacterFolder()
+    {
+        if (!Globals::workspace.Addr)
+            return RBX::RbxInstance(0);
+        static const char* names[] = {
+            "Characters", "characters", "Players", "Living", "Entities", "NPCs", "Bots"
+        };
+        for (const char* n : names) {
+            auto folder = Globals::workspace.FindChild(n);
+            if (folder.Addr) return folder;
+        }
+        return RBX::RbxInstance(0);
+    }
+
     inline RBX::RbxInstance FindInCharactersFolder(RBX::RbxInstance plr)
     {
         if (!Globals::workspace.Addr || !plr.Addr)
             return RBX::RbxInstance(0);
 
-        auto folder = Globals::workspace.FindChild("Characters");
-        if (!folder.Addr) folder = Globals::workspace.FindChild("characters");
+        auto folder = FindCharacterFolder();
         if (!folder.Addr) return RBX::RbxInstance(0);
 
         const std::string name = plr.GetName();
@@ -202,8 +215,7 @@ namespace PlayerCache {
         }
 
         if (Globals::workspace.Addr) {
-            auto folder = Globals::workspace.FindChild("Characters");
-            if (!folder.Addr) folder = Globals::workspace.FindChild("characters");
+            auto folder = FindCharacterFolder();
             if (folder.Addr && Globals::localPlayer.Addr) {
                 const std::string lpName = Globals::localPlayer.GetName();
                 const std::string display = Globals::localPlayer.GetDisplayName();
@@ -248,14 +260,18 @@ namespace PlayerCache {
         return true;
     }
 
+    inline void refreshBonePositions(const BoneParts& bp, BoneSet& bones);
+
     // Per-frame live head/HRP only — no prediction (prediction caused boxes to drift off players)
     inline void refreshLivePositions()
     {
         std::lock_guard<std::mutex> lock(playersMutex);
 
         if (Globals::localPlayer.Addr != 0) {
-            // Always re-resolve — BloxStrike swaps Characters models on respawn/round
-            auto localChar = ResolveCharacter(Globals::localPlayer);
+            // Always re-resolve — FPS/custom games swap character models on respawn
+            auto localChar = ResolveLocalCharacter();
+            if (!localChar.Addr)
+                localChar = ResolveCharacter(Globals::localPlayer);
             uintptr_t fresh = FindRootPart(localChar).Addr;
             if (fresh) localRootAddr = fresh;
             if (localRootAddr) {
@@ -295,6 +311,9 @@ namespace PlayerCache {
             plr.distance = sqrtf(dx * dx + dy * dy + dz * dz);
             if (plr.humanoidAddr)
                 plr.health = memory->read<float>(plr.humanoidAddr + Offsets::Humanoid::Health);
+
+            if (variables::ESP::skeleton && plr.boneParts.ready)
+                refreshBonePositions(plr.boneParts, plr.bones);
         }
     }
 
@@ -783,15 +802,19 @@ namespace PlayerCache {
             while (Globals::running) {
                 if (!variables::Loading::active && Globals::players.Addr != 0)
                     updateplayers();
-                int n = variables::Perf::playerUpdateEveryNFrames;
-                if (n < 1) n = 1;
                 // Aimbot wants fresher bones; ESP-only can idle longer
                 bool hot = variables::Aimbot::enabled || variables::Aimbot::silentAim
                     || variables::Aimbot::alwaysOn || variables::MagicBullet::enabled
-                    || variables::ESP::skeleton || variables::Misc::afkAssist
+                    || variables::ESP::enabled || variables::ESP::skeleton
+                    || variables::Misc::afkAssist
                     || variables::Rage::enabled || variables::Trigger::enabled;
-                int ms = hot ? 16 : (16 * n);
-                if (ms > 48) ms = 48;
+                int ms = hot ? 16 : 32;
+                if (!hot) {
+                    int n = variables::Perf::playerUpdateEveryNFrames;
+                    if (n < 1) n = 1;
+                    ms = 16 * n;
+                }
+                if (ms > 64) ms = 64;
                 std::this_thread::sleep_for(std::chrono::milliseconds(ms));
             }
         }).detach();

@@ -54,7 +54,7 @@ namespace variables {
         inline bool vsync = false;
         inline int targetFps = 144; // soft cap when vsync off (0 = uncapped)
         inline int playerUpdateEveryNFrames = 2;
-        inline bool skipSkeletonWhenLowFps = false;
+        inline bool skipSkeletonWhenLowFps = true;
         inline int lowFpsThreshold = 45;
         inline int currentFps = 0;
     }
@@ -428,6 +428,13 @@ namespace variables {
         inline float spotX = 0, spotY = 0, spotW = 0, spotH = 0;
         inline float floatX = 0, floatY = 0, floatW = 0, floatH = 0;
         inline bool floatingPanelOpen = false;
+        inline float floatingPanelAnim = 0.f;
+        inline float tabContentAnim = 1.f;
+        inline int lastMenuTab = 0;
+        inline float headerIntro = 0.f;
+        inline float toastAnim = 0.f;
+        inline float navHover[9]{};
+        inline float iconHover[9]{};
         inline float panelX = 0, panelY = 0, panelW = 0, panelH = 0;
         inline int selectedSubByTab[9] = {};
         inline HWND overlayHwnd = nullptr;

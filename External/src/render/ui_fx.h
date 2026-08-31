@@ -6,6 +6,7 @@
 #include "../../src/core/variables/variables.h"
 #include "frontier_ui.h"
 #include "brand_assets.h"
+#include "ui_motion.h"
 
 namespace UIFx {
 
@@ -214,9 +215,15 @@ namespace UIFx {
         const float barH = 52.0f;
         const float barW = count * iconSlot + 24.0f;
         ImVec2 ds = ImGui::GetIO().DisplaySize;
+        float dt = ImGui::GetIO().DeltaTime;
+        if (dt < 0.f) dt = 0.f;
+        if (dt > 0.05f) dt = 0.05f;
+
+        const float intro = UIMotion::EaseOutCubic(variables::Misc::headerIntro);
+        const float introSlide = (1.f - intro) * 14.f;
 
         float px = (ds.x - barW) * 0.5f;
-        float py = variables::Theme::headerY;
+        float py = variables::Theme::headerY - introSlide;
         variables::Misc::floatX = px;
         variables::Misc::floatY = py;
         variables::Misc::floatW = barW;
@@ -224,6 +231,7 @@ namespace UIFx {
 
         ImGui::SetNextWindowPos(ImVec2(px, py), ImGuiCond_Always);
         ImGui::SetNextWindowSize(ImVec2(barW, barH));
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, intro);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 18.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 8));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
@@ -259,26 +267,32 @@ namespace UIFx {
                 changed = true;
             }
 
-            ImVec2 center(p.x + btn.x * 0.5f, p.y + btn.y * 0.42f);
             bool active = (*selectedTab == i && variables::Misc::floatingPanelOpen);
-            if (active || hovered) {
+            UIMotion::SetIconHoverTarget(i, hovered || active, dt);
+            const float hb = UIMotion::IconHover(i);
+
+            ImVec2 center(p.x + btn.x * 0.5f, p.y + btn.y * 0.42f);
+            if (hb > 0.01f) {
+                const int bgA = active ? (int)(18 + hb * 8) : (int)(hb * 12);
                 dl->AddRectFilled(ImVec2(p.x + 2, p.y + 1), ImVec2(p.x + btn.x - 2, p.y + btn.y - 1),
-                    active ? IM_COL32(255, 255, 255, 22) : IM_COL32(255, 255, 255, 10), 10.f);
+                    IM_COL32(255, 255, 255, bgA), 10.f);
             }
-            ImU32 col = (active || hovered)
-                ? FrontierUI::U32(variables::Theme::brand, 1.f)
+            ImU32 col = (active || hb > 0.35f)
+                ? FrontierUI::U32(variables::Theme::brand, 0.75f + hb * 0.25f)
                 : IM_COL32(150, 150, 160, 210);
             DrawIcon(dl, center, 15.0f, icons[i], col);
-            if (active)
-                dl->AddRectFilled(ImVec2(center.x - 7, p.y + btn.y - 3),
-                    ImVec2(center.x + 7, p.y + btn.y - 1),
-                    FrontierUI::U32(variables::Theme::brand, 0.95f), 2.f);
+            if (active) {
+                const float indicatorW = 7.f + hb * 3.f;
+                dl->AddRectFilled(ImVec2(center.x - indicatorW, p.y + btn.y - 3),
+                    ImVec2(center.x + indicatorW, p.y + btn.y - 1),
+                    FrontierUI::U32(variables::Theme::brand, 0.85f + hb * 0.1f), 2.f);
+            }
             ImGui::PopID();
         }
 
         ImGui::End();
         ImGui::PopStyleColor(2);
-        ImGui::PopStyleVar(3);
+        ImGui::PopStyleVar(4);
         return changed;
     }
 

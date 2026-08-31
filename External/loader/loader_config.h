@@ -10,7 +10,9 @@ namespace LoaderConfig {
 
 
 
-    inline constexpr int kLocalVersion = 10;
+    inline constexpr int kLocalVersion = 12;
+    inline constexpr const char* kDisplayVersion = "v1.2.9";
+    inline constexpr const char* kProductLine = "Roblox External";
 
 
 
@@ -30,7 +32,7 @@ namespace LoaderConfig {
 
     inline constexpr const char* kFallbackUsermodeUrl =
 
-        "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.7/Frontier.exe";
+        "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.9/Frontier.exe";
 
     inline constexpr const char* kReleasesPage =
 
@@ -72,17 +74,17 @@ namespace LoaderConfig {
 
 
 
-    // Flat utility layout — no glow / gradient chrome
-    inline constexpr int kWindowW = 780;
-    inline constexpr int kWindowH = 460;
-    inline constexpr int kSplitX = 248;
+    // Flat utility layout — refined spacing & motion-friendly size
+    inline constexpr int kWindowW = 820;
+    inline constexpr int kWindowH = 480;
+    inline constexpr int kSplitX = 268;
 
     inline constexpr COLORREF kBgTop = RGB(18, 18, 20);
     inline constexpr COLORREF kBgBottom = RGB(14, 14, 16);
-    inline constexpr COLORREF kBg = RGB(16, 16, 18);
-    inline constexpr COLORREF kPanel = RGB(20, 20, 22);
-    inline constexpr COLORREF kPanelLeft = RGB(12, 12, 14);
-    inline constexpr COLORREF kCard = RGB(22, 22, 24);
+    inline constexpr COLORREF kBg = RGB(14, 14, 16);
+    inline constexpr COLORREF kPanel = RGB(18, 18, 20);
+    inline constexpr COLORREF kPanelLeft = RGB(10, 10, 12);
+    inline constexpr COLORREF kCard = RGB(20, 20, 22);
     inline constexpr COLORREF kCardInner = RGB(22, 22, 24);
     inline constexpr COLORREF kCardHover = RGB(28, 28, 32);
     inline constexpr COLORREF kAccent = RGB(235, 45, 35);

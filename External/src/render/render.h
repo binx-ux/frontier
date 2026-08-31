@@ -20,6 +20,7 @@
 #include "../../src/sdk/w2s.h"
 #include "../../src/render/avatar_cache.h"
 #include "../../src/render/ui_fx.h"
+#include "../../src/render/ui_motion.h"
 #include "../../src/render/spotify_player.h"
 #include "../../src/render/embedded_fonts.h"
 #include "../../src/render/brand_assets.h"
@@ -456,7 +457,8 @@ public:
     }
 
     void RenderFloatingPanel() {
-        if (!variables::Misc::floatingPanelOpen) {
+        const float panelAnim = variables::Misc::floatingPanelAnim;
+        if (panelAnim < 0.008f && !variables::Misc::floatingPanelOpen) {
             variables::Misc::panelW = 0;
             variables::Misc::panelH = 0;
             return;
@@ -466,6 +468,8 @@ public:
         if (tab < 0 || tab > 8) tab = 0;
         int sub = variables::Misc::selectedSubByTab[tab];
         if (sub < 0) sub = 0;
+
+        UIMotion::NotifyTabChanged(tab);
 
         static const char* tabNames[] = {
             "Combat", "Visuals", "World", "Character", "Options",
@@ -479,16 +483,23 @@ public:
         float px = (ds.x - sz.x) * 0.5f;
         float py = barBottom;
 
+        const float ease = UIMotion::EaseOutQuart(panelAnim);
+        const float slideY = (1.f - ease) * 22.f;
+        const float panelAlpha = ease;
+
         ImGui::SetNextWindowSize(sz, ImGuiCond_Always);
         ImGui::SetNextWindowSizeConstraints(ImVec2(380.f, 200.f), ImVec2(ds.x - 16.f, ds.y - 8.f));
         {
             static bool placed[9] = {};
             if (!placed[tab]) {
-                ImGui::SetNextWindowPos(ImVec2(px, py), ImGuiCond_Always);
+                ImGui::SetNextWindowPos(ImVec2(px, py + slideY), ImGuiCond_Always);
                 placed[tab] = true;
+            } else {
+                ImGui::SetNextWindowPos(ImVec2(px, py + slideY), ImGuiCond_Always);
             }
         }
 
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, panelAlpha);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 14.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14, 12));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
@@ -514,12 +525,14 @@ public:
         variables::Misc::panelH = ws.y;
 
         ImDrawList* wdl = ImGui::GetWindowDrawList();
-        UIFx::DrawPanelAmbientGlow(ImGui::GetBackgroundDrawList(), wp, ws, 1.f);
+        UIFx::DrawPanelAmbientGlow(ImGui::GetBackgroundDrawList(), wp, ws, panelAlpha);
         wdl->AddLine(ImVec2(wp.x + 12, wp.y + 1), ImVec2(wp.x + ws.x - 12, wp.y + 1),
-            IM_COL32(255, 255, 255, 22), 1.f);
+            IM_COL32(255, 255, 255, (int)(22 * panelAlpha)), 1.f);
         wdl->AddRectFilled(ImVec2(wp.x, wp.y + 8), ImVec2(wp.x + 2.5f, wp.y + 34),
-            FrontierUI::U32(variables::Theme::brand, 0.65f), 2.f);
+            FrontierUI::U32(variables::Theme::brand, 0.65f * panelAlpha), 2.f);
 
+        const float tabEase = UIMotion::EaseOutCubic(variables::Misc::tabContentAnim);
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, tabEase);
         ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
         ImGui::BeginChild("##mwscroll", ImVec2(0, 0), ImGuiChildFlags_NavFlattened,
             ImGuiWindowFlags_AlwaysVerticalScrollbar);
@@ -527,6 +540,7 @@ public:
         ImGui::Dummy(ImVec2(0, 8)); // bottom pad so last controls aren't flush
         ImGui::EndChild();
         ImGui::PopStyleColor();
+        ImGui::PopStyleVar();
 
         variables::Misc::floatingPanelOpen = open;
         variables::Misc::menuHovered =
@@ -536,7 +550,7 @@ public:
 
         ImGui::End();
         ImGui::PopStyleColor(5);
-        ImGui::PopStyleVar(3);
+        ImGui::PopStyleVar(4);
     }
 
     void RenderRedirectKick() {
@@ -712,10 +726,14 @@ public:
 
         // Floating icon bar — each icon opens its own compact panel
         if (variables::Theme::useFloatingHeader && !Telemetry::consentPending.load()) {
+            UIMotion::Tick(dt);
+
             int prevTab = variables::selectedTab;
             UIFx::FloatingHeader(&variables::selectedTab);
-            if (variables::selectedTab != prevTab)
+            if (variables::selectedTab != prevTab) {
                 variables::selectedSub = variables::Misc::selectedSubByTab[variables::selectedTab];
+                UIMotion::NotifyTabChanged(variables::selectedTab);
+            }
 
             if (variables::Theme::bgEffect)
                 UIFx::DrawBackgroundFX(bg, ds, dt);
@@ -751,6 +769,8 @@ public:
         }
 
         // Classic full menu (floating header disabled)
+        UIMotion::Tick(dt);
+
         float target = variables::menuOpen ? 1.f : 0.f;
         float speed = variables::Misc::menuAnimSpeed;
         if (speed < 4.f) speed = 4.f;
@@ -765,19 +785,23 @@ public:
             UIFx::DrawBackgroundFX(bg, ds, dt);
 
         float anim = variables::Misc::menuAnim;
-        float ease = 1.f - powf(1.f - anim, 3.f);
+        float ease = UIMotion::EaseOutQuart(anim);
+        float slideY = (1.f - ease) * 28.f;
         float uiScale = variables::Theme::menuScale;
         if (uiScale < 0.85f) uiScale = 0.85f;
         if (uiScale > 1.15f) uiScale = 1.15f;
-        float baseW = 849.f * uiScale;
-        float baseH = 538.f * uiScale;
+        float scaleAnim = 0.975f + 0.025f * ease;
+        float baseW = 849.f * uiScale * scaleAnim;
+        float baseH = 538.f * uiScale * scaleAnim;
+
+        UIMotion::NotifyTabChanged(variables::selectedTab);
 
         ImGui::SetNextWindowSize(ImVec2(baseW, baseH), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSizeConstraints(ImVec2(720.f, 460.f), ImVec2(ds.x - 16.f, ds.y - 8.f));
         {
             static bool haveDragPos = false;
             float px = haveDragPos ? variables::Misc::menuX : (ds.x * 0.5f - baseW * 0.5f);
-            float py = haveDragPos ? variables::Misc::menuY : (ds.y * 0.5f - baseH * 0.5f);
+            float py = (haveDragPos ? variables::Misc::menuY : (ds.y * 0.5f - baseH * 0.5f)) + slideY;
             ImGui::SetNextWindowPos(ImVec2(px, py), ImGuiCond_Appearing);
             if (variables::Misc::menuW > 1.f && variables::Misc::menuH > 1.f)
                 haveDragPos = true;
@@ -808,13 +832,15 @@ public:
 
         ImVec2 contentOrigin = FrontierShell::ContentOrigin(wp);
         ImVec2 contentSize = FrontierShell::ContentSize(ww, wh);
+        const float tabEase = UIMotion::EaseOutCubic(variables::Misc::tabContentAnim);
         ImGui::SetCursorScreenPos(contentOrigin);
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, tabEase);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 8));
         ImGui::BeginChild("##content", contentSize, ImGuiChildFlags_None,
             ImGuiWindowFlags_AlwaysVerticalScrollbar);
         FrontierMenu::RenderBody();
         ImGui::EndChild();
-        ImGui::PopStyleVar();
+        ImGui::PopStyleVar(2);
 
         FrontierMenu::RefreshStatusInfo();
         FrontierUI::DrawFooter(wdl, wp, ww, wh);
