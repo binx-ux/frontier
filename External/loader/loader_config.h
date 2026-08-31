@@ -10,8 +10,8 @@ namespace LoaderConfig {
 
 
 
-    inline constexpr int kLocalVersion = 12;
-    inline constexpr const char* kDisplayVersion = "v1.2.9";
+    inline constexpr int kLocalVersion = 13;
+    inline constexpr const char* kDisplayVersion = "v1.2.10";
     inline constexpr const char* kProductLine = "Roblox External";
 
 
@@ -32,7 +32,7 @@ namespace LoaderConfig {
 
     inline constexpr const char* kFallbackUsermodeUrl =
 
-        "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.9/Frontier.exe";
+        "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.10/Frontier.exe";
 
     inline constexpr const char* kReleasesPage =
 
@@ -79,35 +79,35 @@ namespace LoaderConfig {
     inline constexpr int kWindowH = 480;
     inline constexpr int kSplitX = 268;
 
-    inline constexpr COLORREF kBgTop = RGB(18, 18, 20);
-    inline constexpr COLORREF kBgBottom = RGB(14, 14, 16);
-    inline constexpr COLORREF kBg = RGB(14, 14, 16);
-    inline constexpr COLORREF kPanel = RGB(18, 18, 20);
-    inline constexpr COLORREF kPanelLeft = RGB(10, 10, 12);
-    inline constexpr COLORREF kCard = RGB(20, 20, 22);
-    inline constexpr COLORREF kCardInner = RGB(22, 22, 24);
-    inline constexpr COLORREF kCardHover = RGB(28, 28, 32);
-    inline constexpr COLORREF kAccent = RGB(235, 45, 35);
-    inline constexpr COLORREF kAccentHover = RGB(255, 70, 58);
-    inline constexpr COLORREF kAccentDim = RGB(140, 28, 22);
-    inline constexpr COLORREF kAccentLight = RGB(255, 120, 110);
-    inline constexpr COLORREF kAccentGlow = RGB(40, 40, 44);
+    inline constexpr COLORREF kBgTop = RGB(14, 20, 36);
+    inline constexpr COLORREF kBgBottom = RGB(8, 12, 24);
+    inline constexpr COLORREF kBg = RGB(10, 14, 28);
+    inline constexpr COLORREF kPanel = RGB(14, 20, 36);
+    inline constexpr COLORREF kPanelLeft = RGB(8, 12, 26);
+    inline constexpr COLORREF kCard = RGB(16, 24, 42);
+    inline constexpr COLORREF kCardInner = RGB(18, 26, 46);
+    inline constexpr COLORREF kCardHover = RGB(22, 32, 56);
+    inline constexpr COLORREF kAccent = RGB(56, 118, 255);
+    inline constexpr COLORREF kAccentHover = RGB(88, 148, 255);
+    inline constexpr COLORREF kAccentDim = RGB(34, 72, 168);
+    inline constexpr COLORREF kAccentLight = RGB(140, 182, 255);
+    inline constexpr COLORREF kAccentGlow = RGB(24, 36, 64);
 
-    inline constexpr COLORREF kText = RGB(252, 252, 254);
+    inline constexpr COLORREF kText = RGB(248, 250, 255);
 
-    inline constexpr COLORREF kTextDim = RGB(160, 162, 172);
+    inline constexpr COLORREF kTextDim = RGB(168, 178, 204);
 
-    inline constexpr COLORREF kTextMuted = RGB(100, 102, 112);
+    inline constexpr COLORREF kTextMuted = RGB(108, 118, 142);
 
-    inline constexpr COLORREF kBorder = RGB(38, 38, 44);
+    inline constexpr COLORREF kBorder = RGB(34, 44, 68);
 
-    inline constexpr COLORREF kBorderActive = RGB(251, 27, 8);
+    inline constexpr COLORREF kBorderActive = RGB(88, 148, 255);
 
-    inline constexpr COLORREF kSuccess = RGB(64, 196, 145);
+    inline constexpr COLORREF kSuccess = RGB(64, 168, 240);
 
     inline constexpr COLORREF kWarning = RGB(230, 170, 90);
 
-    inline constexpr COLORREF kBarTrack = RGB(24, 24, 28);
+    inline constexpr COLORREF kBarTrack = RGB(18, 26, 44);
 
     inline constexpr COLORREF kInputBg = RGB(12, 12, 14);
 

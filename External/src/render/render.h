@@ -489,14 +489,8 @@ public:
 
         ImGui::SetNextWindowSize(sz, ImGuiCond_Always);
         ImGui::SetNextWindowSizeConstraints(ImVec2(380.f, 200.f), ImVec2(ds.x - 16.f, ds.y - 8.f));
-        {
-            static bool placed[9] = {};
-            if (!placed[tab]) {
-                ImGui::SetNextWindowPos(ImVec2(px, py + slideY), ImGuiCond_Always);
-                placed[tab] = true;
-            } else {
-                ImGui::SetNextWindowPos(ImVec2(px, py + slideY), ImGuiCond_Always);
-            }
+        if (panelAnim < 0.999f) {
+            ImGui::SetNextWindowPos(ImVec2(px, py + slideY), ImGuiCond_Always);
         }
 
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, panelAlpha);
@@ -512,10 +506,14 @@ public:
         char winId[48];
         sprintf_s(winId, "%s##mwpanel%d", tabNames[tab], tab);
         bool open = variables::Misc::floatingPanelOpen;
-        // Outer window does not scroll — body child does (fits all content)
         ImGuiWindowFlags wflags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings |
             ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
-        ImGui::Begin(winId, &open, wflags);
+        if (!ImGui::Begin(winId, &open, wflags)) {
+            ImGui::PopStyleColor(5);
+            ImGui::PopStyleVar(4);
+            variables::Misc::floatingPanelOpen = open;
+            return;
+        }
 
         ImVec2 wp = ImGui::GetWindowPos();
         ImVec2 ws = ImGui::GetWindowSize();
@@ -812,8 +810,12 @@ public:
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 7.0f);
         ImGui::PushStyleColor(ImGuiCol_WindowBg, UI::V4(variables::Theme::bg));
         ImGui::PushStyleColor(ImGuiCol_Border, UI::V4(variables::Theme::border));
-        ImGui::Begin("##mw", &variables::menuOpen,
-            ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
+        if (!ImGui::Begin("##mw", &variables::menuOpen,
+            ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar)) {
+            ImGui::PopStyleColor(2);
+            ImGui::PopStyleVar(3);
+            return;
+        }
 
         ImDrawList* wdl = ImGui::GetWindowDrawList();
         ImVec2 wp = ImGui::GetWindowPos();

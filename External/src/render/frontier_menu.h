@@ -785,8 +785,11 @@ namespace FrontierMenu {
         FrontierUI::BeginTwoCol("##opt");
         if (FrontierUI::BeginCard("General", true)) {
             FrontierUI::Checkbox("Discord Rich Presence", &variables::Misc::discordRpc);
-            if (ImGui::IsItemDeactivatedAfterEdit())
+            if (ImGui::IsItemDeactivatedAfterEdit()) {
                 FrontierPresence::SyncEnabled(variables::Misc::discordRpc);
+                if (variables::Misc::discordRpc)
+                    FrontierPresence::RequestRefresh();
+            }
             FrontierUI::Checkbox("Streamproof", &variables::Misc::streamProof);
             if (FrontierUI::BeginSettings("Streaming", true)) {
                 FrontierUI::Checkbox("Streamer Mode", &variables::Misc::streamerMode);

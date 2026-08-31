@@ -29,6 +29,8 @@ namespace LoaderUpdate {
         int version = 0;
         char display[64] = "unknown";
         char usermodeUrl[512] = "";
+        char loaderUrl[512] = "";
+        char zipUrl[512] = "";
         char kernelUrl[512] = "";
         bool kernelAvailable = false;
         bool accessRequired = true;
@@ -98,6 +100,37 @@ namespace LoaderUpdate {
         WritePrivateProfileStringW(L"loader", L"localVersion", buf, ini.c_str());
     }
 
+    inline void SaveInstallRecord(int version, const char* display)
+    {
+        SaveLocalVersion(version);
+        if (display && display[0]) {
+            std::wstring ini = PathJoin(GetLoaderDir(), L"loader.ini");
+            WritePrivateProfileStringW(L"loader", L"installedDisplay", ToWide(display).c_str(), ini.c_str());
+        }
+    }
+
+    inline bool InstalledDisplayMatches(const char* remoteDisplay)
+    {
+        if (!remoteDisplay || !remoteDisplay[0]) return true;
+        std::wstring ini = PathJoin(GetLoaderDir(), L"loader.ini");
+        wchar_t installed[64]{};
+        GetPrivateProfileStringW(L"loader", L"installedDisplay", L"", installed, 64, ini.c_str());
+        if (!installed[0]) return false;
+        char narrow[64]{};
+        WideCharToMultiByte(CP_UTF8, 0, installed, -1, narrow, 64, nullptr, nullptr);
+        return _stricmp(narrow, remoteDisplay) == 0;
+    }
+
+    inline std::wstring LoaderExePath()
+    {
+        return PathJoin(GetLoaderDir(), L"FrontierLoader.exe");
+    }
+
+    inline std::wstring LoaderPendingPath()
+    {
+        return PathJoin(GetLoaderDir(), L"FrontierLoader.new.exe");
+    }
+
     inline std::wstring UsermodeExePath()
     {
         std::wstring dir = GetLoaderDir();
@@ -107,6 +140,80 @@ namespace LoaderUpdate {
     inline bool LocalUsermodeExists()
     {
         return FileExists(UsermodeExePath());
+    }
+
+    inline bool HasPendingUpdates()
+    {
+        const std::wstring dir = GetLoaderDir();
+        if (FileExists(LoaderPendingPath())) return true;
+        if (FileExists(PathJoin(PathJoin(dir, L"usermode"), L"Frontier.new.exe"))) return true;
+        if (FileExists(PathJoin(PathJoin(dir, L"kernel"), L"Frontier.new.exe"))) return true;
+        if (FileExists(PathJoin(PathJoin(PathJoin(dir, L"kernel"), L"driver"), L"FrontierDrv.new.sys")))
+            return true;
+        return false;
+    }
+
+    inline bool ReplaceFileSafe(const std::wstring& tmp, const std::wstring& final, const wchar_t* pendingKey)
+    {
+        if (!FileExists(tmp)) return false;
+
+        DeleteFileW(final.c_str());
+        if (MoveFileW(tmp.c_str(), final.c_str()))
+            return true;
+
+        if (CopyFileW(tmp.c_str(), final.c_str(), FALSE)) {
+            DeleteFileW(tmp.c_str());
+            return true;
+        }
+
+        if (pendingKey) {
+            std::wstring ini = PathJoin(GetLoaderDir(), L"loader.ini");
+            WritePrivateProfileStringW(L"loader", pendingKey, L"1", ini.c_str());
+        }
+        return false;
+    }
+
+    inline bool ApplyPendingUpdates()
+    {
+        bool applied = false;
+        const std::wstring dir = GetLoaderDir();
+
+        const std::wstring umTmp = PathJoin(PathJoin(dir, L"usermode"), L"Frontier.new.exe");
+        if (ReplaceFileSafe(umTmp, UsermodeExePath(), L"pendingUsermode"))
+            applied = true;
+
+        const std::wstring kmTmp = PathJoin(PathJoin(dir, L"kernel"), L"Frontier.new.exe");
+        const std::wstring kmFinal = PathJoin(PathJoin(dir, L"kernel"), LoaderConfig::kKernelExe);
+        if (ReplaceFileSafe(kmTmp, kmFinal, L"pendingKernel"))
+            applied = true;
+
+        const std::wstring drvTmp = PathJoin(PathJoin(PathJoin(dir, L"kernel"), L"driver"), L"FrontierDrv.new.sys");
+        const std::wstring drvFinal = PathJoin(PathJoin(PathJoin(dir, L"kernel"), L"driver"), L"FrontierDrv.sys");
+        if (ReplaceFileSafe(drvTmp, drvFinal, L"pendingDriver"))
+            applied = true;
+
+        std::wstring ini = PathJoin(dir, L"loader.ini");
+        if (applied) {
+            WritePrivateProfileStringW(L"loader", L"pendingUsermode", nullptr, ini.c_str());
+            WritePrivateProfileStringW(L"loader", L"pendingKernel", nullptr, ini.c_str());
+            WritePrivateProfileStringW(L"loader", L"pendingDriver", nullptr, ini.c_str());
+        }
+        return applied;
+    }
+
+    inline bool NeedsUpdate(const Manifest& m)
+    {
+        if (!LocalUsermodeExists()) return true;
+        if (HasPendingUpdates()) return true;
+        if (m.version <= 0) return false;
+        if (LoadLocalVersion() < m.version) return true;
+        if (!InstalledDisplayMatches(m.display)) return true;
+        return false;
+    }
+
+    inline bool IsUpToDate(const Manifest& m)
+    {
+        return !NeedsUpdate(m);
     }
 
     inline bool ResolveUsermodeExe(std::wstring& exeOut, std::wstring& workOut)
@@ -291,25 +398,117 @@ namespace LoaderUpdate {
         return true;
     }
 
-    inline bool HttpDownloadFile(const char* url, const std::wstring& dest, std::string& outErr)
+    inline bool HttpDownloadFile(const char* url, const std::wstring& dest, std::string& outErr,
+        std::function<void(float)> onProgress = nullptr)
     {
-        std::string body;
-        if (!HttpGet(url, body, outErr)) return false;
+        outErr.clear();
+        std::wstring wurl = ToWide(url);
+        if (wurl.empty()) { outErr = "Bad URL"; return false; }
+
+        URL_COMPONENTS uc{};
+        uc.dwStructSize = sizeof(uc);
+        wchar_t host[256]{}, path[2048]{};
+        uc.lpszHostName = host;
+        uc.dwHostNameLength = (DWORD)_countof(host);
+        uc.lpszUrlPath = path;
+        uc.dwUrlPathLength = (DWORD)_countof(path);
+        if (!WinHttpCrackUrl(wurl.c_str(), 0, 0, &uc)) {
+            outErr = "Bad URL";
+            return false;
+        }
+
+        HINTERNET ses = WinHttpOpen(L"FRONTIER-Loader/1.0",
+            WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+        if (!ses) { outErr = "WinHttpOpen failed"; return false; }
+
+        DWORD protocols = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2 | WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3;
+        WinHttpSetOption(ses, WINHTTP_OPTION_SECURE_PROTOCOLS, &protocols, sizeof(protocols));
+
+        const bool https = uc.nScheme == INTERNET_SCHEME_HTTPS;
+        HINTERNET con = WinHttpConnect(ses, host, uc.nPort, 0);
+        if (!con) { WinHttpCloseHandle(ses); outErr = "Connect failed"; return false; }
+
+        DWORD flags = https ? WINHTTP_FLAG_SECURE : 0;
+        HINTERNET req = WinHttpOpenRequest(con, L"GET", path, nullptr,
+            WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, flags);
+        if (!req) {
+            WinHttpCloseHandle(con);
+            WinHttpCloseHandle(ses);
+            outErr = "OpenRequest failed";
+            return false;
+        }
+
+        BOOL ok = WinHttpSendRequest(req, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+            WINHTTP_NO_REQUEST_DATA, 0, 0, 0);
+        if (ok) ok = WinHttpReceiveResponse(req, nullptr);
+        if (!ok) {
+            WinHttpCloseHandle(req);
+            WinHttpCloseHandle(con);
+            WinHttpCloseHandle(ses);
+            outErr = "Network error - check your connection";
+            return false;
+        }
+
+        DWORD status = 0, statusLen = sizeof(status);
+        WinHttpQueryHeaders(req, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+            WINHTTP_HEADER_NAME_BY_INDEX, &status, &statusLen, WINHTTP_NO_HEADER_INDEX);
+        if (status >= 400) {
+            WinHttpCloseHandle(req);
+            WinHttpCloseHandle(con);
+            WinHttpCloseHandle(ses);
+            outErr = "Server rejected request";
+            return false;
+        }
+
+        DWORD contentLen = 0;
+        DWORD clLen = sizeof(contentLen);
+        const bool hasLength = WinHttpQueryHeaders(req,
+            WINHTTP_QUERY_CONTENT_LENGTH | WINHTTP_QUERY_FLAG_NUMBER,
+            WINHTTP_HEADER_NAME_BY_INDEX, &contentLen, &clLen, WINHTTP_NO_HEADER_INDEX);
 
         HANDLE h = CreateFileW(dest.c_str(), GENERIC_WRITE, 0, nullptr,
             CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
         if (h == INVALID_HANDLE_VALUE) {
+            WinHttpCloseHandle(req);
+            WinHttpCloseHandle(con);
+            WinHttpCloseHandle(ses);
             outErr = "Cannot write file";
             return false;
         }
-        DWORD written = 0;
-        BOOL ok = WriteFile(h, body.data(), (DWORD)body.size(), &written, nullptr);
+
+        DWORD totalWritten = 0;
+        DWORD avail = 0;
+        bool success = true;
+        do {
+            if (!WinHttpQueryDataAvailable(req, &avail)) { success = false; break; }
+            if (avail == 0) break;
+
+            std::vector<char> chunk(avail);
+            DWORD read = 0;
+            if (!WinHttpReadData(req, chunk.data(), avail, &read)) { success = false; break; }
+            if (read == 0) break;
+
+            DWORD written = 0;
+            if (!WriteFile(h, chunk.data(), read, &written, nullptr) || written != read) {
+                success = false;
+                break;
+            }
+            totalWritten += written;
+            if (onProgress && hasLength && contentLen > 0)
+                onProgress((float)totalWritten / (float)contentLen);
+        } while (avail > 0);
+
         CloseHandle(h);
-        if (!ok || written != body.size()) {
-            outErr = "Write incomplete";
+        WinHttpCloseHandle(req);
+        WinHttpCloseHandle(con);
+        WinHttpCloseHandle(ses);
+
+        if (!success || totalWritten == 0) {
             DeleteFileW(dest.c_str());
+            outErr = success ? "Empty download" : "Download interrupted";
             return false;
         }
+        if (onProgress) onProgress(1.f);
         return true;
     }
 
@@ -359,6 +558,8 @@ namespace LoaderUpdate {
         m.version = JsonInt(body, "version", 0);
         JsonStr(body, "display", m.display, sizeof(m.display));
         JsonStr(body, "usermode_url", m.usermodeUrl, sizeof(m.usermodeUrl));
+        JsonStr(body, "loader_url", m.loaderUrl, sizeof(m.loaderUrl));
+        JsonStr(body, "zip_url", m.zipUrl, sizeof(m.zipUrl));
         JsonStr(body, "kernel_url", m.kernelUrl, sizeof(m.kernelUrl));
         m.kernelAvailable = JsonBool(body, "kernel_available", false);
         m.accessRequired = JsonBool(body, "access_required", false);
@@ -457,59 +658,116 @@ namespace LoaderUpdate {
         return false;
     }
 
+    inline bool PrepareLoaderRelaunch()
+    {
+        return FileExists(LoaderPendingPath());
+    }
+
+    inline bool ScheduleLoaderRelaunch()
+    {
+        const std::wstring dir = GetLoaderDir();
+        const std::wstring loaderNew = LoaderPendingPath();
+        if (!FileExists(loaderNew)) return false;
+
+        const std::wstring loaderFinal = LoaderExePath();
+        const std::wstring script = PathJoin(dir, L"_frontier_update.cmd");
+
+        FILE* f = nullptr;
+        if (_wfopen_s(&f, script.c_str(), L"w") != 0 || !f) return false;
+        fwprintf(f, L"@echo off\r\n");
+        fwprintf(f, L"timeout /t 2 /nobreak >nul\r\n");
+        fwprintf(f, L"move /y \"%s\" \"%s\"\r\n", loaderNew.c_str(), loaderFinal.c_str());
+        fwprintf(f, L"start \"\" \"%s\"\r\n", loaderFinal.c_str());
+        fwprintf(f, L"del \"%%~f0\"\r\n");
+        fclose(f);
+
+        SHELLEXECUTEINFOW sei{};
+        sei.cbSize = sizeof(sei);
+        sei.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_FLAG_NO_UI;
+        sei.lpVerb = L"open";
+        sei.lpFile = script.c_str();
+        sei.lpDirectory = dir.c_str();
+        sei.nShow = SW_HIDE;
+        if (!ShellExecuteExW(&sei)) return false;
+        if (sei.hProcess) CloseHandle(sei.hProcess);
+        return true;
+    }
+
     inline bool ApplyUpdate(const Manifest& m, std::function<void(float, const char*)> progress,
         std::string& err)
     {
+        ApplyPendingUpdates();
+
+        if (IsUpToDate(m)) {
+            if (progress) progress(1.f, "Already up to date");
+            return true;
+        }
+
         if (!m.usermodeUrl[0]) {
             err = "Manifest missing usermode_url";
             return false;
         }
-        std::wstring dir = GetLoaderDir();
-        std::wstring um = PathJoin(dir, L"usermode");
-        EnsureDir(um);
-        std::wstring tmp = PathJoin(um, L"Frontier.new.exe");
-        std::wstring final = PathJoin(um, LoaderConfig::kUsermodeExe);
 
-        if (progress) progress(0.15f, "Downloading usermode…");
-        if (!HttpDownloadFile(m.usermodeUrl, tmp, err))
+        const std::wstring dir = GetLoaderDir();
+        const std::wstring um = PathJoin(dir, L"usermode");
+        EnsureDir(um);
+        const std::wstring tmp = PathJoin(um, L"Frontier.new.exe");
+        const std::wstring final = PathJoin(um, LoaderConfig::kUsermodeExe);
+
+        if (progress) progress(0.12f, "Downloading usermode...");
+        if (!HttpDownloadFile(m.usermodeUrl, tmp, err, [&](float p) {
+            if (progress) progress(0.12f + p * 0.48f, "Downloading usermode...");
+        }))
             return false;
 
         if (m.kernelAvailable && m.kernelUrl[0]) {
-            if (progress) progress(0.55f, "Downloading kernel…");
+            if (progress) progress(0.62f, "Downloading kernel...");
             std::wstring km = PathJoin(dir, L"kernel");
             EnsureDir(km);
             std::wstring ktmp = PathJoin(km, L"Frontier.new.exe");
-            if (HttpDownloadFile(m.kernelUrl, ktmp, err)) {
-                DeleteFileW(PathJoin(km, LoaderConfig::kKernelExe).c_str());
-                MoveFileW(ktmp.c_str(), PathJoin(km, LoaderConfig::kKernelExe).c_str());
+            if (HttpDownloadFile(m.kernelUrl, ktmp, err, [&](float p) {
+                if (progress) progress(0.62f + p * 0.12f, "Downloading kernel...");
+            })) {
+                ReplaceFileSafe(ktmp, PathJoin(km, LoaderConfig::kKernelExe), L"pendingKernel");
             }
         }
 
         if (m.driverUrl[0]) {
-            if (progress) progress(0.70f, "Downloading driver…");
+            if (progress) progress(0.76f, "Downloading driver...");
             std::wstring driverDir = PathJoin(PathJoin(dir, L"kernel"), L"driver");
             EnsureDir(driverDir);
             std::wstring sysPath = PathJoin(driverDir, L"FrontierDrv.sys");
             std::wstring tmpSys = PathJoin(driverDir, L"FrontierDrv.new.sys");
-            if (HttpDownloadFile(m.driverUrl, tmpSys, err)) {
-                DeleteFileW(sysPath.c_str());
-                MoveFileW(tmpSys.c_str(), sysPath.c_str());
+            if (HttpDownloadFile(m.driverUrl, tmpSys, err, [&](float p) {
+                if (progress) progress(0.76f + p * 0.08f, "Downloading driver...");
+            })) {
+                ReplaceFileSafe(tmpSys, sysPath, L"pendingDriver");
             }
         }
 
-        if (progress) progress(0.85f, "Installing…");
-        DeleteFileW(final.c_str());
-        if (!MoveFileW(tmp.c_str(), final.c_str())) {
-            if (!CopyFileW(tmp.c_str(), final.c_str(), FALSE)) {
-                err = "Could not replace Frontier.exe";
-                DeleteFileW(tmp.c_str());
-                return false;
+        if (progress) progress(0.86f, "Installing usermode...");
+        if (!ReplaceFileSafe(tmp, final, L"pendingUsermode")) {
+            err = "Frontier.exe is in use - will update on next loader start";
+            SaveInstallRecord(m.version, m.display);
+            ApplyPendingUpdates();
+        } else {
+            if (progress) progress(0.90f, "Installed usermode");
+        }
+
+        if (m.loaderUrl[0]) {
+            if (progress) progress(0.93f, "Updating loader...");
+            std::wstring loaderNew = LoaderPendingPath();
+            std::string loaderErr;
+            if (HttpDownloadFile(m.loaderUrl, loaderNew, loaderErr, [&](float p) {
+                if (progress) progress(0.93f + p * 0.05f, "Updating loader...");
+            })) {
+                if (progress) progress(0.98f, "Loader update ready");
             }
-            DeleteFileW(tmp.c_str());
         }
 
         if (progress) progress(1.f, "Up to date");
-        SaveLocalVersion(m.version);
+        SaveInstallRecord(m.version, m.display);
+        ApplyPendingUpdates();
         return true;
     }
 }

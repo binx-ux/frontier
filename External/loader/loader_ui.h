@@ -113,6 +113,7 @@ namespace LoaderUI {
     inline const UINT WM_AUTH_DONE = WM_USER + 10;
 
     inline const UINT WM_DEFERRED_CLOSE = WM_USER + 11;
+    inline const UINT WM_RELAUNCH_LOADER = WM_USER + 12;
 
     inline float Clamp01(float v)
     {
@@ -348,7 +349,7 @@ namespace LoaderUI {
     {
         (void)s;
         RECT r = RightContentRect();
-        return r.top + 68 + displayIndex * 62;
+        return r.top + 56 + displayIndex * 62;
     }
 
     inline RECT ModeCardRect(State* s, int displayIndex)
@@ -444,7 +445,7 @@ namespace LoaderUI {
                     s->licenseToken[0] = 0;
                 } else if (s->licenseToken[0]) {
                     s->authenticated = true;
-                    strncpy_s(s->authStatus, "Offline mode — saved license kept.", _TRUNCATE);
+                    strncpy_s(s->authStatus, "Offline mode - saved license kept.", _TRUNCATE);
                 } else {
                     strncpy_s(s->authStatus, err.c_str(), _TRUNCATE);
                 }
@@ -539,18 +540,24 @@ namespace LoaderUI {
 
     inline void DrawLeftBrandPanel(HDC hdc, float animTime, float introEase)
     {
+        SetBkMode(hdc, TRANSPARENT);
+
         RECT client{};
         GetClientRect(gWnd, &client);
         const int h = client.bottom - client.top;
 
         RECT left{ 0, 0, LoaderConfig::kSplitX, h };
-        FillVerticalGradient(hdc, left, LoaderConfig::kPanelLeft, RGB(8, 8, 10));
+        FillVerticalGradient(hdc, left, LoaderConfig::kPanelLeft, RGB(6, 10, 22));
 
         const float pulse = 0.55f + 0.45f * sinf(animTime * 1.6f);
         const int barH = (int)(72.f * EaseOutCubic(introEase));
         const int cy = h / 2;
         RECT accentBar{ 20, cy - barH / 2, 24, cy + barH / 2 };
         FillRoundRectSolid(hdc, accentBar, BlendRgb(LoaderConfig::kAccentDim, LoaderConfig::kAccent, pulse), 3);
+
+        DrawSoftGlow(hdc, LoaderConfig::kSplitX / 2, cy - 6, 56,
+            BlendRgb(LoaderConfig::kAccentDim, LoaderConfig::kAccent, 0.35f),
+            RGB(6, 10, 22), 10);
 
         HPEN pen = CreatePen(PS_SOLID, 1, LoaderConfig::kBorder);
         HGDIOBJ op = SelectObject(hdc, pen);
@@ -562,7 +569,7 @@ namespace LoaderUI {
         const int logoCy = cy - 10 + (int)((1.f - introEase) * 10.f);
 
         SelectObject(hdc, gFontLogo);
-        SetTextColor(hdc, LoaderConfig::kText);
+        SetTextColor(hdc, LoaderConfig::kAccentLight);
         RECT logoRc{ 0, logoCy - 22, LoaderConfig::kSplitX, logoCy + 14 };
         DrawTextA(hdc, "FRONTIER", -1, &logoRc, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
 
@@ -592,6 +599,7 @@ namespace LoaderUI {
 
     inline void DrawBackground(HDC hdc, State* s)
     {
+        SetBkMode(hdc, TRANSPARENT);
         const float introEase = s ? EaseOutQuart(s->windowIntro) : 1.f;
         const float animTime = s ? s->animTime : 0.f;
         RECT client{};
@@ -635,8 +643,8 @@ namespace LoaderUI {
         if (subtitle && subtitle[0]) {
             SelectObject(hdc, gFont);
             SetTextColor(hdc, LoaderConfig::kTextDim);
-            RECT subRc{ r.left, r.top + 30, r.right, r.top + 52 };
-            DrawTextA(hdc, subtitle, -1, &subRc, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+            RECT subRc{ r.left, r.top + 30, r.right, r.top + 54 };
+            DrawTextA(hdc, subtitle, -1, &subRc, DT_LEFT | DT_WORDBREAK);
         }
     }
 
@@ -829,7 +837,7 @@ namespace LoaderUI {
     {
         DrawWindowControls(hdc, s);
         DrawRightTitle(hdc, s->filesReady ? "Ready to go" : "First-time setup",
-            s->filesReady ? "Your install is up to date." : "Downloading required files.");
+            s->filesReady ? "Files are installed next to this loader." : "Downloading required files.");
         if (!s->filesReady) {
             RECT r = RightContentRect();
             SelectObject(hdc, gFont);
@@ -878,20 +886,16 @@ namespace LoaderUI {
     inline void DrawLauncherScreen(HDC hdc, State* s)
     {
         DrawWindowControls(hdc, s);
-        DrawRightTitle(hdc, "Launch", "Pick how FRONTIER attaches to Roblox");
-        RECT r = RightContentRect();
-        SelectObject(hdc, gFont);
-        SetTextColor(hdc, LoaderConfig::kTextDim);
-        TextOutA(hdc, r.left, r.top + 40,
-            "Usermode works on every game. Kernel is experimental.", 44);
+        DrawRightTitle(hdc, "Launch",
+            "Usermode works everywhere. Kernel is experimental.");
 
         int display = 0;
         if (ShowKernelMode(s)) {
             DrawModeCard(hdc, s, display++, 1, "Kernel", LoaderConfig::kKernelModeTag,
-                "Driver-level attach — limited support", s->hoverBlend[1]);
+                "Driver-level attach - limited support", s->hoverBlend[1]);
         }
         DrawModeCard(hdc, s, display, 0, "Usermode", "Recommended",
-            "Standard external — works everywhere", s->hoverBlend[ShowKernelMode(s) ? 2 : 1]);
+            "Standard external - works everywhere", s->hoverBlend[ShowKernelMode(s) ? 2 : 1]);
         DrawGradientButton(hdc, LaunchButtonRect(), "Launch", true, s->hoverBlend[0]);
     }
 
@@ -904,13 +908,7 @@ namespace LoaderUI {
         DrawTextA(hdc, "Get support", -1, &support, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
 
         char ver[64];
-        if (s->remoteDisplay[0]) {
-            sprintf_s(ver, "%s", s->remoteDisplay);
-        } else if (s->remoteVersion > 0) {
-            sprintf_s(ver, "Build %d", s->remoteVersion);
-        } else {
-            sprintf_s(ver, "%s", LoaderConfig::kDisplayVersion);
-        }
+        sprintf_s(ver, "FRONTIER %s", LoaderConfig::kDisplayVersion);
 
         SetTextColor(hdc, LoaderConfig::kTextMuted);
         SIZE vs{};
@@ -986,7 +984,10 @@ namespace LoaderUI {
         s->checking = true;
         TransitionToScreen(s, ScreenDownloading);
         SetIndeterminateProgress(s, true);
-        SetStatus(s, "Checking files...");
+        SetStatus(s, "Checking for updates...");
+
+        LoaderUpdate::ApplyPendingUpdates();
+
         std::thread([s]() {
             LoaderUpdate::Manifest m{};
             std::string err;
@@ -996,46 +997,30 @@ namespace LoaderUI {
             s->localVersion = LoaderUpdate::LoadLocalVersion();
             s->remoteVersion = m.version;
             strncpy_s(s->remoteDisplay, m.display, _TRUNCATE);
-            s->updateAvailable = ok && m.version > s->localVersion;
-            if (s->localVersion <= 0 || s->localVersion > 999)
-                LoaderUpdate::SaveLocalVersion(m.version > 0 ? m.version : 1);
-            s->localVersion = LoaderUpdate::LoadLocalVersion();
+            s->updateAvailable = ok && LoaderUpdate::NeedsUpdate(m);
+
             if (m.kernelAvailable)
                 s->kernelAvailable = true;
-
             if (!s->kernelAvailable)
                 s->kernelAvailable = LoaderUpdate::ProbeKernelAvailable();
             s->selectedMode = 0;
 
-            const bool missingLocal = !LocalUsermodeExists();
-            if (missingLocal && s->manifest.usermodeUrl[0]) {
+            if (LoaderUpdate::NeedsUpdate(m) && m.usermodeUrl[0]) {
                 s->checking = false;
                 if (gWnd) InvalidateRect(gWnd, nullptr, FALSE);
                 RunUpdate(s);
                 return;
             }
 
-            if (missingLocal) {
-                GoReady(s, false);
-                SetStatus(s, ok ? "Could not download — click Download below." : "Offline — click Download to fetch FRONTIER.");
-            } else {
-                if (s->localVersion <= 0)
-                    LoaderUpdate::SaveLocalVersion(1);
-                s->localVersion = LoaderUpdate::LoadLocalVersion();
-                if (s->updateAvailable && s->manifest.usermodeUrl[0]) {
-                    s->checking = false;
-                    if (gWnd) InvalidateRect(gWnd, nullptr, FALSE);
-                    RunUpdate(s);
-                    return;
-                }
-                GoReady(s, true);
-                if (!ok)
-                    SetStatus(s, "Offline mode - using local files");
-                else if (s->updateAvailable)
-                    SetStatus(s, "Local build ready (remote update available on GitHub)");
-            }
-
             s->checking = false;
+            GoReady(s, LoaderUpdate::LocalUsermodeExists());
+            if (!LoaderUpdate::LocalUsermodeExists())
+                SetStatus(s, ok ? "Could not reach update server." : "Offline - check your connection.");
+            else if (!ok)
+                SetStatus(s, "Offline mode - using local files");
+            else
+                SetStatus(s, "All files are up to date.");
+
             if (gWnd) InvalidateRect(gWnd, nullptr, FALSE);
         }).detach();
     }
@@ -1068,6 +1053,9 @@ namespace LoaderUI {
                 s->kernelAvailable = LoaderUpdate::ProbeKernelAvailable() || m.kernelAvailable;
                 s->selectedMode = 0;
                 GoReady(s, true);
+                SetStatus(s, "All files are up to date.");
+                if (LoaderUpdate::PrepareLoaderRelaunch() && gWnd)
+                    PostMessageW(gWnd, WM_RELAUNCH_LOADER, 0, 0);
             } else {
                 char buf[256];
                 sprintf_s(buf, "Update failed: %s", err.c_str());
@@ -1094,7 +1082,7 @@ namespace LoaderUI {
         std::wstring work;
         std::wstring exe;
         if (s->selectedMode == 0) {
-            if (s->updateAvailable && s->manifest.usermodeUrl[0]) {
+            if (LoaderUpdate::NeedsUpdate(s->manifest) && s->manifest.usermodeUrl[0]) {
                 RunUpdate(s);
                 return;
             }
@@ -1463,6 +1451,10 @@ namespace LoaderUI {
                 return 0;
             }
             break;
+        case WM_RELAUNCH_LOADER:
+            if (LoaderUpdate::ScheduleLoaderRelaunch())
+                PostQuitMessage(0);
+            return 0;
         case WM_DESTROY:
             StopAnimTimer(hwnd);
             KillTimer(hwnd, 2);
@@ -1491,6 +1483,7 @@ namespace LoaderUI {
         state.selectedMode = 0;
         state.localVersion = LoaderUpdate::LoadLocalVersion();
         state.kernelAvailable = LoaderUpdate::ProbeKernelAvailable();
+        LoaderUpdate::ApplyPendingUpdates();
         gState = &state;
 
         gBgBrush = CreateSolidBrush(LoaderConfig::kBg);

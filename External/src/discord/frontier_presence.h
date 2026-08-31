@@ -30,7 +30,7 @@ namespace FrontierPresence {
 
     struct PendingActivity {
         char details[128]{};
-        char state[128]{ "Starting…" };
+        char state[128]{ "Starting..." };
         int partySize = 0;
         int partyMax = 0;
 
@@ -125,6 +125,8 @@ namespace FrontierPresence {
             if (gStartTs <= 0)
                 gStartTs = NowUnix();
             gPendingDirty.store(true);
+            if (!was)
+                Queue(Frontier::kName, "Waiting for Roblox...");
         } else if (was) {
             ClearPresence();
             DiscordIPC::Disconnect();
@@ -133,16 +135,16 @@ namespace FrontierPresence {
 
     inline void SetWaiting()
     {
-        Queue(Frontier::kName, "Waiting for Roblox…");
+        Queue(Frontier::kName, "Waiting for Roblox...");
     }
 
     inline void SetLoading(const char* step)
     {
         char state[128];
         if (step && step[0])
-            sprintf_s(state, "Loading — %s", step);
+            sprintf_s(state, "Loading - %s", step);
         else
-            strncpy_s(state, "Loading session…", _TRUNCATE);
+            strncpy_s(state, "Loading session...", _TRUNCATE);
         Queue(Frontier::kName, state);
     }
 
@@ -159,17 +161,17 @@ namespace FrontierPresence {
 
         const char* user = variables::Status::username;
         char suffix[96]{};
-        if (user && user[0] && _stricmp(user, "—") != 0) {
+        if (user && user[0] && _stricmp(user, "-") != 0) {
             if (placeId > 0)
-                sprintf_s(suffix, "  •  @%s  •  Place %lld", user, (long long)placeId);
+                sprintf_s(suffix, "  |  @%s  |  Place %lld", user, (long long)placeId);
             else if (players > 0)
-                sprintf_s(suffix, "  •  @%s  •  %d players nearby", user, players);
+                sprintf_s(suffix, "  |  @%s  |  %d players nearby", user, players);
             else
-                sprintf_s(suffix, "  •  %s", user);
+                sprintf_s(suffix, "  |  %s", user);
         } else if (placeId > 0) {
-            sprintf_s(suffix, "  •  Place %lld", (long long)placeId);
+            sprintf_s(suffix, "  |  Place %lld", (long long)placeId);
         } else if (players > 0) {
-            sprintf_s(suffix, "  •  %d players in server", players);
+            sprintf_s(suffix, "  |  %d players in server", players);
         }
 
         if (suffix[0] && strlen(state) + strlen(suffix) + 1 < sizeof(state))
@@ -194,7 +196,7 @@ namespace FrontierPresence {
         }
 
         if (!Globals::dataModel.Addr || !Games::IsGameLoaded()) {
-            Queue(Frontier::kName, "In Roblox — joining…");
+            Queue(Frontier::kName, "In Roblox - joining...");
             gPendingDirty.store(true);
             return;
         }
@@ -213,12 +215,26 @@ namespace FrontierPresence {
 
         if (variables::menuOpen || variables::Misc::floatingPanelOpen) {
             char state[128];
-            strncpy_s(state, gPending.state, _TRUNCATE);
-            if (strlen(state) + 18 < sizeof(state)) {
-                strcat_s(state, "  •  Menu open");
-                Queue(gPending.details, state, gPending.partySize, gPending.partyMax);
+            char details[128];
+            int partySize = 0;
+            int partyMax = 0;
+            {
+                std::lock_guard<std::mutex> lock(gPendingMutex);
+                strncpy_s(state, gPending.state, _TRUNCATE);
+                strncpy_s(details, gPending.details, _TRUNCATE);
+                partySize = gPending.partySize;
+                partyMax = gPending.partyMax;
+            }
+            if (strlen(state) + 16 < sizeof(state)) {
+                strcat_s(state, "  |  Menu open");
+                Queue(details, state, partySize, partyMax);
             }
         }
+    }
+
+    inline void RequestRefresh()
+    {
+        gPendingDirty.store(true);
     }
 
     inline void StartWorker()
@@ -228,7 +244,7 @@ namespace FrontierPresence {
 
         if (gStartTs <= 0)
             gStartTs = NowUnix();
-        Queue(Frontier::kName, "Starting…");
+        Queue(Frontier::kName, "Starting...");
 
         std::thread([]() {
             int failStreak = 0;

@@ -1815,12 +1815,14 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		if (variables::Misc::discordRpc != lastDiscordRpc) {
 			lastDiscordRpc = variables::Misc::discordRpc;
 			FrontierPresence::SyncEnabled(variables::Misc::discordRpc);
+			if (variables::Misc::discordRpc)
+				FrontierPresence::RequestRefresh();
 		}
 
 		if (variables::Misc::discordRpc && attachSucceeded.load()) {
 			static auto lastPresence = std::chrono::steady_clock::now();
 			auto nowRpc = std::chrono::steady_clock::now();
-			if (std::chrono::duration<float>(nowRpc - lastPresence).count() >= 5.f) {
+			if (std::chrono::duration<float>(nowRpc - lastPresence).count() >= 3.f) {
 				lastPresence = nowRpc;
 				FrontierPresence::UpdateFromSession();
 			}
