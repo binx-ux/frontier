@@ -85,9 +85,9 @@ namespace UI {
         c[ImGuiCol_PopupBg] = ImVec4(0.07f, 0.07f, 0.08f, 0.98f);
         c[ImGuiCol_Border] = V4(variables::Theme::border);
         c[ImGuiCol_BorderShadow] = ImVec4(0, 0, 0, 0);
-        c[ImGuiCol_FrameBg] = ImVec4(0.08f, 0.08f, 0.10f, 1);
-        c[ImGuiCol_FrameBgHovered] = ImVec4(0.12f, 0.12f, 0.14f, 1);
-        c[ImGuiCol_FrameBgActive] = ImVec4(0.15f, 0.15f, 0.18f, 1);
+        c[ImGuiCol_FrameBg] = ImVec4(0.165f, 0.165f, 0.165f, 1);
+        c[ImGuiCol_FrameBgHovered] = ImVec4(0.20f, 0.20f, 0.20f, 1);
+        c[ImGuiCol_FrameBgActive] = ImVec4(0.24f, 0.24f, 0.24f, 1);
         c[ImGuiCol_TitleBg] = ImVec4(0.06f, 0.06f, 0.07f, 1);
         c[ImGuiCol_TitleBgActive] = ImVec4(0.08f, 0.08f, 0.09f, 1);
         c[ImGuiCol_CheckMark] = V4(variables::Theme::brand);
@@ -790,11 +790,11 @@ public:
         if (uiScale < 0.85f) uiScale = 0.85f;
         if (uiScale > 1.15f) uiScale = 1.15f;
         float scaleAnim = 0.975f + 0.025f * ease;
-        float baseW = 849.f * uiScale * scaleAnim;
-        float baseH = 538.f * uiScale * scaleAnim;
+        float baseW = 1024.f * uiScale * scaleAnim;
+        float baseH = 640.f * uiScale * scaleAnim;
 
         ImGui::SetNextWindowSize(ImVec2(baseW, baseH), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSizeConstraints(ImVec2(720.f, 460.f), ImVec2(ds.x - 16.f, ds.y - 8.f));
+        ImGui::SetNextWindowSizeConstraints(ImVec2(800.f, 520.f), ImVec2(ds.x - 16.f, ds.y - 8.f));
         {
             static bool haveDragPos = false;
             float px = haveDragPos ? variables::Misc::menuX : (ds.x * 0.5f - baseW * 0.5f);
@@ -821,13 +821,11 @@ public:
         float ww = ImGui::GetWindowSize().x;
         float wh = ImGui::GetWindowSize().y;
 
+        FrontierMenu::RefreshStatusInfo();
         FrontierShell::DrawHeader(wdl, wp, ww, wh, &variables::selectedTab);
-        FrontierShell::DrawContentHeader(
-            wdl, FrontierShell::ContentHeaderOrigin(wp),
-            FrontierShell::ContentSize(ww, wh).x, variables::selectedTab);
 
         ImGui::SetCursorPos(ImVec2(0, 0));
-        ImGui::InvisibleButton("##mwdrag", ImVec2(FrontierShell::kSidebarW, FrontierShell::kBrandH));
+        ImGui::InvisibleButton("##mwdrag", ImVec2(FrontierShell::kSidebarW, FrontierShell::kGhostAreaH));
         if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
             ImVec2 d = ImGui::GetIO().MouseDelta;
             ImGui::SetWindowPos(ImVec2(wp.x + d.x, wp.y + d.y));
@@ -839,6 +837,8 @@ public:
         if (contentSize.x < 80.f) contentSize.x = 80.f;
         if (contentSize.y < 80.f) contentSize.y = 80.f;
         const float tabEase = UIMotion::EaseOutCubic(variables::Misc::tabContentAnim);
+        ImGui::SetCursorScreenPos(contentOrigin);
+        ImGui::Dummy(ImVec2(1.f, 1.f));
         ImGui::SetCursorScreenPos(contentOrigin);
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ease * tabEase);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 8));

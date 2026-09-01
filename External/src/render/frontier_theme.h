@@ -16,13 +16,13 @@ namespace FrontierTheme {
     inline void ApplyPreset(int preset) {
         variables::Theme::preset = preset;
         switch (preset) {
-        case 0: // Frontier Red
-            variables::Theme::accent[0] = 0.92f; variables::Theme::accent[1] = 0.22f;
-            variables::Theme::accent[2] = 0.28f; variables::Theme::accent[3] = 1.f;
-            variables::Theme::bg[0] = 0.047f; variables::Theme::bg[1] = 0.047f;
-            variables::Theme::bg[2] = 0.047f; variables::Theme::bg[3] = 0.98f;
-            variables::Theme::card[0] = 0.082f; variables::Theme::card[1] = 0.082f;
-            variables::Theme::card[2] = 0.082f; variables::Theme::card[3] = 1.f;
+        case 0: // FRONTIER (Phantom green)
+            variables::Theme::accent[0] = 0.f; variables::Theme::accent[1] = 1.f;
+            variables::Theme::accent[2] = 0.f; variables::Theme::accent[3] = 1.f;
+            variables::Theme::bg[0] = 0.039f; variables::Theme::bg[1] = 0.039f;
+            variables::Theme::bg[2] = 0.039f; variables::Theme::bg[3] = 0.98f;
+            variables::Theme::card[0] = 0.118f; variables::Theme::card[1] = 0.118f;
+            variables::Theme::card[2] = 0.118f; variables::Theme::card[3] = 1.f;
             break;
         case 1: // Violet
             variables::Theme::accent[0] = 0.718f; variables::Theme::accent[1] = 0.627f;

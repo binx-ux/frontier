@@ -501,5 +501,14 @@ namespace UIFx {
                 ImVec2(cx, maxY), bc, 1.2f);
         }
     }
+
+    inline void EspPreviewPanel(float height = 300.f) {
+        ImVec2 p = ImGui::GetCursorScreenPos();
+        float w = ImGui::GetContentRegionAvail().x;
+        if (w < 140.f) w = 140.f;
+        ImGui::Dummy(ImVec2(w, height));
+        timeAcc += ImGui::GetIO().DeltaTime;
+        DrawEspPreview(ImGui::GetWindowDrawList(), p, ImVec2(w, height));
+    }
 }
 

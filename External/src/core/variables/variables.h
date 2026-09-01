@@ -33,13 +33,13 @@ namespace variables {
     }
 
     namespace Theme {
-        inline float brand[4] = { 0.984f, 0.106f, 0.031f, 1.0f };
-        inline float accent[4] = { 0.984f, 0.106f, 0.031f, 1.0f };
-        inline float bg[4] = { 0.047f, 0.047f, 0.047f, 0.98f };
-        inline float card[4] = { 0.067f, 0.071f, 0.071f, 1.0f };
-        inline float border[4] = { 1.0f, 1.0f, 1.0f, 0.15f };
+        inline float brand[4] = { 0.0f, 1.0f, 0.0f, 1.0f };
+        inline float accent[4] = { 0.0f, 1.0f, 0.0f, 1.0f };
+        inline float bg[4] = { 0.039f, 0.039f, 0.039f, 0.98f };
+        inline float card[4] = { 0.118f, 0.118f, 0.118f, 1.0f };
+        inline float border[4] = { 1.0f, 1.0f, 1.0f, 0.05f };
         inline float text[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
-        inline float textDim[4] = { 1.0f, 1.0f, 1.0f, 0.92f };
+        inline float textDim[4] = { 0.612f, 0.639f, 0.686f, 1.0f };
         inline bool bgEffect = false;
         inline bool snowEffect = false;
         inline bool useFloatingHeader = false;

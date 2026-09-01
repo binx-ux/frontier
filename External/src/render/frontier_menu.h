@@ -1,6 +1,7 @@
 #pragma once
 #include "frontier_ui.h"
 #include "frontier_theme.h"
+#include "ui_fx.h"
 #include "../core/cache/cache.h"
 #include "../core/globals/globals.h"
 #include "../core/features/exploits/gun_mods.h"
@@ -348,13 +349,17 @@ namespace FrontierMenu {
             if (FrontierUI::BeginCard("ESP", true)) {
                 FrontierUI::Checkbox("Enabled", &variables::ESP::enabled);
                 FrontierUI::Checkbox("Boxes", &variables::ESP::boxes, variables::ESP::boxColor);
-                FrontierUI::Checkbox("Names", &variables::ESP::names, variables::ESP::nameColor);
-                FrontierUI::Checkbox("Health Bar", &variables::ESP::healthBar, variables::ESP::healthColor);
-                FrontierUI::Checkbox("Distance", &variables::ESP::distance);
-                FrontierUI::Checkbox("Skeleton", &variables::ESP::skeleton);
-                FrontierUI::SliderFloat("Max Distance", &variables::ESP::maxDistance, 100, 3000, "%.0f");
+                FrontierUI::ChipRow2x2(
+                    "Skeleton", &variables::ESP::skeleton,
+                    "Health", &variables::ESP::healthBar,
+                    "Name", &variables::ESP::names,
+                    "Weapon", &variables::ESP::equippedItem);
+                FrontierUI::SliderFloat("Max Distance", &variables::ESP::maxDistance, 100, 3000, "%.0fm");
 
                 if (FrontierUI::BeginSettings("More ESP", true)) {
+                    FrontierUI::Checkbox("Names Color", &variables::ESP::names, variables::ESP::nameColor);
+                    FrontierUI::Checkbox("Health Color", &variables::ESP::healthBar, variables::ESP::healthColor);
+                    FrontierUI::Checkbox("Distance", &variables::ESP::distance);
                     FrontierUI::Checkbox("Fill", &variables::ESP::fillBox, variables::ESP::boxFillColor);
                     FrontierUI::Checkbox("Head Dot", &variables::ESP::headDot, variables::ESP::headDotColor);
                     FrontierUI::Checkbox("Tracers", &variables::ESP::snaplines, variables::ESP::snapColor);
@@ -362,7 +367,6 @@ namespace FrontierMenu {
                         const char* tracerFrom[] = { "Top", "Middle", "Bottom", "Mouse" };
                         FrontierUI::Combo("Tracer From", &variables::ESP::snaplinesOrigin, tracerFrom, 4);
                     }
-                    FrontierUI::Checkbox("Weapon", &variables::ESP::equippedItem);
                     FrontierUI::Checkbox("Team Check", &variables::ESP::teamCheck);
                     variables::teamCheck = variables::ESP::teamCheck;
                     FrontierUI::Checkbox("Skip Dead", &variables::ESP::deadCheck);
@@ -382,6 +386,11 @@ namespace FrontierMenu {
                     FrontierUI::SliderFloat("OOF Radius", &variables::ESP::oofRadius, 40, 300, "%.0f");
             }
             FrontierUI::EndCard();
+
+            if (FrontierUI::BeginCard("ESP Preview", true)) {
+                UIFx::EspPreviewPanel(280.f);
+            }
+            FrontierUI::EndCard();
             FrontierUI::EndTwoCol();
         }
         else if (variables::selectedSub == 1) {
@@ -392,6 +401,21 @@ namespace FrontierMenu {
                 FrontierUI::Checkbox("Hit Markers", &variables::Misc::hitMarker);
                 FrontierUI::Checkbox("Damage Numbers", &variables::Misc::damageNumbers);
                 FrontierUI::Checkbox("Spectator List", &variables::Extra::spectatorList);
+            }
+            FrontierUI::EndCard();
+            FrontierUI::NextCol();
+            if (FrontierUI::BeginCard("Radar", true)) {
+                FrontierUI::Checkbox("Enabled", &variables::Radar::enabled);
+                const char* radarTypes[] = { "2D", "3D" };
+                FrontierUI::Combo("Type", &variables::Radar::type, radarTypes, 2);
+                FrontierUI::SliderFloat("Size", &variables::Radar::size, 80.f, 400.f, "%.0f");
+                FrontierUI::SliderFloat("Range", &variables::Radar::range, 50.f, 1000.f, "%.0f");
+                FrontierUI::Checkbox("Show Names", &variables::Radar::showNames);
+                FrontierUI::Checkbox("Show Distance", &variables::Radar::showDistance);
+                FrontierUI::Checkbox("Rotate With Camera", &variables::Radar::rotateWithCamera);
+                FrontierUI::SliderFloat("Pos X", &variables::Radar::posX, 0.f, 1920.f, "%.0f");
+                FrontierUI::SliderFloat("Pos Y", &variables::Radar::posY, 0.f, 1080.f, "%.0f");
+                FrontierUI::RadarPreviewPanel(200.f);
             }
             FrontierUI::EndCard();
             FrontierUI::EndTwoCol();
@@ -813,7 +837,7 @@ namespace FrontierMenu {
         FrontierUI::EndCard();
         FrontierUI::NextCol();
         if (FrontierUI::BeginCard("Appearance", true)) {
-            const char* presets[] = { "Frontier Red", "Violet", "Ice", "OLED" };
+            const char* presets[] = { "Frontier Green", "Violet", "Ice", "OLED" };
             if (FrontierUI::Combo("Preset", &variables::Theme::preset, presets, 4))
                 FrontierTheme::ApplyPreset(variables::Theme::preset);
 
@@ -836,6 +860,8 @@ namespace FrontierMenu {
         }
         FrontierUI::EndCard();
 
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
         if (FrontierUI::BeginCard("Menu", true)) {
             FrontierUI::Checkbox("Floating Icon Header", &variables::Theme::useFloatingHeader);
             {
