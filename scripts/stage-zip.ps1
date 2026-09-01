@@ -23,6 +23,12 @@ New-Item -ItemType Directory -Force -Path (Join-Path $stage "usermode") | Out-Nu
 Copy-Item $loader (Join-Path $stage "FrontierLoader.exe") -Force
 if (Test-Path $ini) { Copy-Item $ini (Join-Path $stage "loader.ini") -Force }
 Copy-Item $cheat (Join-Path $stage "usermode\Frontier.exe") -Force
+$assetsDir = Join-Path $dist "usermode\assets"
+if (Test-Path $assetsDir) {
+    $destAssets = Join-Path $stage "usermode\assets"
+    New-Item -ItemType Directory -Force -Path $destAssets | Out-Null
+    Copy-Item (Join-Path $assetsDir "*") $destAssets -Force
+}
 
 if (Test-Path $kernelExe) {
     New-Item -ItemType Directory -Force -Path (Join-Path $stage "kernel\driver") | Out-Null

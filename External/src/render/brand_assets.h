@@ -48,8 +48,9 @@ namespace BrandAssets {
 
         const char* candidates[] = {
             "%s\\assets\\frontier-discord-rpc.png",
-            "%s\\..\\External\\assets\\frontier-discord-rpc.png",
+            "%s\\..\\assets\\frontier-discord-rpc.png",
             "%s\\..\\..\\External\\assets\\frontier-discord-rpc.png",
+            "%s\\..\\..\\assets\\frontier-discord-rpc.png",
         };
 
         std::vector<uint8_t> png;

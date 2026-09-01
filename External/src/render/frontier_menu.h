@@ -384,11 +384,8 @@ namespace FrontierMenu {
                 FrontierUI::Checkbox("OOF Arrows", &variables::ESP::oofArrows, variables::ESP::oofColor);
                 if (variables::ESP::oofArrows)
                     FrontierUI::SliderFloat("OOF Radius", &variables::ESP::oofRadius, 40, 300, "%.0f");
-            }
-            FrontierUI::EndCard();
-
-            if (FrontierUI::BeginCard("ESP Preview", true)) {
-                UIFx::EspPreviewPanel(280.f);
+                ImGui::Dummy(ImVec2(0, 8));
+                UIFx::EspPreviewPanel(160.f);
             }
             FrontierUI::EndCard();
             FrontierUI::EndTwoCol();
@@ -859,9 +856,8 @@ namespace FrontierMenu {
             FrontierUI::SliderFloat("Float Bar Y", &variables::Theme::headerY, 8.f, 80.f, "%.0f");
         }
         FrontierUI::EndCard();
+        FrontierUI::EndTwoCol();
 
-        ImGui::TableNextRow();
-        ImGui::TableNextColumn();
         if (FrontierUI::BeginCard("Menu", true)) {
             FrontierUI::Checkbox("Floating Icon Header", &variables::Theme::useFloatingHeader);
             {
@@ -886,7 +882,6 @@ namespace FrontierMenu {
             FrontierUI::KeybindChip("menuk", &variables::Misc::menuVk);
         }
         FrontierUI::EndCard();
-        FrontierUI::EndTwoCol();
     }
 
     inline void DrawStatus() {
@@ -1148,8 +1143,19 @@ namespace FrontierMenu {
                     sprintf_s(line, "%d / %d players", s.playing, s.maxPlayers);
                 else
                     sprintf_s(line, "%d players", s.playing);
+                ImVec2 lineSz = ImGui::CalcTextSize(line);
                 dl->AddText(ImVec2(rowMin.x + 14.f, rowMin.y + 10.f),
                     isCurrent ? IM_COL32(130, 240, 160, 255) : IM_COL32(240, 240, 245, 255), line);
+                if (isCurrent) {
+                    const char* here = "YOU ARE HERE";
+                    ImVec2 hs = ImGui::CalcTextSize(here);
+                    float hx = rowMin.x + 14.f + lineSz.x + 10.f;
+                    dl->AddRectFilled(
+                        ImVec2(hx - 6.f, rowMin.y + 7.f),
+                        ImVec2(hx + hs.x + 6.f, rowMin.y + 10.f + hs.y),
+                        IM_COL32(34, 88, 52, 200), 4.f);
+                    dl->AddText(ImVec2(hx, rowMin.y + 10.f), IM_COL32(120, 220, 150, 255), here);
+                }
 
                 float fill = (s.maxPlayers > 0) ? (float)s.playing / (float)s.maxPlayers : 0.f;
                 if (fill < 0.f) fill = 0.f;
@@ -1177,10 +1183,6 @@ namespace FrontierMenu {
                 strcat_s(idShort, "...");
                 dl->AddText(ImVec2(rowMin.x + 70.f, rowMin.y + 44.f),
                     IM_COL32(130, 134, 148, 255), idShort);
-                if (isCurrent) {
-                    dl->AddText(ImVec2(rowMin.x + rowW - 150.f, rowMin.y + 44.f),
-                        IM_COL32(90, 200, 120, 230), "YOU ARE HERE");
-                }
 
                 float btnW = 64.f;
                 float btnX = rowMax.x - btnW * 2.f - 18.f;
@@ -1406,7 +1408,9 @@ namespace FrontierMenu {
     }
 
     inline void RenderTab(int tab) {
-        FrontierUI::g_dropDepth = 0; // prevent leftover stack from a prior frame
+        FrontierUI::g_cardDepth = 0;
+        for (int i = 0; i < 16; i++) FrontierUI::g_cardOpen[i] = false;
+        FrontierUI::g_tableOpen = false;
         if (tab < 0 || tab >= 9) tab = 0;
         int prevSub = variables::selectedSub;
         variables::selectedSub = variables::Misc::selectedSubByTab[tab];

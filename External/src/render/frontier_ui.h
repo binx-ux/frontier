@@ -38,6 +38,7 @@ namespace FrontierUI {
 
     inline ImU32 LabelTextCol() { return IM_COL32(255, 255, 255, 245); }
     inline ImU32 LabelTextDimCol() { return IM_COL32(156, 163, 175, 255); }
+    inline ImVec4 LabelTextDimV4() { return ImVec4(0.612f, 0.639f, 0.686f, 1.f); }
 
     inline void KeyNameInto(int vk, char* out, size_t outSz) {
         if (!out || outSz < 2) return;
@@ -343,7 +344,7 @@ namespace FrontierUI {
         }
 
         ImGui::EndGroup();
-        ImGui::Dummy(ImVec2(0, 6));
+        ImGui::Dummy(ImVec2(0, 10));
         ImGui::PopID();
         return pressed;
     }
@@ -449,15 +450,16 @@ namespace FrontierUI {
         return changed;
     }
 
-    inline int g_dropDepth = 0;
-    inline bool g_dropOpen[24] = {};
+    inline int g_cardDepth = 0;
+    inline bool g_cardOpen[16] = {};
+    inline bool g_tableOpen = false;
 
     inline bool BeginCard(const char* title, bool /*defaultOpen*/ = true, bool* headerToggle = nullptr) {
         ImGui::PushID(title ? title : "section");
         ImGui::PushStyleColor(ImGuiCol_ChildBg, V4(variables::Theme::card));
         ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1.f, 1.f, 1.f, 0.05f));
         ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.f);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(20, 16));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16, 14));
 
         if (!ImGui::BeginChild("##sec", ImVec2(0, 0),
             ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Borders, ImGuiWindowFlags_None)) {
@@ -467,12 +469,14 @@ namespace FrontierUI {
             return false;
         }
 
+        if (g_cardDepth < 16)
+            g_cardOpen[g_cardDepth] = true;
+        else
+            g_cardOpen[15] = true;
+        g_cardDepth++;
+
         if (title && title[0]) {
             ImDrawList* dl = ImGui::GetWindowDrawList();
-            ImVec2 winPos = ImGui::GetWindowPos();
-            ImVec2 winSz = ImGui::GetWindowSize();
-            dl->AddCircle(ImVec2(winPos.x + winSz.x - 28.f, winPos.y + 28.f), 28.f, AccentU32(0.08f), 0, 2.f);
-
             ImVec2 p = ImGui::GetCursorScreenPos();
             dl->AddRectFilled(
                 ImVec2(p.x - 2.f, p.y + 2.f), ImVec2(p.x, p.y + 18.f),
@@ -490,65 +494,70 @@ namespace FrontierUI {
                 ImGui::SetCursorPosX(ImGui::GetWindowContentRegionMax().x - 36.f);
                 ToggleSwitch("##hdr", headerToggle);
             }
-            ImGui::Dummy(ImVec2(0, 8));
+            ImGui::Dummy(ImVec2(0, 6));
         }
 
-        if (g_dropDepth < 24)
-            g_dropOpen[g_dropDepth] = true;
-        g_dropDepth++;
         return true;
     }
 
     inline void EndCard() {
-        if (g_dropDepth <= 0) return;
-        g_dropDepth--;
+        if (g_cardDepth <= 0) return;
+        g_cardDepth--;
+        const int slot = g_cardDepth < 16 ? g_cardDepth : 15;
+        if (!g_cardOpen[slot]) return;
+        g_cardOpen[slot] = false;
         ImGui::EndChild();
         ImGui::PopStyleVar(2);
         ImGui::PopStyleColor(2);
         ImGui::PopID();
-        ImGui::Dummy(ImVec2(0, 8));
+        ImGui::Dummy(ImVec2(0, 10));
     }
 
     inline bool BeginSettings(const char* label, bool /*defaultOpen*/ = true) {
         ImGui::PushID(label ? label : "more");
         if (label && label[0]) {
-            ImGui::Dummy(ImVec2(0, 4));
+            ImGui::Dummy(ImVec2(0, 6));
+            ImGui::PushStyleColor(ImGuiCol_Separator, ImVec4(1.f, 1.f, 1.f, 0.06f));
             ImGui::Separator();
-            ImGui::TextColored(V4(variables::Theme::text), "%s", label);
-            ImGui::Dummy(ImVec2(0, 2));
+            ImGui::PopStyleColor();
+            ImGui::TextColored(LabelTextDimV4(), "%s", label);
+            ImGui::Dummy(ImVec2(0, 4));
         }
-        if (g_dropDepth < 24)
-            g_dropOpen[g_dropDepth] = true;
-        g_dropDepth++;
         return true;
     }
 
     inline void EndSettings() {
-        if (g_dropDepth <= 0) return;
-        g_dropDepth--;
         ImGui::PopID();
     }
 
-    inline void BeginTwoCol(const char* id) {
-        ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(12, 0));
-        ImGui::BeginTable(id, 2,
+    inline bool BeginTwoCol(const char* id) {
+        ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(10, 8));
+        g_tableOpen = ImGui::BeginTable(id, 2,
             ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoSavedSettings |
             ImGuiTableFlags_PadOuterX);
+        if (!g_tableOpen) {
+            ImGui::PopStyleVar();
+            return false;
+        }
         ImGui::TableSetupColumn("L", ImGuiTableColumnFlags_WidthStretch, 0.5f);
         ImGui::TableSetupColumn("R", ImGuiTableColumnFlags_WidthStretch, 0.5f);
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
+        return true;
     }
 
     inline void NextCol() { ImGui::TableNextColumn(); }
     inline void EndTwoCol() {
-        ImGui::EndTable();
+        if (g_tableOpen) {
+            ImGui::EndTable();
+            g_tableOpen = false;
+        }
         ImGui::PopStyleVar();
     }
 
     inline bool ChipToggle(const char* label, bool* v) {
         ImGui::PushID(label);
-        float w = (ImGui::GetContentRegionAvail().x - 8.f) * 0.5f;
+        float w = ImGui::GetContentRegionAvail().x;
         if (w < 60.f) w = 60.f;
         const float h = 28.f;
         ImVec2 p = ImGui::GetCursorScreenPos();
@@ -579,10 +588,18 @@ namespace FrontierUI {
 
     inline void ChipRow2x2(const char* l0, bool* v0, const char* l1, bool* v1,
         const char* l2, bool* v2, const char* l3, bool* v3) {
-        ChipToggle(l0, v0); ImGui::SameLine(0, 8.f); ChipToggle(l1, v1);
-        ImGui::Dummy(ImVec2(0, 6));
-        ChipToggle(l2, v2); ImGui::SameLine(0, 8.f); ChipToggle(l3, v3);
-        ImGui::Dummy(ImVec2(0, 8));
+        ImGui::PushID(l0 ? l0 : "chips");
+        if (ImGui::BeginTable("chips", 2, ImGuiTableFlags_SizingStretchProp)) {
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn(); ChipToggle(l0, v0);
+            ImGui::TableNextColumn(); ChipToggle(l1, v1);
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn(); ChipToggle(l2, v2);
+            ImGui::TableNextColumn(); ChipToggle(l3, v3);
+            ImGui::EndTable();
+        }
+        ImGui::PopID();
+        ImGui::Dummy(ImVec2(0, 4));
     }
 
     inline void SubTabs(const char* const names[], int count, int* selected) {
@@ -735,10 +752,10 @@ namespace FrontierUI {
         const float cx = p.x + w * 0.5f;
         const float cy = p.y + height * 0.55f;
         const float rad = (w < height ? w : height) * 0.34f;
-        dl->AddCircle(ImVec2(cx, cy), rad, AccentSoftU32(0.5f), 48, 1.2f);
+        dl->AddCircle(ImVec2(cx, cy), rad, IM_COL32(255, 255, 255, 30), 48, 1.f);
         dl->AddLine(ImVec2(cx - rad, cy), ImVec2(cx + rad, cy), IM_COL32(255, 255, 255, 20), 1.f);
         dl->AddLine(ImVec2(cx, cy - rad), ImVec2(cx, cy + rad), IM_COL32(255, 255, 255, 20), 1.f);
-        dl->AddCircleFilled(ImVec2(cx, cy), 3.f, AccentU32(1.f), 12);
+        dl->AddCircleFilled(ImVec2(cx, cy), 3.f, IM_COL32(255, 255, 255, 180), 12);
 
         const ImU32 enemy = IM_COL32(255, 80, 80, 255);
         dl->AddCircleFilled(ImVec2(cx + rad * 0.45f, cy - rad * 0.25f), 4.f, enemy, 12);

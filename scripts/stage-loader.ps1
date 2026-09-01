@@ -18,6 +18,13 @@ New-Item -ItemType Directory -Force -Path (Join-Path $stage "kernel") | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $stage "kernel\driver") | Out-Null
 
 Copy-Item $cheatOut (Join-Path $stage "usermode\Frontier.exe") -Force
+$assetsDir = Join-Path $root "External\assets"
+if (Test-Path $assetsDir) {
+    $destAssets = Join-Path $stage "usermode\assets"
+    New-Item -ItemType Directory -Force -Path $destAssets | Out-Null
+    Copy-Item (Join-Path $assetsDir "*") $destAssets -Force
+    Write-Host "  usermode\assets\"
+}
 if (Test-Path $kernelOut) {
     Copy-Item $kernelOut (Join-Path $stage "kernel\Frontier.exe") -Force
     Write-Host "  kernel\Frontier.exe"

@@ -10,6 +10,7 @@
 #include "frontier_theme.h"
 #include "ui_motion.h"
 #include "frontier_ui.h"
+#include "brand_assets.h"
 
 namespace FrontierShell {
 
@@ -48,18 +49,23 @@ namespace FrontierShell {
         return tabs[tab].label;
     }
 
-    inline void DrawGhostIcon(ImDrawList* dl, ImVec2 c, float s, ImU32 col) {
-        const float r = 10.f * s;
-        dl->AddCircleFilled(ImVec2(c.x - 4.f * s, c.y - 2.f * s), 2.2f * s, col);
-        dl->AddCircleFilled(ImVec2(c.x + 4.f * s, c.y - 2.f * s), 2.2f * s, col);
-        dl->AddBezierCubic(
-            ImVec2(c.x - r, c.y - 2.f * s), ImVec2(c.x - r * 0.5f, c.y - r - 4.f * s),
-            ImVec2(c.x + r * 0.5f, c.y - r - 4.f * s), ImVec2(c.x + r, c.y - 2.f * s),
-            col, 1.6f * s);
-        dl->AddLine(ImVec2(c.x - r + 2.f * s, c.y + r * 0.2f), ImVec2(c.x - r + 2.f * s, c.y + r + 2.f * s), col, 1.4f * s);
-        dl->AddLine(ImVec2(c.x, c.y + r * 0.35f), ImVec2(c.x, c.y + r + 2.f * s), col, 1.4f * s);
-        dl->AddLine(ImVec2(c.x + r - 2.f * s, c.y + r * 0.2f), ImVec2(c.x + r - 2.f * s, c.y + r + 2.f * s), col, 1.4f * s);
-        dl->AddCircleFilled(c, r + 6.f * s, AccentCol(0.08f), 24);
+    inline void DrawBrandMark(ImDrawList* dl, ImVec2 c, float size) {
+        if (BrandAssets::logoSrv && BrandAssets::logoW > 0 && BrandAssets::logoH > 0) {
+            const float aspect = (float)BrandAssets::logoW / (float)BrandAssets::logoH;
+            const float h = size;
+            const float w = h * aspect;
+            dl->AddImage(BrandAssets::LogoTex(),
+                ImVec2(c.x - w * 0.5f, c.y - h * 0.5f),
+                ImVec2(c.x + w * 0.5f, c.y + h * 0.5f),
+                ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, 245));
+            return;
+        }
+        ImFont* font = ImGui::GetFont();
+        const float fs = size * 1.1f;
+        const char* t = "F";
+        ImVec2 ts = font->CalcTextSizeA(fs, FLT_MAX, 0.f, t);
+        dl->AddText(font, fs, ImVec2(c.x - ts.x * 0.5f, c.y - ts.y * 0.5f),
+            IM_COL32(235, 45, 45, 255), t);
     }
 
     inline void DrawNavIcon(ImDrawList* dl, ImVec2 c, int kind, ImU32 col, float s = 1.f) {
@@ -145,7 +151,6 @@ namespace FrontierShell {
             mainMin, mainMax,
             IM_COL32(42, 42, 42, 242), IM_COL32(38, 38, 38, 242),
             IM_COL32(36, 36, 36, 242), IM_COL32(40, 40, 40, 242));
-        dl->AddCircleFilled(ImVec2(wp.x + ww - 60.f, wp.y + 30.f), 100.f, AccentCol(0.05f), 48);
         DrawGridPattern(dl, ImVec2(mainMin.x + 1.f, wp.y + kHeaderH + 1.f), mainMax);
 
         dl->AddRectFilled(
@@ -167,7 +172,7 @@ namespace FrontierShell {
         if (dt < 0.f) dt = 0.f;
         if (dt > 0.05f) dt = 0.05f;
 
-        DrawGhostIcon(dl, ImVec2(wp.x + sbW * 0.5f, wp.y + 32.f), 1.05f, AccentCol(0.95f));
+        DrawBrandMark(dl, ImVec2(wp.x + sbW * 0.5f, wp.y + 32.f), 28.f);
 
         const TabItem* tabs = Tabs();
         float navY = wp.y + kGhostAreaH;
@@ -216,10 +221,7 @@ namespace FrontierShell {
 
         dl->AddCircleFilled(
             ImVec2(wp.x + sbW * 0.5f, wp.y + wh - kFooterH - 16.f),
-            4.f, AccentCol(0.9f), 16);
-        dl->AddCircleFilled(
-            ImVec2(wp.x + sbW * 0.5f, wp.y + wh - kFooterH - 16.f),
-            8.f, AccentCol(0.15f), 16);
+            3.f, AccentCol(0.9f), 12);
     }
 
     inline void DrawTopHeader(ImDrawList* dl, ImVec2 wp, float ww, int /*tab*/) {
@@ -256,7 +258,6 @@ namespace FrontierShell {
         const float y = wp.y + wh - kFooterH + 12.f;
 
         dl->AddCircleFilled(ImVec2(wp.x + kSidebarW + 24.f, y + 5.f), 3.f, AccentCol(1.f), 12);
-        dl->AddCircleFilled(ImVec2(wp.x + kSidebarW + 24.f, y + 5.f), 6.f, AccentCol(0.2f), 12);
         dl->AddText(ImVec2(wp.x + kSidebarW + 34.f, y), AccentCol(0.95f), "UNDETECTED");
 
         char build[64];

@@ -42,22 +42,15 @@ namespace UIFx {
 
     inline void DrawPanelAmbientGlow(ImDrawList* dl, ImVec2 panelPos, ImVec2 panelSize, float intensity = 1.f)
     {
+        (void)panelPos;
+        (void)panelSize;
         if (intensity <= 0.01f) return;
-        ImVec2 c(panelPos.x + panelSize.x * 0.5f, panelPos.y + panelSize.y * 0.42f);
-        float base = panelSize.x > panelSize.y ? panelSize.x : panelSize.y;
-        int a0 = (int)(28 * intensity);
-        int a1 = (int)(16 * intensity);
-        int a2 = (int)(8 * intensity);
-        // FRONTIER silver bloom (no blue/purple cast)
-        dl->AddCircleFilled(c, base * 0.55f, IM_COL32(200, 200, 210, a2), 64);
-        dl->AddCircleFilled(c, base * 0.38f, IM_COL32(220, 220, 230, a1), 64);
-        dl->AddCircleFilled(c, base * 0.22f, IM_COL32(235, 235, 240, a0), 48);
         dl->AddRectFilledMultiColor(
             ImVec2(0, 0), ImGui::GetIO().DisplaySize,
-            IM_COL32(0, 0, 0, (int)(36 * intensity)),
-            IM_COL32(0, 0, 0, (int)(36 * intensity)),
-            IM_COL32(0, 0, 0, (int)(62 * intensity)),
-            IM_COL32(0, 0, 0, (int)(62 * intensity)));
+            IM_COL32(0, 0, 0, (int)(28 * intensity)),
+            IM_COL32(0, 0, 0, (int)(28 * intensity)),
+            IM_COL32(0, 0, 0, (int)(48 * intensity)),
+            IM_COL32(0, 0, 0, (int)(48 * intensity)));
     }
 
     inline void DrawBackgroundFX(ImDrawList* dl, ImVec2 size, float dt) {
@@ -72,14 +65,6 @@ namespace UIFx {
             IM_COL32(8, 8, 10, 50),
             IM_COL32(14, 14, 18, 80),
             IM_COL32(6, 6, 8, 55));
-
-        // floating silver orbs
-        for (int i = 0; i < 5; i++) {
-            float ox = size.x * (0.15f + 0.18f * i) + sinf(timeAcc * 0.4f + i) * 40.0f;
-            float oy = size.y * (0.25f + 0.12f * (i % 3)) + cosf(timeAcc * 0.35f + i * 1.3f) * 50.0f;
-            float rad = 80.0f + i * 18.0f;
-            dl->AddCircleFilled(ImVec2(ox, oy), rad, IM_COL32(200, 200, 215, 10 + i * 2), 48);
-        }
 
         if (variables::Theme::snowEffect) {
             for (auto& p : particles) {
@@ -119,7 +104,12 @@ namespace UIFx {
             dl->AddImage(BrandAssets::LogoTex(), logoMin, logoMax,
                 ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, 235));
         } else {
-            dl->AddText(ImVec2(c.x - 36.f, c.y - 10.f), IM_COL32(230, 230, 235, 230), "FRONTIER");
+            ImFont* font = ImGui::GetFont();
+            const float fs = Clampf(size.y * 0.09f, 48.f, 72.f);
+            const char* t = "F";
+            ImVec2 ts = font->CalcTextSizeA(fs, FLT_MAX, 0.f, t);
+            dl->AddText(font, fs, ImVec2(c.x - ts.x * 0.5f, c.y - ts.y * 0.5f),
+                IM_COL32(235, 45, 45, 240), t);
         }
 
         const float barW = Clampf(size.x * 0.28f, 180.f, 320.f);
@@ -130,7 +120,7 @@ namespace UIFx {
         dl->AddRectFilled(barMin, barMax, IM_COL32(36, 36, 42, 255));
         if (progress > 0.001f) {
             ImVec2 fillMax(barMin.x + barW * progress, barMax.y);
-            dl->AddRectFilled(barMin, fillMax, IM_COL32(220, 50, 50, 255));
+            dl->AddRectFilled(barMin, fillMax, IM_COL32(0, 255, 0, 255));
         }
     }
 
@@ -368,74 +358,26 @@ namespace UIFx {
     }
 
     inline void DrawEspPreview(ImDrawList* dl, ImVec2 origin, ImVec2 size) {
-        dl->AddRectFilled(origin, ImVec2(origin.x + size.x, origin.y + size.y), IM_COL32(10, 11, 14, 255), 10.0f);
-        dl->AddRect(origin, ImVec2(origin.x + size.x, origin.y + size.y), IM_COL32(36, 38, 44, 255), 10.0f);
+        const ImVec2 br(origin.x + size.x, origin.y + size.y);
+        dl->AddRectFilled(origin, br, IM_COL32(0, 0, 0, 255), 4.f);
+        dl->AddRect(origin, br, IM_COL32(255, 255, 255, 18), 4.f);
 
-        // soft floor grid
-        float t = timeAcc;
-        ImVec2 center(origin.x + size.x * 0.5f, origin.y + size.y * 0.58f);
-        for (int i = 0; i < 5; i++) {
-            float y = center.y + 40 + i * 10;
-            int a = 20 + i * 8;
-            dl->AddLine(ImVec2(origin.x + 16, y), ImVec2(origin.x + size.x - 16, y), IM_COL32(40, 42, 50, a), 1.0f);
+        if (!variables::ESP::enabled) {
+            const char* off = "ESP off";
+            ImVec2 ts = ImGui::CalcTextSize(off);
+            dl->AddText(
+                ImVec2(origin.x + (size.x - ts.x) * 0.5f, origin.y + (size.y - ts.y) * 0.5f),
+                IM_COL32(120, 120, 125, 200), off);
+            return;
         }
 
-        dl->AddText(ImVec2(origin.x + 12, origin.y + 10), IM_COL32(230, 230, 235, 255), "ESP Preview");
-        dl->AddRectFilled(ImVec2(origin.x + size.x - 52, origin.y + 10), ImVec2(origin.x + size.x - 12, origin.y + 26),
-            IM_COL32(40, 44, 50, 255), 8.0f);
-        dl->AddText(ImVec2(origin.x + size.x - 46, origin.y + 10), IM_COL32(200, 200, 210, 255), "3D");
-
-        float yaw = t * 0.85f;
-        float pitch = 0.22f + sinf(t * 0.4f) * 0.05f;
-        float scale = size.y * 0.55f;
-        ImVec2 pivot(center.x, center.y - 8);
-
-        // Classic bacon / noob R6 proportions (studs-ish)
-        const ImU32 skin = IM_COL32(245, 205, 155, 255);   // Roblox skin
-        const ImU32 hair = IM_COL32(90, 55, 30, 255);      // bacon hair
-        const ImU32 shirt = IM_COL32(55, 140, 220, 255);   // blue shirt
-        const ImU32 pants = IM_COL32(70, 90, 160, 255);    // pants
-        const ImU32 edge = IM_COL32(20, 18, 16, 180);
-
-        // Legs
-        DrawBox3D(dl, { -0.35f, -1.35f, 0 }, { 0.28f, 0.7f, 0.28f }, yaw, pitch, pivot, scale, pants, edge);
-        DrawBox3D(dl, {  0.35f, -1.35f, 0 }, { 0.28f, 0.7f, 0.28f }, yaw, pitch, pivot, scale, pants, edge);
-        // Torso
-        DrawBox3D(dl, { 0, -0.15f, 0 }, { 0.72f, 0.72f, 0.36f }, yaw, pitch, pivot, scale, shirt, edge);
-        // Arms
-        DrawBox3D(dl, { -1.05f, -0.15f, 0 }, { 0.28f, 0.72f, 0.28f }, yaw, pitch, pivot, scale, skin, edge);
-        DrawBox3D(dl, {  1.05f, -0.15f, 0 }, { 0.28f, 0.72f, 0.28f }, yaw, pitch, pivot, scale, skin, edge);
-        // Head
-        DrawBox3D(dl, { 0, 1.05f, 0 }, { 0.52f, 0.52f, 0.52f }, yaw, pitch, pivot, scale, skin, edge);
-        // Bacon hair slab on top / back
-        DrawBox3D(dl, { 0, 1.45f, -0.15f }, { 0.56f, 0.18f, 0.58f }, yaw, pitch, pivot, scale, hair, edge);
-        DrawBox3D(dl, { 0, 1.15f, -0.55f }, { 0.54f, 0.45f, 0.12f }, yaw, pitch, pivot, scale, hair, edge);
-
-        // Face (simple smile on front of head — project a couple dots)
-        {
-            V3 eyeL = RotX(RotY({ -0.18f, 1.15f, 0.53f }, yaw), pitch);
-            V3 eyeR = RotX(RotY({  0.18f, 1.15f, 0.53f }, yaw), pitch);
-            V3 smile = RotX(RotY({ 0, 0.92f, 0.53f }, yaw), pitch);
-            if (eyeL.z > -2.5f) {
-                dl->AddCircleFilled(Proj3(eyeL, pivot, scale), 2.2f, IM_COL32(40, 30, 25, 255));
-                dl->AddCircleFilled(Proj3(eyeR, pivot, scale), 2.2f, IM_COL32(40, 30, 25, 255));
-                dl->AddCircle(Proj3(smile, pivot, scale), 4.0f, IM_COL32(40, 30, 25, 200), 12, 1.4f);
-            }
-        }
-
-        // Projected ESP AABB from head top to feet
-        V3 topW = RotX(RotY({ 0, 1.75f, 0 }, yaw), pitch);
-        V3 botW = RotX(RotY({ 0, -2.15f, 0 }, yaw), pitch);
-        ImVec2 topS = Proj3(topW, pivot, scale);
-        ImVec2 botS = Proj3(botW, pivot, scale);
-        float boxH = botS.y - topS.y;
-        if (boxH < 10) boxH = 10;
-        float boxW = boxH * 0.42f;
-        float minX = (topS.x + botS.x) * 0.5f - boxW * 0.5f;
-        float maxX = minX + boxW;
-        float minY = topS.y;
-        float maxY = botS.y;
-        float cx = (minX + maxX) * 0.5f;
+        const float padX = size.x * 0.22f;
+        const float padY = size.y * 0.14f;
+        const float minX = origin.x + padX;
+        const float maxX = origin.x + size.x - padX;
+        const float minY = origin.y + padY;
+        const float maxY = origin.y + size.y - padY;
+        const float cx = (minX + maxX) * 0.5f;
 
         ImU32 bc = IM_COL32(
             (int)(variables::ESP::boxColor[0] * 255),
@@ -443,71 +385,47 @@ namespace UIFx {
             (int)(variables::ESP::boxColor[2] * 255), 255);
 
         if (variables::ESP::fillBox)
-            dl->AddRectFilled(ImVec2(minX, minY), ImVec2(maxX, maxY), IM_COL32(255, 255, 255, 22));
-        if (variables::ESP::boxes) {
-            if (variables::ESP::cornerBox) {
-                float cl = boxW * 0.32f;
-                dl->AddLine(ImVec2(minX, minY), ImVec2(minX + cl, minY), bc, 2);
-                dl->AddLine(ImVec2(minX, minY), ImVec2(minX, minY + cl), bc, 2);
-                dl->AddLine(ImVec2(maxX, minY), ImVec2(maxX - cl, minY), bc, 2);
-                dl->AddLine(ImVec2(maxX, minY), ImVec2(maxX, minY + cl), bc, 2);
-                dl->AddLine(ImVec2(minX, maxY), ImVec2(minX + cl, maxY), bc, 2);
-                dl->AddLine(ImVec2(minX, maxY), ImVec2(minX, maxY - cl), bc, 2);
-                dl->AddLine(ImVec2(maxX, maxY), ImVec2(maxX - cl, maxY), bc, 2);
-                dl->AddLine(ImVec2(maxX, maxY), ImVec2(maxX, maxY - cl), bc, 2);
-            }
-            else {
-                dl->AddRect(ImVec2(minX, minY), ImVec2(maxX, maxY), IM_COL32(0, 0, 0, 200), 0, 0, variables::ESP::boxThickness + 1.5f);
-                dl->AddRect(ImVec2(minX, minY), ImVec2(maxX, maxY), bc, 0, 0, variables::ESP::boxThickness);
-            }
-        }
+            dl->AddRectFilled(ImVec2(minX, minY), ImVec2(maxX, maxY), IM_COL32(255, 255, 255, 16));
+        if (variables::ESP::boxes)
+            dl->AddRect(ImVec2(minX, minY), ImVec2(maxX, maxY), bc, 0.f, 0, variables::ESP::boxThickness);
         if (variables::ESP::healthBar) {
-            dl->AddRectFilled(ImVec2(minX - 7, minY), ImVec2(minX - 3, maxY), IM_COL32(0, 0, 0, 200));
-            dl->AddRectFilled(ImVec2(minX - 6, minY + boxH * 0.2f), ImVec2(minX - 4, maxY),
+            dl->AddRectFilled(ImVec2(minX - 5.f, minY), ImVec2(minX - 2.f, maxY), IM_COL32(0, 0, 0, 180));
+            dl->AddRectFilled(ImVec2(minX - 4.f, minY + (maxY - minY) * 0.25f), ImVec2(minX - 3.f, maxY),
                 IM_COL32(
                     (int)(variables::ESP::healthColor[0] * 255),
                     (int)(variables::ESP::healthColor[1] * 255),
                     (int)(variables::ESP::healthColor[2] * 255), 255));
         }
-        if (variables::ESP::headDot) {
-            V3 hd = RotX(RotY({ 0, 1.05f, 0.52f }, yaw), pitch);
-            dl->AddCircleFilled(Proj3(hd, pivot, scale), 3.5f, IM_COL32(255, 255, 255, 230));
-        }
         if (variables::ESP::skeleton) {
-            auto bone = [&](V3 a, V3 b) {
-                a = RotX(RotY(a, yaw), pitch);
-                b = RotX(RotY(b, yaw), pitch);
-                dl->AddLine(Proj3(a, pivot, scale), Proj3(b, pivot, scale), IM_COL32(255, 255, 255, 200), 1.4f);
-            };
-            bone({ 0, 1.05f, 0 }, { 0, -0.15f, 0 });
-            bone({ 0, -0.15f, 0 }, { -1.05f, -0.15f, 0 });
-            bone({ 0, -0.15f, 0 }, { 1.05f, -0.15f, 0 });
-            bone({ 0, -0.15f, 0 }, { -0.35f, -1.35f, 0 });
-            bone({ 0, -0.15f, 0 }, { 0.35f, -1.35f, 0 });
+            const ImU32 sk = IM_COL32(255, 255, 255, 200);
+            dl->AddLine(ImVec2(cx, minY + 8.f), ImVec2(cx, maxY - 28.f), sk, 1.4f);
+            dl->AddLine(ImVec2(cx, minY + 28.f), ImVec2(minX + 10.f, minY + 52.f), sk, 1.4f);
+            dl->AddLine(ImVec2(cx, minY + 28.f), ImVec2(maxX - 10.f, minY + 52.f), sk, 1.4f);
+            dl->AddLine(ImVec2(cx, maxY - 28.f), ImVec2(minX + 12.f, maxY - 4.f), sk, 1.4f);
+            dl->AddLine(ImVec2(cx, maxY - 28.f), ImVec2(maxX - 12.f, maxY - 4.f), sk, 1.4f);
         }
         if (variables::ESP::names) {
-            const char* n = "BaconHair";
+            const char* n = "Player";
             ImVec2 ts = ImGui::CalcTextSize(n);
-            dl->AddText(ImVec2(cx - ts.x * 0.5f + 1, minY - 18), IM_COL32(0, 0, 0, 180), n);
-            dl->AddText(ImVec2(cx - ts.x * 0.5f, minY - 19), IM_COL32(255, 255, 255, 255), n);
+            dl->AddText(ImVec2(cx - ts.x * 0.5f, minY - 16.f), IM_COL32(255, 255, 255, 240), n);
         }
         if (variables::ESP::distance) {
             const char* d = "42m";
             ImVec2 ts = ImGui::CalcTextSize(d);
-            dl->AddText(ImVec2(cx - ts.x * 0.5f, maxY + 4), IM_COL32(220, 220, 230, 255), d);
+            dl->AddText(ImVec2(cx - ts.x * 0.5f, maxY + 4.f), IM_COL32(200, 200, 210, 230), d);
         }
-        if (variables::ESP::snaplines) {
-            dl->AddLine(ImVec2(origin.x + size.x * 0.5f, origin.y + size.y - 6),
+        if (variables::ESP::snaplines)
+            dl->AddLine(ImVec2(origin.x + size.x * 0.5f, origin.y + size.y - 2.f),
                 ImVec2(cx, maxY), bc, 1.2f);
-        }
     }
 
-    inline void EspPreviewPanel(float height = 300.f) {
+    inline void EspPreviewPanel(float height = 180.f) {
+        ImGui::TextColored(ImVec4(0.55f, 0.57f, 0.62f, 1.f), "Preview");
+        ImGui::Dummy(ImVec2(0, 2));
         ImVec2 p = ImGui::GetCursorScreenPos();
         float w = ImGui::GetContentRegionAvail().x;
-        if (w < 140.f) w = 140.f;
+        if (w < 120.f) w = 120.f;
         ImGui::Dummy(ImVec2(w, height));
-        timeAcc += ImGui::GetIO().DeltaTime;
         DrawEspPreview(ImGui::GetWindowDrawList(), p, ImVec2(w, height));
     }
 }
