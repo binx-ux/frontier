@@ -1,17 +1,21 @@
 # Stage loader release folder (usermode + optional kernel)
 $root = Split-Path -Parent $PSScriptRoot
 $loaderOut = Join-Path $root "External\loader\x64\Release\FrontierLoader.exe"
-$cheatOut = Join-Path $root "External\x64\Release\Frontier.exe"
-if (-not (Test-Path $cheatOut)) {
-    $cheatOut = Join-Path $root "x64\Release\Frontier.exe"
-}
-$kernelOut = Join-Path $root "kernel\Frontier.exe"
-$stage = Join-Path $root "dist"
 
-if (-not (Test-Path $cheatOut)) {
-    Write-Error "Build External Release|x64 first. Missing: $cheatOut"
+# MSBuild outputs the cheat to solution-root x64\Release; External\x64\Release can be stale.
+$candidates = @(
+    (Join-Path $root "x64\Release\Frontier.exe"),
+    (Join-Path $root "External\x64\Release\Frontier.exe")
+) | Where-Object { Test-Path $_ }
+if (-not $candidates) {
+    Write-Error "Build External Release|x64 first. Missing Frontier.exe under x64\Release."
     exit 1
 }
+$cheatOut = $candidates | Sort-Object { (Get-Item $_).LastWriteTime } -Descending | Select-Object -First 1
+Write-Host "Using cheat binary: $cheatOut"
+
+$kernelOut = Join-Path $root "kernel\Frontier.exe"
+$stage = Join-Path $root "dist"
 
 New-Item -ItemType Directory -Force -Path (Join-Path $stage "usermode") | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $stage "kernel") | Out-Null

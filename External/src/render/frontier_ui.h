@@ -544,7 +544,8 @@ namespace FrontierUI {
     inline void NextCol() { ImGui::TableNextColumn(); }
     inline void EndTwoCol() {
         if (g_tableOpen) {
-            ImGui::EndTable();
+            if (ImGui::GetCurrentTable() != nullptr)
+                ImGui::EndTable();
             g_tableOpen = false;
         }
         ImGui::PopStyleVar();

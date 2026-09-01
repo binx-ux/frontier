@@ -14,7 +14,7 @@ namespace LoaderConfig {
     inline constexpr const wchar_t* kKernelExe = L"Frontier.exe";
 
     inline constexpr const char* kManifestUrl =
-        "https://trace-host.vercel.app/releases/manifest.json";
+        "https://ahead.best/releases/manifest.json";
     inline constexpr const char* kFallbackUsermodeUrl =
         "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.17/Frontier.exe";
     inline constexpr const char* kReleasesPage =
