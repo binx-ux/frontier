@@ -40,12 +40,8 @@ namespace Aimbot {
         float sw, sh, ox, oy;
         W2S::EnsureViewport(sw, sh, ox, oy);
 
-        if (variables::Aimbot::fovFollowMouse && WindowManager::IsRobloxFocused()) {
-            W2S::GetCursorClient(ax, ay);
-        } else {
-            ax = sw * 0.5f;
-            ay = sh * 0.5f;
-        }
+        ax = sw * 0.5f;
+        ay = sh * 0.5f;
 
         if (ax < 0.f) ax = 0.f;
         if (ay < 0.f) ay = 0.f;
@@ -378,9 +374,12 @@ namespace Aimbot {
     // (VisualEngine dimensions), not always 1:1 with overlay client coords.
     inline uintptr_t cachedMouseService = 0;
     inline uintptr_t cachedPlayerMouse = 0;
-    inline uintptr_t cachedInputObjects[16]{};
+    inline uintptr_t cachedInputObjects[8]{};
     inline int cachedInputObjectCount = 0;
     inline uintptr_t cachedUserInputState = 0;
+    inline uintptr_t silentInputObject = 0;
+    inline uintptr_t silentPosOffset = Offsets::MouseService::MousePosition;
+    inline bool silentMouseReady = false;
     inline auto lastMouseResolve = std::chrono::steady_clock::now() - std::chrono::seconds(10);
 
     inline bool UseSilentAim()
@@ -437,9 +436,37 @@ namespace Aimbot {
         if (!io || io < 0x10000) return;
         for (int i = 0; i < cachedInputObjectCount; i++)
             if (cachedInputObjects[i] == io) return;
-        if (cachedInputObjectCount >= 16) return;
+        if (cachedInputObjectCount >= 8) return;
         if (!trusted && !ValidateInputObject(io, maxW, maxH)) return;
         cachedInputObjects[cachedInputObjectCount++] = io;
+    }
+
+    inline bool ProbeSilentMouseChannel(float maxW, float maxH)
+    {
+        silentInputObject = 0;
+        silentPosOffset = Offsets::MouseService::MousePosition;
+        silentMouseReady = false;
+
+        static const uintptr_t posOffs[] = {
+            Offsets::MouseService::MousePosition,
+            0xEC, 0xE4, 0xF4, 0xD4
+        };
+
+        for (int i = 0; i < cachedInputObjectCount; i++) {
+            uintptr_t io = cachedInputObjects[i];
+            if (!memory->is_valid_address(io, 0x120)) continue;
+            for (uintptr_t off : posOffs) {
+                if (!memory->is_valid_address(io + off, 8)) continue;
+                float ox = memory->read<float>(io + off);
+                float oy = memory->read<float>(io + off + 4);
+                if (!LooksLikeMousePos(ox, oy, maxW, maxH)) continue;
+                silentInputObject = io;
+                silentPosOffset = off;
+                silentMouseReady = true;
+                return true;
+            }
+        }
+        return false;
     }
 
     inline bool ResolveMouseService(bool force = false)
@@ -453,6 +480,8 @@ namespace Aimbot {
         cachedMouseService = cachedPlayerMouse = 0;
         cachedUserInputState = 0;
         cachedInputObjectCount = 0;
+        silentMouseReady = false;
+        silentInputObject = 0;
         for (auto& io : cachedInputObjects) io = 0;
         if (!Globals::dataModel.Addr) return false;
 
@@ -508,43 +537,12 @@ namespace Aimbot {
                 }
             }
         }
-        return cachedInputObjectCount > 0 || cachedMouseService != 0 || cachedPlayerMouse != 0;
-    }
-
-    inline bool WriteMousePosToInputObject(uintptr_t inputObj, float x, float y, float maxW, float maxH)
-    {
-        if (!inputObj || inputObj < 0x10000) return false;
-        if (!LooksLikeMousePos(x, y, maxW, maxH)) return false;
-        static const uintptr_t posOffs[] = {
-            Offsets::MouseService::MousePosition,
-            0xEC, 0xE4, 0xF4, 0xD4, 0xFC, 0x104
-        };
-        bool wrote = false;
-        for (uintptr_t off : posOffs) {
-            memory->write<float>(inputObj + off, x);
-            memory->write<float>(inputObj + off + 4, y);
-            float rx = memory->read<float>(inputObj + off);
-            float ry = memory->read<float>(inputObj + off + 4);
-            if (fabsf(rx - x) < 2.f && fabsf(ry - y) < 2.f)
-                wrote = true;
-        }
-        return wrote;
-    }
-
-    inline bool WriteMousePosToInputObject(uintptr_t inputObj, float x, float y)
-    {
-        float sw, sh, ox, oy;
-        W2S::EnsureViewport(sw, sh, ox, oy);
-        float maxW = (W2S::renderSW > 50.f) ? W2S::renderSW : sw;
-        float maxH = (W2S::renderSH > 50.f) ? W2S::renderSH : sh;
-        return WriteMousePosToInputObject(inputObj, x, y, maxW, maxH);
+        return cachedInputObjectCount > 0;
     }
 
     inline bool SetSilentMouse(float clientX, float clientY)
     {
-        if (!ResolveMouseService(false))
-            ResolveMouseService(true);
-        if (cachedInputObjectCount <= 0 && !cachedMouseService && !cachedPlayerMouse)
+        if (!WindowManager::IsRobloxFocused())
             return false;
 
         float sw, sh, ox, oy;
@@ -554,41 +552,43 @@ namespace Aimbot {
         if (clientX > sw) clientX = sw;
         if (clientY > sh) clientY = sh;
 
+        float maxW = (W2S::renderSW > 50.f) ? W2S::renderSW : sw;
+        float maxH = (W2S::renderSH > 50.f) ? W2S::renderSH : sh;
+
+        if (!silentMouseReady) {
+            if (!ResolveMouseService(true))
+                return false;
+            if (!ProbeSilentMouseChannel(maxW, maxH))
+                return false;
+        }
+
+        if (!silentInputObject || !memory->is_valid_address(silentInputObject + silentPosOffset, 8)) {
+            silentMouseReady = false;
+            return false;
+        }
+
         float rx, ry;
         ClientToRenderMouse(clientX, clientY, rx, ry);
-        float matW = (W2S::renderSW > 50.f) ? W2S::renderSW : sw;
-        float matH = (W2S::renderSH > 50.f) ? W2S::renderSH : sh;
+        if (!LooksLikeMousePos(rx, ry, maxW, maxH))
+            return false;
 
-        bool any = false;
-        if (cachedMouseService) {
-            memory->write<float>(cachedMouseService + Offsets::MouseService::MousePosition, rx);
-            memory->write<float>(cachedMouseService + Offsets::MouseService::MousePosition + 4, ry);
-            any = true;
-        }
-        if (cachedPlayerMouse) {
-            memory->write<float>(cachedPlayerMouse + Offsets::MouseService::MousePosition, rx);
-            memory->write<float>(cachedPlayerMouse + Offsets::MouseService::MousePosition + 4, ry);
-            any = true;
-        }
+        memory->write<float>(silentInputObject + silentPosOffset, rx);
+        memory->write<float>(silentInputObject + silentPosOffset + 4, ry);
 
-        for (int i = 0; i < cachedInputObjectCount; i++) {
-            if (WriteMousePosToInputObject(cachedInputObjects[i], rx, ry, matW, matH))
-                any = true;
-            if (WriteMousePosToInputObject(cachedInputObjects[i], clientX, clientY, sw, sh))
-                any = true;
+        float verifyX = memory->read<float>(silentInputObject + silentPosOffset);
+        float verifyY = memory->read<float>(silentInputObject + silentPosOffset + 4);
+        if (!std::isfinite(verifyX) || !std::isfinite(verifyY)) {
+            silentMouseReady = false;
+            return false;
         }
-        return any;
+        return true;
     }
 
     inline bool RestoreSilentMouseFromCursor()
     {
-        POINT pt{};
-        if (!GetCursorPos(&pt)) return false;
-        float sw, sh, ox, oy;
-        W2S::EnsureViewport(sw, sh, ox, oy);
-        const float clientX = static_cast<float>(pt.x) - ox;
-        const float clientY = static_cast<float>(pt.y) - oy;
-        return SetSilentMouse(clientX, clientY);
+        silentSpoofActive = false;
+        silentMouseReady = false;
+        return true;
     }
 
     // Shared closest-target picker for silent aim + magic bullet (screen-space FOV gate)
@@ -665,8 +665,8 @@ namespace Aimbot {
         if (!WindowManager::IsRobloxFocused()) return;
 
         const bool firing = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
-        const bool keyHeld = ShouldAim();
-        if (!firing && !keyHeld) return;
+        if (!firing) return;
+        if (!variables::Aimbot::alwaysOn && !ShouldAim()) return;
 
         ResolveMouseService(false);
 
@@ -889,18 +889,27 @@ namespace Aimbot {
             const bool hitboxAssist =
                 (variables::Hitbox::enabled || variables::Local::hitboxEnabled || variables::MagicBullet::enabled)
                 && variables::Hitbox::aimAssist;
+            const bool firing = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
 
-            // Silent spoof for bullet rays; on BloxStrike also mouse-move so camera tracks
-            // (old path returned after a failed spoof → aimbot looked completely dead)
+            // Pure silent: spoof only while shooting — never move physical mouse (prevents crashes)
+            if (wantSilent && !Games::IsBloxStrike()) {
+                if (firing && ShouldAim()) {
+                    if (!ResolveMouseService(false))
+                        ResolveMouseService(true);
+                    if (SetSilentMouse(scr.X, scr.Y))
+                        silentSpoofActive = true;
+                }
+                return;
+            }
+
             bool silentOk = false;
-            if (wantSilent || hitboxAssist) {
+            if ((wantSilent || hitboxAssist) && firing) {
                 if (!ResolveMouseService(false))
                     ResolveMouseService(true);
                 silentOk = SetSilentMouse(scr.X, scr.Y);
                 if (silentOk) silentSpoofActive = true;
             }
 
-            // Silent: always spoof; fall back to mouse move if spoof fails or crosshair is far
             if (wantSilent && silentOk) {
                 prevErrX = scr.X - aimCx;
                 prevErrY = scr.Y - aimCy;
@@ -912,20 +921,13 @@ namespace Aimbot {
                     return;
             }
 
-            if (wantSilent && !silentOk) {
+            if (wantSilent && !silentOk && firing) {
                 ResolveMouseService(true);
                 SetSilentMouse(scr.X, scr.Y);
             }
 
             float errX = scr.X - aimCx;
             float errY = scr.Y - aimCy;
-            if (variables::Extra::humanizeAim) {
-                float amt = Clamp(variables::Extra::humanizeAmount, 0.05f, 1.f);
-                float t = (float)std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::steady_clock::now().time_since_epoch()).count() * 0.001f;
-                errX += sinf(t * 11.3f) * amt * 2.2f;
-                errY += cosf(t * 9.7f) * amt * 2.0f;
-            }
             float dist = sqrtf(errX * errX + errY * errY);
 
             float dead = variables::Aimbot::deadzone;
@@ -938,41 +940,27 @@ namespace Aimbot {
             }
 
             float smooth = variables::Aimbot::smoothing;
-            if (smooth < 4.f) smooth = 4.f;
-            float kp = 1.f / smooth;
-            kp = Clamp(kp, 0.08f, 0.55f);
-            if (dist > 120.f) kp = Clamp(kp * 1.35f, 0.08f, 0.55f);
-            else if (dist < 45.f) kp = Clamp(kp * 1.25f, 0.08f, 0.55f);
+            if (smooth < 2.f) smooth = 2.f;
+            // Exponential lock-on — no PD wiggle, snaps when close
+            float speed = 24.f / smooth;
+            float t = 1.f - expf(-dt * speed);
+            if (dist < 6.f)
+                t = 1.f;
+            else if (dist < 22.f)
+                t = Clamp(t * 1.4f, 0.f, 1.f);
 
-            float kd = Clamp(variables::Aimbot::damping, 0.0f, 0.85f);
-            float dErrX = (errX - prevErrX) / dt;
-            float dErrY = (errY - prevErrY) / dt;
-            dErrX = Clamp(dErrX, -2500.f, 2500.f);
-            dErrY = Clamp(dErrY, -2500.f, 2500.f);
+            float mx = errX * t;
+            float my = errY * t;
 
-            float frameScale = Clamp(dt / 0.016f, 0.55f, 1.35f);
-            float mx = (errX * kp - dErrX * kd * 0.00035f) * frameScale;
-            float my = (errY * kp - dErrY * kd * 0.00035f) * frameScale;
-
-            if (dist < 55.f) {
-                float t = Clamp(dist / 55.f, 0.12f, 1.f);
-                mx *= t;
-                my *= t;
-            }
-
+            float cap = Clamp(variables::Aimbot::maxMove, 8.f, 42.f);
             float step = sqrtf(mx * mx + my * my);
-            if (step > dist * 0.85f && step > 0.001f) {
-                float s = (dist * 0.85f) / step;
-                mx *= s; my *= s; step = dist * 0.85f;
-            }
-            float cap = Clamp(variables::Aimbot::maxMove, 4.f, 32.f);
             if (step > cap && step > 0.001f) {
                 float s = cap / step;
                 mx *= s; my *= s;
             }
 
-            prevErrX = errX;
-            prevErrY = errY;
+            prevErrX = errX * (1.f - t);
+            prevErrY = errY * (1.f - t);
             MoveMouse(mx, my);
             return;
         }

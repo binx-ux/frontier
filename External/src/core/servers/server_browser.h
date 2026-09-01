@@ -241,6 +241,23 @@ namespace ServerBrowser {
         return gServers;
     }
 
+    inline std::string UrlEncode(const char* s)
+    {
+        std::string out;
+        if (!s) return out;
+        for (const unsigned char* p = (const unsigned char*)s; *p; ++p) {
+            if ((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z') || (*p >= '0' && *p <= '9')
+                || *p == '-' || *p == '_' || *p == '.' || *p == '~')
+                out.push_back((char)*p);
+            else {
+                char buf[4];
+                sprintf_s(buf, "%%%02X", *p);
+                out += buf;
+            }
+        }
+        return out;
+    }
+
     inline void JoinServer(const char* jobId)
     {
         if (!jobId || !jobId[0]) return;
@@ -250,37 +267,25 @@ namespace ServerBrowser {
             return;
         }
 
-        // In-client redirect kick (no browser)
-        variables::Servers::disconnectKind = 0;
-        strncpy_s(variables::Servers::redirectMsg, "Match is redirecting you, please wait", _TRUNCATE);
-        strcpy_s(variables::Servers::redirectStatus, "Joining server...");
-        variables::Servers::redirectProgress = 0.f;
-        variables::Servers::redirecting = true;
-        variables::Servers::redirectTimer = 10.f;
         variables::Misc::floatingPanelOpen = false;
         variables::menuOpen = false;
 
-        char deep[320]{};
-        sprintf_s(deep, "roblox://experiences/start?placeId=%lld&gameInstanceId=%s",
+        // roblox-player hops inside the running client; roblox://experiences/start spawns a new instance.
+        char launcherUrl[512]{};
+        sprintf_s(launcherUrl,
+            "https://assetgame.roblox.com/game/PlaceLauncher.ashx?request=RequestGameJob"
+            "&browserTrackerId=0&placeId=%lld&gameInstanceId=%s&isPlayTogetherGame=false",
             (long long)place, jobId);
-        ShellExecuteA(nullptr, "open", deep, nullptr, nullptr, SW_SHOWNORMAL);
+        std::string encoded = UrlEncode(launcherUrl);
 
-        strcpy_s(gStatus, "Redirecting to server...");
-    }
+        char proto[1200]{};
+        sprintf_s(proto,
+            "roblox-player:1+launchmode:play+gameInstanceId:%s+placeId:%lld"
+            "+browsertrackerid:0+launchtime:%llu+placelauncherurl:%s",
+            jobId, (long long)place, (unsigned long long)GetTickCount64(), encoded.c_str());
 
-    inline void ShowFakeBanScreen()
-    {
-        variables::Servers::disconnectKind = 1;
-        strncpy_s(variables::Servers::redirectMsg,
-            "You have been banned from this experience.\n"
-            "Moderation message: Unauthorized third-party software detected.",
-            _TRUNCATE);
-        strcpy_s(variables::Servers::redirectStatus, "Verifying account status...");
-        variables::Servers::redirectProgress = 0.f;
-        variables::Servers::redirecting = true;
-        variables::Servers::redirectTimer = 18.f;
-        variables::Misc::floatingPanelOpen = false;
-        variables::menuOpen = false;
+        ShellExecuteA(nullptr, "open", proto, nullptr, nullptr, SW_SHOWNORMAL);
+        strcpy_s(gStatus, "Server hopping in current Roblox client...");
     }
 
     inline void DismissDisconnectScreen()

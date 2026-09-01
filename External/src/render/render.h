@@ -65,10 +65,10 @@ namespace UI {
         s.PopupRounding = 10.0f;
         s.ScrollbarRounding = 6.0f;
         s.TabRounding = 8.0f;
-        s.WindowPadding = ImVec2(12, 10);
-        s.FramePadding = ImVec2(10, 6);
-        s.ItemSpacing = ImVec2(8, 6);
-        s.ItemInnerSpacing = ImVec2(8, 4);
+        s.WindowPadding = ImVec2(16, 14);
+        s.FramePadding = ImVec2(12, 7);
+        s.ItemSpacing = ImVec2(10, 8);
+        s.ItemInnerSpacing = ImVec2(10, 6);
         s.ScrollbarSize = 6.0f;
         s.GrabMinSize = 12.0f;
         s.WindowBorderSize = 1.0f;
@@ -734,8 +734,8 @@ public:
                 UIMotion::NotifyTabChanged(variables::selectedTab);
             }
 
-            if (variables::Theme::bgEffect)
-                UIFx::DrawBackgroundFX(bg, ds, dt);
+            const bool menuVisible = variables::Misc::floatingPanelOpen || variables::menuOpen;
+            UIFx::DrawBackgroundFX(bg, ds, dt, menuVisible);
 
             RenderFloatingPanel();
 
@@ -780,8 +780,8 @@ public:
 
         if (variables::Misc::menuAnim < 0.01f) return;
 
-        if (variables::Theme::bgEffect)
-            UIFx::DrawBackgroundFX(bg, ds, dt);
+        const bool menuVisible = variables::Misc::menuAnim > 0.02f;
+        UIFx::DrawBackgroundFX(bg, ds, dt, menuVisible);
 
         float anim = variables::Misc::menuAnim;
         float ease = UIMotion::EaseOutQuart(anim);
@@ -1135,57 +1135,45 @@ public:
             drawList->AddText(ImVec2(x, 10), FrontierUI::U32(variables::Theme::text), buf);
         }
 
-        if (variables::Aimbot::showFOV && !variables::Loading::active) {
-            Aimbot::RefreshFovCenter();
-            ImVec2 c(Aimbot::fovCenterX, Aimbot::fovCenterY);
-            int a = (int)(variables::Aimbot::fovOpacity * 255);
-            Aimbot::SyncUiSliders();
-            const bool silentActive = variables::Aimbot::silentAim || variables::Aimbot::aimType == 1;
-            float fr = silentActive ? variables::Theme::brand[0] : variables::Aimbot::fovColor[0];
-            float fg = silentActive ? variables::Theme::brand[1] : variables::Aimbot::fovColor[1];
-            float fb = silentActive ? variables::Theme::brand[2] : variables::Aimbot::fovColor[2];
-            if (!silentActive && variables::Extra::fovRainbow) {
-                float hue = fmodf((float)ImGui::GetTime() * 0.45f, 1.f);
-                ImGui::ColorConvertHSVtoRGB(hue, 0.9f, 1.f, fr, fg, fb);
-            }
-            ImU32 col = IM_COL32((int)(fr * 255), (int)(fg * 255), (int)(fb * 255), a);
-            float fovDraw = silentActive ? variables::Aimbot::silentFovRadius : variables::Aimbot::fovRadius;
-            if (variables::Aimbot::fovStyle == 1) {
-                const int dots = 56;
-                const float spin = (float)ImGui::GetTime() * 1.35f;
-                const float dotR = 2.4f;
-                constexpr float kPi = 3.14159265358979323846f;
-                for (int i = 0; i < dots; i++) {
-                    float ang = spin + (i / (float)dots) * kPi * 2.f;
-                    float x = c.x + cosf(ang) * fovDraw;
-                    float y = c.y + sinf(ang) * fovDraw;
-                    drawList->AddCircleFilled(ImVec2(x, y), dotR, col, 8);
-                }
-            } else {
-                if (variables::Aimbot::fovFilled)
-                    drawList->AddCircleFilled(c, fovDraw,
-                        IM_COL32((int)(fr * 255), (int)(fg * 255), (int)(fb * 255), a / 4), 64);
-                if (variables::Aimbot::fovGlow)
-                    drawList->AddCircle(c, fovDraw,
-                        IM_COL32((int)(fr * 255), (int)(fg * 255), (int)(fb * 255), a / 3), 64, 4.0f);
-                drawList->AddCircle(c, fovDraw, col, 64, silentActive ? 1.8f : 1.5f);
-            }
-            drawList->AddCircleFilled(c, 2.2f, IM_COL32(255, 255, 255, 180), 12);
-        }
+    }
 
-        if (variables::MagicBullet::showFov && variables::MagicBullet::enabled && !variables::Loading::active) {
-            Aimbot::RefreshFovCenter();
-            ImVec2 c(Aimbot::fovCenterX, Aimbot::fovCenterY);
-            float fr = variables::MagicBullet::fovColor[0];
-            float fg = variables::MagicBullet::fovColor[1];
-            float fb = variables::MagicBullet::fovColor[2];
-            int a = (int)(variables::MagicBullet::fovColor[3] * 255);
-            if (a < 40) a = 200;
-            ImU32 col = IM_COL32((int)(fr * 255), (int)(fg * 255), (int)(fb * 255), a);
-            float fovDraw = variables::MagicBullet::fovRadius;
-            if (fovDraw < 20.f) fovDraw = 20.f;
-            drawList->AddCircle(c, fovDraw, col, 64, 1.6f);
+    void RenderFovCircles(ImDrawList* drawList) {
+        if (!drawList || !variables::Aimbot::showFOV || variables::Loading::active) return;
+        Aimbot::RefreshFovCenter();
+        ImVec2 c(Aimbot::fovCenterX, Aimbot::fovCenterY);
+        int a = (int)(variables::Aimbot::fovOpacity * 255);
+        Aimbot::SyncUiSliders();
+        const bool silentActive = variables::Aimbot::silentAim || variables::Aimbot::aimType == 1;
+        float fr = silentActive ? variables::Theme::brand[0] : variables::Aimbot::fovColor[0];
+        float fg = silentActive ? variables::Theme::brand[1] : variables::Aimbot::fovColor[1];
+        float fb = silentActive ? variables::Theme::brand[2] : variables::Aimbot::fovColor[2];
+        if (!silentActive && variables::Extra::fovRainbow) {
+            float hue = fmodf((float)ImGui::GetTime() * 0.45f, 1.f);
+            ImGui::ColorConvertHSVtoRGB(hue, 0.9f, 1.f, fr, fg, fb);
         }
+        ImU32 col = IM_COL32((int)(fr * 255), (int)(fg * 255), (int)(fb * 255), a);
+        float fovDraw = silentActive ? variables::Aimbot::silentFovRadius : variables::Aimbot::fovRadius;
+        if (variables::Aimbot::fovStyle == 1) {
+            const int dots = 56;
+            const float spin = (float)ImGui::GetTime() * 1.35f;
+            const float dotR = 2.4f;
+            constexpr float kPi = 3.14159265358979323846f;
+            for (int i = 0; i < dots; i++) {
+                float ang = spin + (i / (float)dots) * kPi * 2.f;
+                float x = c.x + cosf(ang) * fovDraw;
+                float y = c.y + sinf(ang) * fovDraw;
+                drawList->AddCircleFilled(ImVec2(x, y), dotR, col, 8);
+            }
+        } else {
+            if (variables::Aimbot::fovFilled)
+                drawList->AddCircleFilled(c, fovDraw,
+                    IM_COL32((int)(fr * 255), (int)(fg * 255), (int)(fb * 255), a / 4), 64);
+            if (variables::Aimbot::fovGlow)
+                drawList->AddCircle(c, fovDraw,
+                    IM_COL32((int)(fr * 255), (int)(fg * 255), (int)(fb * 255), a / 3), 64, 4.0f);
+            drawList->AddCircle(c, fovDraw, col, 64, silentActive ? 1.8f : 1.5f);
+        }
+        drawList->AddCircleFilled(c, 2.2f, IM_COL32(255, 255, 255, 180), 12);
     }
 
     void EndFrame() {

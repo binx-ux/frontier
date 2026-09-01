@@ -114,7 +114,6 @@ namespace ConfigIO {
         W(f, "aim.uiAimSpeed", variables::Aimbot::uiAimSpeed);
         W(f, "aim.key", variables::Aimbot::aimbotKey);
         W(f, "aim.silentKey", variables::Aimbot::silentAimKey);
-        W(f, "aim.fovFollowMouse", variables::Aimbot::fovFollowMouse);
         W(f, "aim.toggle", variables::Aimbot::toggleMode);
         W(f, "teamCheck", variables::teamCheck);
         W(f, "healthCheck", variables::healthCheck);
@@ -290,7 +289,6 @@ namespace ConfigIO {
         else if (eq("aim.uiAimSpeed")) variables::Aimbot::uiAimSpeed = (float)atof(val);
         else if (eq("aim.key")) variables::Aimbot::aimbotKey = atoi(val);
         else if (eq("aim.silentKey")) variables::Aimbot::silentAimKey = atoi(val);
-        else if (eq("aim.fovFollowMouse")) variables::Aimbot::fovFollowMouse = B(val);
         else if (eq("aim.toggle")) variables::Aimbot::toggleMode = B(val);
         else if (eq("teamCheck")) { variables::teamCheck = B(val); variables::ESP::teamCheck = variables::teamCheck; }
         else if (eq("healthCheck")) variables::healthCheck = B(val);

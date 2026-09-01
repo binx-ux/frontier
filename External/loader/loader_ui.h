@@ -12,6 +12,8 @@
 #include "loader_update.h"
 #include "loader_oauth.h"
 #include "loader_license.h"
+#include "loader_products.h"
+#include "loader_assets.h"
 #include "resource.h"
 #include <Shellapi.h>
 
@@ -41,6 +43,7 @@ namespace LoaderUI {
         ScreenReady = 1,
         ScreenAuth = 2,
         ScreenLauncher = 3,
+        ScreenProducts = 4,
     };
 
     enum HoverTarget : int {
@@ -54,6 +57,9 @@ namespace LoaderUI {
         HoverActivate = 7,
         HoverSignOut = 8,
         HoverSupport = 9,
+        HoverProductTrace = 10,
+        HoverProductFrontier = 11,
+        HoverGuest = 12,
     };
 
     struct State {
@@ -80,6 +86,8 @@ namespace LoaderUI {
         char authStatus[256] = "Enter your lifetime license key to activate.";
         char signedInAs[64] = "";
         LoaderUpdate::Manifest manifest{};
+        int selectedProduct = LoaderProducts::ProductNone;
+        bool launchAfterUpdate = false;
 
         // Motion / transitions
         float windowIntro = 0.f;
@@ -87,7 +95,7 @@ namespace LoaderUI {
         bool closing = false;
         Screen prevScreen = ScreenDownloading;
         float screenBlend = 1.f;
-        float hoverBlend[10]{};
+        float hoverBlend[14]{};
     };
 
     inline bool ShowKernelMode(const State* s)
@@ -108,6 +116,7 @@ namespace LoaderUI {
     inline int gHover = HoverNone;
     inline bool gTrackingMouse = false;
     inline HWND gKeyEdit = nullptr;
+    inline HWND gPassEdit = nullptr;
     inline HBRUSH gEditBrush = nullptr;
     inline const UINT_PTR kAnimTimerId = 1;
     inline const UINT WM_AUTH_DONE = WM_USER + 10;
@@ -148,7 +157,7 @@ namespace LoaderUI {
     inline void TickHoverAnimation(State* s, float dt)
     {
         if (!s) return;
-        const int targets[10] = {
+        const int targets[14] = {
             gHover == HoverPrimary ? 1 : 0,
             gHover == HoverMode0 ? 1 : 0,
             gHover == HoverMode1 ? 1 : 0,
@@ -158,10 +167,14 @@ namespace LoaderUI {
             gHover == HoverActivate ? 1 : 0,
             gHover == HoverSignOut ? 1 : 0,
             gHover == HoverSupport ? 1 : 0,
+            gHover == HoverProductTrace ? 1 : 0,
+            gHover == HoverProductFrontier ? 1 : 0,
+            gHover == HoverGuest ? 1 : 0,
+            0,
             0
         };
         const float speed = 1.f - expf(-dt * 14.f);
-        for (int i = 0; i < 10; i++) {
+        for (int i = 0; i < 14; i++) {
             const float goal = targets[i] ? 1.f : 0.f;
             s->hoverBlend[i] += (goal - s->hoverBlend[i]) * speed;
         }
@@ -230,10 +243,9 @@ namespace LoaderUI {
         if (s->windowIntro < 0.999f) return true;
         if (s->screenBlend < 0.999f) return true;
         if (s->indeterminate || s->progressActive) return true;
-        if (s->screen == ScreenDownloading) return true;
         if (s->screen == ScreenReady && s->filesReady)
             return fabsf(s->progressAnim - 1.f) > 0.002f;
-        for (int i = 0; i < 10; i++)
+        for (int i = 0; i < 14; i++)
             if (s->hoverBlend[i] > 0.02f && s->hoverBlend[i] < 0.98f) return true;
         return false;
     }
@@ -366,14 +378,30 @@ namespace LoaderUI {
         return RECT{ r.left, r.bottom - 10, r.right, r.bottom - 4 };
     }
 
+    inline RECT GuestButtonRect()
+    {
+        RECT r = ContentRect();
+        return RECT{ r.left, r.top + 206, r.right, r.top + 238 };
+    }
+
+    inline RECT TraceProductRect()
+    {
+        return RECT{ 20, 56, 290, 368 };
+    }
+
+    inline RECT FrontierProductRect()
+    {
+        return RECT{ 290, 56, 560, 368 };
+    }
+
     inline RECT GamePanelRect()
     {
-        return RECT{ 24, 42, 144, 228 };
+        return RECT{ 20, 48, 168, 368 };
     }
 
     inline RECT InfoPanelRect()
     {
-        return RECT{ 154, 42, 366, 228 };
+        return RECT{ 178, 48, 560, 368 };
     }
 
     inline RECT LaunchButtonRect()
@@ -417,6 +445,14 @@ namespace LoaderUI {
             field.right - field.left - padL - 8,
             field.bottom - field.top - padV * 2,
             SWP_NOZORDER | SWP_NOACTIVATE);
+        if (gPassEdit) {
+            RECT pass = PasswordFieldRect();
+            SetWindowPos(gPassEdit, nullptr,
+                pass.left + padL, pass.top + padV,
+                pass.right - pass.left - padL - 8,
+                pass.bottom - pass.top - padV * 2,
+                SWP_NOZORDER | SWP_NOACTIVATE);
+        }
     }
 
     inline void SetKeyEditVisible(bool visible)
@@ -427,10 +463,29 @@ namespace LoaderUI {
         EnableWindow(gKeyEdit, visible && !(gState && gState->authBusy));
     }
 
+    inline void SetPassEditVisible(bool visible)
+    {
+        if (!gPassEdit) return;
+        RepositionKeyEdit();
+        ShowWindow(gPassEdit, visible ? SW_SHOW : SW_HIDE);
+        EnableWindow(gPassEdit, visible && !(gState && gState->authBusy));
+    }
+
+    inline void SyncAuthFieldsVisibility(State* s)
+    {
+        const bool show = ShouldShowKeyField(s);
+        SetKeyEditVisible(show);
+        SetPassEditVisible(show);
+    }
+
     inline void SyncKeyFieldVisibility(State* s)
     {
-        SetKeyEditVisible(ShouldShowKeyField(s));
+        SyncAuthFieldsVisibility(s);
     }
+
+    inline void GoToLauncher(State* s);
+    inline void GoToProducts(State* s);
+    inline void RunLaunch(State* s);
 
     inline void TransitionToScreen(State* s, Screen next)
     {
@@ -443,9 +498,11 @@ namespace LoaderUI {
             InvalidateRect(gWnd, nullptr, FALSE);
         }
         if (next == ScreenAuth)
-            SyncKeyFieldVisibility(s);
-        else
+            SyncAuthFieldsVisibility(s);
+        else {
             SetKeyEditVisible(false);
+            SetPassEditVisible(false);
+        }
         RepositionKeyEdit();
     }
 
@@ -632,20 +689,20 @@ namespace LoaderUI {
 
     inline void DrawLoginHeader(HDC hdc, const char* hello, const char* subtitle)
     {
-        SelectObject(hdc, gFontBold);
+        SelectObject(hdc, gFontLogo ? gFontLogo : gFontBold);
         SetTextColor(hdc, LoaderConfig::kText);
         RECT logo = LogoTextRect();
-        DrawTextA(hdc, "Loader", -1, &logo, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+        DrawTextA(hdc, "FRONTIER", -1, &logo, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
 
         if (hello && hello[0]) {
-            SelectObject(hdc, gFontBold);
+            SelectObject(hdc, gFontHero ? gFontHero : gFontBold);
             SetTextColor(hdc, LoaderConfig::kText);
             DrawTextA(hdc, hello, -1, &HelloTextRect(), DT_LEFT | DT_SINGLELINE | DT_VCENTER);
         }
         if (subtitle && subtitle[0]) {
             SelectObject(hdc, gFont);
-            SetTextColor(hdc, LoaderConfig::kTextMuted);
-            DrawTextA(hdc, subtitle, -1, &SubtitleTextRect(), DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+            SetTextColor(hdc, LoaderConfig::kTextDim);
+            DrawTextA(hdc, subtitle, -1, &SubtitleTextRect(), DT_LEFT | DT_WORDBREAK);
         }
     }
 
@@ -680,12 +737,7 @@ namespace LoaderUI {
 
     inline void DrawInputChrome(HDC hdc)
     {
-        DrawInputField(hdc, KeyFieldRect(), nullptr, true);
-        DrawLoginHint(hdc);
-    }
-
-    inline void DrawDecorativePasswordField(HDC hdc)
-    {
+        DrawInputField(hdc, KeyFieldRect(), "License key", true);
         DrawInputField(hdc, PasswordFieldRect(), "Password", false);
     }
 
@@ -737,8 +789,8 @@ namespace LoaderUI {
             COLORREF fill = successTone ? LoaderConfig::kSuccess : LoaderConfig::kAccent;
             FillRoundRectSolid(hdc, barFg, fill, 3);
 
-            if (!successTone && s->indeterminate) {
-                const float wave = 0.5f + 0.5f * sinf(s->animTime * 4.5f);
+            if (!successTone && s->indeterminate && s->progressActive) {
+                const float wave = 0.5f + 0.5f * sinf(s->animTime * 2.2f);
                 const int shimmerW = (std::max)(barW / 6, 24);
                 const int travel = barW - shimmerW;
                 if (travel > 0) {
@@ -895,18 +947,36 @@ namespace LoaderUI {
             DrawGradientButton(hdc, AuthContinueRect(s), "Continue", true, s->hoverBlend[0]);
             DrawGhostButton(hdc, SignOutButtonRect(), "Sign out", s->hoverBlend[7]);
         } else {
-            DrawLoginHeader(hdc, "Hello, please login in your account", "Enter your Frontier license key");
+            DrawLoginHeader(hdc, "Sign in", "Use your FRTR key and account password.");
             DrawInputChrome(hdc);
-            DrawDecorativePasswordField(hdc);
             DrawAuthStatusBanner(hdc, s);
-            const char* label = s->authBusy ? "Please wait..." : "Sign in ->";
+            const char* label = s->authBusy ? "Please wait..." : "Sign in";
             DrawGradientButton(hdc, ActivateButtonRect(), label, !s->authBusy, s->hoverBlend[6]);
+            DrawGhostButton(hdc, GuestButtonRect(), "Browse free products", s->hoverBlend[11]);
             if (LoaderConfig::kDiscordOAuthEnabled) {
                 DrawGhostButton(hdc, DiscordButtonRect(),
                     s->authBusy ? "Discord..." : "Sign in with Discord",
                     s->hoverBlend[5]);
             }
         }
+    }
+
+    inline void DrawProductsScreen(HDC hdc, State* s)
+    {
+        DrawWindowControls(hdc, s);
+        SelectObject(hdc, gFontBold);
+        SetTextColor(hdc, LoaderConfig::kText);
+        RECT title{ 20, 16, 400, 40 };
+        DrawTextA(hdc, "Choose a product", -1, &title, DT_LEFT | DT_SINGLELINE);
+        SelectObject(hdc, gFont);
+        SetTextColor(hdc, LoaderConfig::kTextDim);
+        RECT sub{ 20, 40, 560, 54 };
+        DrawTextA(hdc, "Pick TRACE (free) or FRONTIER (external). More games coming soon.", -1, &sub, DT_LEFT | DT_SINGLELINE);
+
+        LoaderAssets::DrawProductCard(hdc, TraceProductRect(), LoaderProducts::ProductTrace,
+            s->selectedProduct == LoaderProducts::ProductTrace, false, s->hoverBlend[9], gFontBold, gFont);
+        LoaderAssets::DrawProductCard(hdc, FrontierProductRect(), LoaderProducts::ProductFrontier,
+            s->selectedProduct == LoaderProducts::ProductFrontier, !s->authenticated, s->hoverBlend[10], gFontBold, gFont);
     }
 
     inline void DrawLauncherScreen(HDC hdc, State* s)
@@ -938,6 +1008,7 @@ namespace LoaderUI {
         case ScreenDownloading: DrawDownloadingScreen(hdc, s); break;
         case ScreenReady: DrawReadyScreen(hdc, s); break;
         case ScreenAuth: DrawAuthScreen(hdc, s); break;
+        case ScreenProducts: DrawProductsScreen(hdc, s); break;
         case ScreenLauncher: DrawLauncherScreen(hdc, s); break;
         }
         DrawFooter(hdc, s);
@@ -992,6 +1063,9 @@ namespace LoaderUI {
     }
 
     inline void RunUpdate(State* s);
+    inline void GoToLauncher(State* s);
+    inline void GoToProducts(State* s);
+    inline void RunLaunch(State* s);
 
     inline void CheckAsync(State* s)
     {
@@ -1002,6 +1076,12 @@ namespace LoaderUI {
         SetStatus(s, "Checking for updates...");
 
         LoaderUpdate::ApplyPendingUpdates();
+
+        if (LoaderUpdate::LocalUsermodeExists()) {
+            const int saved = LoaderUpdate::LoadLocalVersion();
+            if (saved < LoaderConfig::kLocalVersion)
+                LoaderUpdate::SaveInstallRecord(LoaderConfig::kLocalVersion, LoaderConfig::kDisplayVersion);
+        }
 
         std::thread([s]() {
             LoaderUpdate::Manifest m{};
@@ -1067,18 +1147,46 @@ namespace LoaderUI {
                 s->updateAvailable = false;
                 s->kernelAvailable = LoaderUpdate::ProbeKernelAvailable() || m.kernelAvailable;
                 s->selectedMode = 0;
-                GoReady(s, true);
-                SetStatus(s, "All files are up to date.");
+                s->updating = false;
+                if (s->launchAfterUpdate) {
+                    s->launchAfterUpdate = false;
+                    if (!LoaderUpdate::NeedsUpdate(s->manifest) && LoaderUpdate::LocalUsermodeExists())
+                        RunLaunch(s);
+                    else
+                        GoToLauncher(s);
+                } else {
+                    GoReady(s, LoaderUpdate::LocalUsermodeExists() && !LoaderUpdate::NeedsUpdate(s->manifest));
+                    if (LoaderUpdate::LocalUsermodeExists() && !LoaderUpdate::NeedsUpdate(s->manifest))
+                        SetStatus(s, "All files are up to date.");
+                }
                 if (LoaderUpdate::PrepareLoaderRelaunch() && gWnd)
                     PostMessageW(gWnd, WM_RELAUNCH_LOADER, 0, 0);
             } else {
                 char buf[256];
                 sprintf_s(buf, "Update failed: %s", err.c_str());
-                GoReady(s, LocalUsermodeExists());
+                s->launchAfterUpdate = false;
+                s->updating = false;
+                GoReady(s, LoaderUpdate::LocalUsermodeExists());
                 SetStatus(s, buf);
             }
             if (gWnd) InvalidateRect(gWnd, nullptr, FALSE);
         }).detach();
+    }
+
+    inline void GoToProducts(State* s)
+    {
+        if (!s) return;
+        TransitionToScreen(s, ScreenProducts);
+        gHover = HoverNone;
+        if (gWnd) InvalidateRect(gWnd, nullptr, FALSE);
+    }
+
+    inline void RunTraceProduct(State* s)
+    {
+        (void)s;
+        std::wstring msg;
+        LoaderProducts::RunTraceLaunch(msg);
+        MessageBoxW(gWnd, msg.c_str(), LoaderConfig::kAppName, MB_OK | MB_ICONINFORMATION);
     }
 
     inline void RunLaunch(State* s)
@@ -1098,6 +1206,7 @@ namespace LoaderUI {
         std::wstring exe;
         if (s->selectedMode == 0) {
             if (LoaderUpdate::NeedsUpdate(s->manifest) && s->manifest.usermodeUrl[0]) {
+                s->launchAfterUpdate = true;
                 RunUpdate(s);
                 return;
             }
@@ -1137,7 +1246,7 @@ namespace LoaderUI {
         if (payload->ok && s->screen == ScreenAuth) {
             s->selectedMode = 0;
             LoaderUpdate::SaveMode(0);
-            TransitionToScreen(s, ScreenLauncher);
+            GoToProducts(s);
         } else if (gWnd) {
             InvalidateRect(gWnd, nullptr, FALSE);
         }
@@ -1157,7 +1266,7 @@ namespace LoaderUI {
     {
         if (!s || s->authBusy) return;
         if (s->authenticated) {
-            GoToLauncher(s);
+            GoToProducts(s);
             return;
         }
         if (!gKeyEdit) return;
@@ -1165,24 +1274,34 @@ namespace LoaderUI {
         GetWindowTextA(gKeyEdit, raw, sizeof(raw));
         char key[64]{};
         LoaderLicense::NormalizeKeyInput(raw, key, sizeof(key));
+        char pass[128]{};
+        if (gPassEdit)
+            GetWindowTextA(gPassEdit, pass, sizeof(pass));
         if (!key[0]) {
             strncpy_s(s->authStatus, "Paste your FRTR license key first.", _TRUNCATE);
             s->authenticated = false;
             InvalidateRect(gWnd, nullptr, FALSE);
             return;
         }
+        if (!pass[0]) {
+            strncpy_s(s->authStatus, "Enter your account password.", _TRUNCATE);
+            s->authenticated = false;
+            InvalidateRect(gWnd, nullptr, FALSE);
+            return;
+        }
         SetWindowTextA(gKeyEdit, key);
         s->authBusy = true;
-        strncpy_s(s->authStatus, "Activating license...", _TRUNCATE);
+        strncpy_s(s->authStatus, "Signing in...", _TRUNCATE);
         RefreshAuthUi(s);
         std::string hw = s->licenseHwid[0] ? s->licenseHwid : LoaderLicense::GetHwid();
         strncpy_s(s->licenseHwid, hw.c_str(), _TRUNCATE);
         std::string keyCopy = key;
-        std::thread([s, keyCopy, hw]() {
+        std::string passCopy = pass;
+        std::thread([s, keyCopy, passCopy, hw]() {
             auto* payload = new AuthDonePayload{};
             char token[768]{}, msg[256]{};
             std::string err;
-            bool ok = LoaderLicense::ActivateKey(keyCopy.c_str(), hw.c_str(), token, sizeof(token), msg, sizeof(msg), err);
+            bool ok = LoaderLicense::ActivateKey(keyCopy.c_str(), passCopy.c_str(), hw.c_str(), token, sizeof(token), msg, sizeof(msg), err);
             payload->ok = ok;
             if (ok) {
                 strncpy_s(payload->token, token, _TRUNCATE);
@@ -1266,6 +1385,15 @@ namespace LoaderUI {
                 return HoverActivate;
             if (s->authenticated && PtInRect(&SignOutButtonRect(), pt))
                 return HoverSignOut;
+            if (!s->authenticated && PtInRect(&GuestButtonRect(), pt))
+                return HoverGuest;
+        }
+
+        if (s->screen == ScreenProducts) {
+            if (PtInRect(&TraceProductRect(), pt))
+                return HoverProductTrace;
+            if (PtInRect(&FrontierProductRect(), pt))
+                return HoverProductFrontier;
         }
 
         if (s->screen == ScreenLauncher) {
@@ -1287,6 +1415,38 @@ namespace LoaderUI {
             gHover = next;
             StartAnimTimer(hwnd);
             InvalidateRect(hwnd, nullptr, FALSE);
+        }
+    }
+
+    inline void ClipCursorToLoader(HWND hwnd)
+    {
+        if (!hwnd) return;
+        RECT wr{};
+        GetWindowRect(hwnd, &wr);
+        ClipCursor(&wr);
+    }
+
+    inline void ReleaseLoaderCursorClip()
+    {
+        ClipCursor(nullptr);
+    }
+
+    inline void HandleProductsClick(State* s, POINT pt)
+    {
+        if (PtInRect(&TraceProductRect(), pt)) {
+            s->selectedProduct = LoaderProducts::ProductTrace;
+            RunTraceProduct(s);
+            return;
+        }
+        if (PtInRect(&FrontierProductRect(), pt)) {
+            if (!s->authenticated) {
+                MessageBoxW(gWnd, L"Sign in with your FRTR key and password to launch FRONTIER.",
+                    LoaderConfig::kAppName, MB_OK | MB_ICONINFORMATION);
+                TransitionToScreen(s, ScreenAuth);
+                return;
+            }
+            s->selectedProduct = LoaderProducts::ProductFrontier;
+            GoToLauncher(s);
         }
     }
 
@@ -1326,9 +1486,21 @@ namespace LoaderUI {
                 KeyFieldRect().right - KeyFieldRect().left - 44,
                 KeyFieldRect().bottom - KeyFieldRect().top - 16,
                 hwnd, (HMENU)1001, inst, nullptr);
+            gPassEdit = CreateWindowExW(
+                0, L"EDIT", L"",
+                WS_CHILD | ES_AUTOHSCROLL | ES_PASSWORD,
+                PasswordFieldRect().left + 36, PasswordFieldRect().top + 8,
+                PasswordFieldRect().right - PasswordFieldRect().left - 44,
+                PasswordFieldRect().bottom - PasswordFieldRect().top - 16,
+                hwnd, (HMENU)1002, inst, nullptr);
             if (gKeyEdit && gFont)
                 SendMessageW(gKeyEdit, WM_SETFONT, (WPARAM)gFont, TRUE);
+            if (gPassEdit && gFont)
+                SendMessageW(gPassEdit, WM_SETFONT, (WPARAM)gFont, TRUE);
             SetKeyEditVisible(false);
+            SetPassEditVisible(false);
+            LoaderAssets::EnsureGdiplus();
+            std::thread([]() { LoaderAssets::EnsureProductArt(); }).detach();
             CheckAsync(s);
             StartAnimTimer(hwnd);
             return 0;
@@ -1353,6 +1525,8 @@ namespace LoaderUI {
                 TickAnimation(s, dt);
                 if (NeedsAnimation(s))
                     InvalidateRect(hwnd, nullptr, FALSE);
+                else
+                    StopAnimTimer(hwnd);
             }
             return 0;
         case WM_CLOSE:
@@ -1382,6 +1556,7 @@ namespace LoaderUI {
         }
         case WM_MOUSEMOVE: {
             POINT pt{ GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
+            ClipCursorToLoader(hwnd);
             UpdateHover(hwnd, s, pt);
             if (!gTrackingMouse) {
                 TRACKMOUSEEVENT tme{};
@@ -1395,10 +1570,18 @@ namespace LoaderUI {
         }
         case WM_MOUSELEAVE:
             gTrackingMouse = false;
+            ReleaseLoaderCursorClip();
             if (gHover != HoverNone) {
                 gHover = HoverNone;
+                StartAnimTimer(hwnd);
                 InvalidateRect(hwnd, nullptr, FALSE);
             }
+            return 0;
+        case WM_ACTIVATE:
+            if (LOWORD(wp) == WA_INACTIVE)
+                ReleaseLoaderCursorClip();
+            else
+                ClipCursorToLoader(hwnd);
             return 0;
         case WM_LBUTTONDOWN: {
             POINT pt{ GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
@@ -1419,7 +1602,10 @@ namespace LoaderUI {
             if (s->screen == ScreenReady && PtInRect(&PrimaryButtonRect(), pt)) {
                 if (s->filesReady) {
                     s->selectedMode = 0;
-                    TransitionToScreen(s, ScreenAuth);
+                    if (s->authenticated)
+                        GoToProducts(s);
+                    else
+                        TransitionToScreen(s, ScreenAuth);
                     gHover = HoverNone;
                     InvalidateRect(hwnd, nullptr, FALSE);
                 } else {
@@ -1438,13 +1624,21 @@ namespace LoaderUI {
                     return 0;
                 }
                 if (s->authenticated && PtInRect(&AuthContinueRect(s), pt)) {
-                    GoToLauncher(s);
+                    GoToProducts(s);
+                    return 0;
+                }
+                if (!s->authenticated && PtInRect(&GuestButtonRect(), pt)) {
+                    GoToProducts(s);
                     return 0;
                 }
                 if (!s->authenticated && PtInRect(&ActivateButtonRect(), pt)) {
                     RunActivateKey(s);
                     return 0;
                 }
+                return 0;
+            }
+            if (s->screen == ScreenProducts) {
+                HandleProductsClick(s, pt);
                 return 0;
             }
             if (s->screen == ScreenLauncher)
@@ -1478,7 +1672,8 @@ namespace LoaderUI {
                 InvalidateRect(hwnd, nullptr, FALSE);
             break;
         case WM_KEYDOWN:
-            if (wp == VK_RETURN && s && s->screen == ScreenAuth && GetFocus() == gKeyEdit) {
+            if (wp == VK_RETURN && s && s->screen == ScreenAuth &&
+                (GetFocus() == gKeyEdit || GetFocus() == gPassEdit)) {
                 RunActivateKey(s);
                 return 0;
             }
@@ -1490,6 +1685,7 @@ namespace LoaderUI {
         case WM_DESTROY:
             StopAnimTimer(hwnd);
             KillTimer(hwnd, 2);
+            ReleaseLoaderCursorClip();
             PostQuitMessage(0);
             return 0;
         }
@@ -1520,19 +1716,19 @@ namespace LoaderUI {
 
         gBgBrush = CreateSolidBrush(LoaderConfig::kBg);
         gEditBrush = CreateSolidBrush(LoaderConfig::kInputBg);
-        gFont = CreateFontW(-13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+        gFont = CreateFontW(-15, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
-        gFontBold = CreateFontW(-13, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+        gFontBold = CreateFontW(-15, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
-        gFontBrand = CreateFontW(-15, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+        gFontBrand = CreateFontW(-17, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
-        gFontHero = CreateFontW(-22, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+        gFontHero = CreateFontW(-26, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
-        gFontLogo = CreateFontW(-16, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+        gFontLogo = CreateFontW(-18, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
         if (!gFontLogo)
@@ -1594,6 +1790,7 @@ namespace LoaderUI {
             DeleteObject(gFontLogo);
         DeleteObject(gEditBrush);
         DeleteObject(gBgBrush);
+        LoaderAssets::ShutdownGdiplus();
         return (int)msg.wParam;
     }
 }

@@ -607,8 +607,8 @@ namespace Visuals {
         ImVec2 screenCenter(sw * 0.5f, sh * 0.5f);
 
         const bool needBones = variables::ESP::enabled || variables::ESP::skeleton ||
-            variables::ESP::wireframePlayers || variables::ESP::chamsEnabled;
-        const bool drawSkeleton = needBones &&
+            variables::ESP::wireframePlayers;
+        const bool drawSkeleton = variables::ESP::skeleton &&
             !(variables::Perf::skipSkeletonWhenLowFps && variables::Perf::currentFps > 0 &&
               variables::Perf::currentFps < variables::Perf::lowFpsThreshold);
         const bool lowFps = variables::Perf::currentFps > 0 &&
@@ -671,25 +671,40 @@ namespace Visuals {
                 !variables::ESP::healthText &&
                 !variables::ESP::distance &&
                 !variables::ESP::equippedItem &&
+                !variables::ESP::headDot &&
+                !variables::ESP::flags &&
                 !variables::ESP::skeleton &&
-                !variables::ESP::wireframePlayers &&
-                !variables::ESP::chamsEnabled) continue;
+                !variables::ESP::wireframePlayers) continue;
 
-            // Live head/HRP every frame — cache alone lags and makes boxes stutter/slide off
+            // Throttle heavy bone work — refresh positions every other frame per player
+            static uint32_t frameTick = 0;
+            frameTick++;
+            const bool refreshPos = (((frameTick + (uint32_t)plr.userId) & 1u) == 0u) || !lowFps;
+
             if (needBones) {
+                static uint32_t boneTick = 0;
+                boneTick++;
+                const bool wantHeavy = variables::ESP::skeleton || variables::ESP::wireframePlayers;
+                const uint32_t boneMask = lowFps ? 5u : 3u;
+                const bool refreshTree = wantHeavy && drawSkeleton &&
+                    (((boneTick + (uint32_t)plr.userId) & boneMask) == 0u);
                 if (!plr.boneParts.ready && plr.characterAddr)
                     PlayerCache::fillBoneParts(RBX::RbxInstance(plr.characterAddr), plr.boneParts);
-                if (plr.boneParts.ready)
+                else if (refreshTree && plr.characterAddr)
+                    PlayerCache::fillBoneParts(RBX::RbxInstance(plr.characterAddr), plr.boneParts);
+                if (plr.boneParts.ready && refreshTree)
                     PlayerCache::refreshBonePositions(plr.boneParts, plr.bones);
             }
-            if (plr.headAddr) {
-                plr.bones.head = RBX::RbxInstance(plr.headAddr).GetPos();
-                plr.bones.hasHead = true;
-            }
-            if (plr.rootPartAddr) {
-                plr.bones.hrp = RBX::RbxInstance(plr.rootPartAddr).GetPos();
-                plr.bones.hasHrp = true;
-                plr.position = plr.bones.hrp;
+            if (refreshPos) {
+                if (plr.headAddr) {
+                    plr.bones.head = RBX::RbxInstance(plr.headAddr).GetPos();
+                    plr.bones.hasHead = true;
+                }
+                if (plr.rootPartAddr) {
+                    plr.bones.hrp = RBX::RbxInstance(plr.rootPartAddr).GetPos();
+                    plr.bones.hasHrp = true;
+                    plr.position = plr.bones.hrp;
+                }
             }
             if (!plr.bones.hasHead && plr.bones.hasHrp) {
                 plr.bones.head = plr.bones.hrp;
@@ -703,14 +718,6 @@ namespace Visuals {
                 onScreen = Aimbot::ScreenPointValid(hrpOverlay, sw, sh);
             }
             if (!onScreen && !variables::ESP::skeleton && !variables::ESP::wireframePlayers) continue;
-
-            // Always refresh bones when skeleton/wireframe/chams need them
-            if (variables::ESP::skeleton || variables::ESP::wireframePlayers || variables::ESP::chamsEnabled) {
-                if (plr.characterAddr)
-                    PlayerCache::fillBoneParts(RBX::RbxInstance(plr.characterAddr), plr.boneParts);
-                if (plr.boneParts.ready)
-                    PlayerCache::refreshBonePositions(plr.boneParts, plr.bones);
-            }
 
             RBX::Vec3 headPos = plr.bones.head;
             RBX::Vec3 hrpPos = plr.bones.hrp;
@@ -779,20 +786,6 @@ namespace Visuals {
                 RenderSkeletonCached(drawList, plr.bones, viewMatrix, MulAlpha(boxCol, 0.75f));
 
             if (variables::ESP::enabled) {
-            if (variables::ESP::chamsEnabled && !lowFps) {
-                float pulse = 1.f;
-                if (variables::ESP::chamsRender == 1)
-                    pulse = 0.72f + 0.28f * (0.5f + 0.5f * sinf((float)ImGui::GetTime() * 3.2f));
-                ImU32 cFill = MulAlpha(Col4(variables::ESP::chamsColor), pulse);
-                ImU32 cOut = MulAlpha(Col4(variables::ESP::chamsOutline), pulse);
-                if (isTarget) {
-                    cFill = MulAlpha(IM_COL32(255, 210, 60, (int)(variables::ESP::chamsColor[3] * 255)), pulse);
-                    cOut = MulAlpha(IM_COL32(255, 230, 120, 255), pulse);
-                }
-                DrawPlayerChams(drawList, plr.bones, viewMatrix, height, cFill, cOut,
-                    variables::ESP::chamsFilled, variables::ESP::chamsMode);
-            }
-
             if (variables::ESP::boxGlow && variables::ESP::boxes) {
                 drawList->AddRect(ImVec2(minX - 3, minY - 3), ImVec2(maxX + 3, maxY + 3),
                     MulAlpha(boxCol, 0.22f), 0.f, 0, 5.5f);
@@ -862,16 +855,35 @@ namespace Visuals {
                 }
             }
 
-            if (variables::ESP::headDot && (headScreen.X != 0 || headScreen.Y != 0)) {
-                float hr = height * 0.018f;
-                if (hr < 2.4f) hr = 2.4f;
-                drawList->AddCircleFilled(ImVec2(headScreen.X, headScreen.Y), hr + 1.2f, IM_COL32(0, 0, 0, 160), 16);
+            } // box / hitbox visuals
+
+            if (variables::ESP::headDot && (headScreen.X != 0.f || headScreen.Y != 0.f)) {
+                float hr = height * 0.022f;
+                if (hr < 3.f) hr = 3.f;
+                if (hr > 7.f) hr = 7.f;
+                drawList->AddCircleFilled(ImVec2(headScreen.X, headScreen.Y), hr + 1.4f, IM_COL32(0, 0, 0, 180), 16);
                 drawList->AddCircleFilled(ImVec2(headScreen.X, headScreen.Y), hr, Col4(variables::ESP::headDotColor), 16);
                 if (variables::ESP::headDotGlow)
-                    drawList->AddCircle(ImVec2(headScreen.X, headScreen.Y), hr * 2.6f,
-                        Col4(variables::ESP::headDotColor, 70), 18, 2.0f);
+                    drawList->AddCircle(ImVec2(headScreen.X, headScreen.Y), hr * 2.4f,
+                        Col4(variables::ESP::headDotColor, 70), 18, 1.8f);
             }
 
+            if (variables::ESP::flags) {
+                float fy = minY;
+                auto flag = [&](const char* txt, ImU32 c) {
+                    ImVec2 ts = ImGui::CalcTextSize(txt);
+                    DrawOutlinedText(drawList, ImVec2(maxX + (variables::ESP::armorBar ? 11.f : 5.f), fy), txt, c);
+                    fy += ts.y + 1.f;
+                };
+                if (plr.health <= 0.f) flag("DEAD", IM_COL32(255, 90, 90, 255));
+                else if (plr.health / (plr.maxHealth > 0 ? plr.maxHealth : 100.f) < 0.35f)
+                    flag("LOW", IM_COL32(255, 170, 70, 255));
+                if (!plr.equippedTool.empty()) flag("GUN", IM_COL32(255, 210, 120, 255));
+                if (isTarget) flag("TGT", IM_COL32(255, 214, 72, 255));
+                if (plr.distance < 40.f) flag("NEAR", IM_COL32(120, 220, 255, 255));
+            }
+
+            if (variables::ESP::enabled) {
             if (variables::ESP::chinaHat && (headScreen.X != 0 || headScreen.Y != 0)) {
                 float hw = boxW * 0.28f;
                 if (hw < 8.f) hw = 8.f;
@@ -923,21 +935,6 @@ namespace Visuals {
                     float barH = (maxY - minY) * armor;
                     drawList->AddRectFilled(ImVec2(x0, maxY - barH), ImVec2(x1, maxY), IM_COL32(90, 190, 255, 255), 1.5f);
                 }
-            }
-
-            if (variables::ESP::flags) {
-                float fy = minY;
-                auto flag = [&](const char* txt, ImU32 c) {
-                    ImVec2 ts = ImGui::CalcTextSize(txt);
-                    DrawOutlinedText(drawList, ImVec2(maxX + (variables::ESP::armorBar ? 11.f : 5.f), fy), txt, c);
-                    fy += ts.y + 1.f;
-                };
-                if (plr.health <= 0.f) flag("DEAD", IM_COL32(255, 90, 90, 255));
-                else if (plr.health / (plr.maxHealth > 0 ? plr.maxHealth : 100.f) < 0.35f)
-                    flag("LOW", IM_COL32(255, 170, 70, 255));
-                if (!plr.equippedTool.empty()) flag("GUN", IM_COL32(255, 210, 120, 255));
-                if (isTarget) flag("TGT", IM_COL32(255, 214, 72, 255));
-                if (plr.distance < 40.f) flag("NEAR", IM_COL32(120, 220, 255, 255));
             }
 
             } // variables::ESP::enabled visuals

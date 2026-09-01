@@ -90,7 +90,7 @@ namespace variables {
         inline float predictionY = 0.08f;
         inline float maxDistance = 10000.0f;
         // Easy 0–100 UI knobs (synced to the fields above)
-        inline float uiSmoothness = 16.f;   // → smoothing 4–30 (lower = snappier)
+        inline float uiSmoothness = 10.f;   // → smoothing 4–30 (lower = snappier)
         inline float uiStability = 35.f;    // → damping 0–0.85
         inline float uiLockZone = 10.f;     // → deadzone 0.5–12
         inline float uiRange = 100.f;       // → maxDistance 100–10000
@@ -102,7 +102,6 @@ namespace variables {
         inline int aimTarget = 0;
         inline int aimbotKey = 0x02;         // RMB — hold to aim
         inline int silentAimKey = 0;     // 0 = use aimbot hotkey
-        inline bool fovFollowMouse = true;
         inline bool toggleMode = false;
         inline bool toggledOn = false;
         inline int smoothProfile = 0; // 0 Custom 1 Legit 2 Smooth 3 Rage
@@ -141,6 +140,7 @@ namespace variables {
         inline bool alwaysAuto = false;
         inline bool noSpread = false;
         inline bool noRecoil = false;
+        inline bool noSway = false;
         inline bool infiniteAmmo = false;
         inline bool maxPenetration = false;
         inline bool aggressive = true;   // Arsenal resets Values — re-apply often
@@ -454,6 +454,16 @@ namespace variables {
         inline bool fpsBoost = false;
         inline bool hideGui = false;
         inline bool discordRpc = false;
+    }
+
+    // Client-side identity spoof (local memory — does not change server-side account)
+    namespace Spoof {
+        inline bool userIdEnabled = false;
+        inline int64_t fakeUserId = 1;
+        inline bool displayNameEnabled = false;
+        inline char fakeDisplayName[64] = "Guest";
+        inline bool usernameEnabled = false;
+        inline char fakeUsername[64] = "Guest";
     }
 
     // Extra combat / utility packs

@@ -5,6 +5,7 @@
 #include "../core/cache/cache.h"
 #include "../core/globals/globals.h"
 #include "../core/features/exploits/gun_mods.h"
+#include "../core/features/spoof/identity_spoof.h"
 #include "../core/games/arsenal.h"
 #include "../core/servers/server_browser.h"
 #include "../core/audio/custom_music.h"
@@ -15,6 +16,7 @@
 #include "../sdk/offsets.h"
 #include "../memory/memory.h"
 #include <Shellapi.h>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -34,10 +36,15 @@ namespace FrontierMenu {
         if (Globals::localPlayer.Addr) {
             auto name = Globals::localPlayer.GetName();
             auto disp = Globals::localPlayer.GetDisplayName();
-            strncpy_s(variables::Status::username, name.empty() ? "—" : name.c_str(), _TRUNCATE);
-            strncpy_s(variables::Status::displayName, disp.empty() ? name.c_str() : disp.c_str(), _TRUNCATE);
-            int64_t uid = memory->read<int64_t>(Globals::localPlayer.Addr + Offsets::Player::UserId);
-            sprintf_s(variables::Status::userId, "%lld", (long long)uid);
+            if (const char* spoofDisp = IdentitySpoof::EffectiveDisplayName())
+                strncpy_s(variables::Status::displayName, spoofDisp, _TRUNCATE);
+            else
+                strncpy_s(variables::Status::displayName, disp.empty() ? name.c_str() : disp.c_str(), _TRUNCATE);
+            if (variables::Spoof::usernameEnabled && variables::Spoof::fakeUsername[0])
+                strncpy_s(variables::Status::username, variables::Spoof::fakeUsername, _TRUNCATE);
+            else
+                strncpy_s(variables::Status::username, name.empty() ? "—" : name.c_str(), _TRUNCATE);
+            IdentitySpoof::FormatUserId(variables::Status::userId, sizeof(variables::Status::userId));
         }
 
         if (Globals::dataModel.Addr) {
@@ -206,6 +213,7 @@ namespace FrontierMenu {
             FrontierUI::Checkbox("Always Auto", &variables::GunMods::alwaysAuto);
             FrontierUI::Checkbox("No Spread", &variables::GunMods::noSpread);
             FrontierUI::Checkbox("No Recoil", &variables::GunMods::noRecoil);
+            FrontierUI::Checkbox("No Sway", &variables::GunMods::noSway);
             FrontierUI::Checkbox("Max Penetration", &variables::GunMods::maxPenetration);
             FrontierUI::Checkbox("Infinite Ammo", &variables::GunMods::infiniteAmmo);
             FrontierUI::Checkbox("Aggressive Re-apply", &variables::GunMods::aggressive);
@@ -241,10 +249,9 @@ namespace FrontierMenu {
         FrontierUI::BeginTwoCol("##c0");
         if (FrontierUI::BeginCard("Aimbot", true, &variables::Aimbot::enabled)) {
             FrontierUI::KeybindRow("Aimbot Hotkey", &variables::Aimbot::aimbotKey);
-            bool targetPlayers = !variables::teamCheck;
-            if (FrontierUI::OptionCheck("Target Players", &targetPlayers)) {
-                variables::teamCheck = !targetPlayers;
+            if (FrontierUI::Checkbox("Team Check", &variables::teamCheck)) {
                 variables::ESP::teamCheck = variables::teamCheck;
+                variables::Hitbox::teamCheck = variables::teamCheck;
             }
             bool wallCheck = variables::Aimbot::requireVisible;
             if (FrontierUI::OptionCheck("Wall Check", &wallCheck)) {
@@ -258,7 +265,6 @@ namespace FrontierMenu {
             FrontierUI::SliderFloat("Aim Distance", &variables::Aimbot::uiRange, 0.f, 100.f, "%.0f");
             FrontierUI::Combo("Hitbox", &variables::Aimbot::aimTarget, parts, 7);
             FrontierUI::OptionCheck("FOV Circle", &variables::Aimbot::showFOV);
-            FrontierUI::OptionCheck("FOV Follows Mouse", &variables::Aimbot::fovFollowMouse);
             if (FrontierUI::BeginSettings("Advanced", true)) {
                 const char* fovStyles[] = { "Circle", "Rotating Dots" };
                 FrontierUI::Combo("FOV Style", &variables::Aimbot::fovStyle, fovStyles, 2);
@@ -287,6 +293,13 @@ namespace FrontierMenu {
             if (FrontierUI::OptionCheck("Wall Check", &trigWall))
                 variables::Trigger::requireVisible = variables::Aimbot::requireVisible = trigWall;
             FrontierUI::SliderFloat("Delay", &variables::Trigger::delayMs, 0.f, 200.f, "%.0f");
+        }
+        FrontierUI::EndCard();
+
+        if (FrontierUI::BeginCard("Spin Bot", true, &variables::Local::spin)) {
+            FrontierUI::SliderFloat("Spin Speed", &variables::Local::spinSpeed, 1, 80, "%.0f");
+            ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim),
+                "Rotates your character while enabled.");
         }
         FrontierUI::EndCard();
 
@@ -362,6 +375,7 @@ namespace FrontierMenu {
                     FrontierUI::Checkbox("Distance", &variables::ESP::distance);
                     FrontierUI::Checkbox("Fill", &variables::ESP::fillBox, variables::ESP::boxFillColor);
                     FrontierUI::Checkbox("Head Dot", &variables::ESP::headDot, variables::ESP::headDotColor);
+                    FrontierUI::Checkbox("Weapon Flags", &variables::ESP::flags);
                     FrontierUI::Checkbox("Tracers", &variables::ESP::snaplines, variables::ESP::snapColor);
                     if (variables::ESP::snaplines) {
                         const char* tracerFrom[] = { "Top", "Middle", "Bottom", "Mouse" };
@@ -369,6 +383,7 @@ namespace FrontierMenu {
                     }
                     FrontierUI::Checkbox("Team Check", &variables::ESP::teamCheck);
                     variables::teamCheck = variables::ESP::teamCheck;
+                    variables::Hitbox::teamCheck = variables::ESP::teamCheck;
                     FrontierUI::Checkbox("Skip Dead", &variables::ESP::deadCheck);
                     FrontierUI::Checkbox("Visible Only", &variables::ESP::visibleOnly);
                     const char* bt[] = { "2D Box", "Cube", "Corners" };
@@ -379,13 +394,12 @@ namespace FrontierMenu {
             FrontierUI::EndCard();
 
             FrontierUI::NextCol();
-            if (FrontierUI::BeginCard("Chams & OOF", true)) {
-                FrontierUI::Checkbox("Chams", &variables::ESP::chamsEnabled, variables::ESP::chamsColor);
+            if (FrontierUI::BeginCard("Off-Screen", true)) {
                 FrontierUI::Checkbox("OOF Arrows", &variables::ESP::oofArrows, variables::ESP::oofColor);
                 if (variables::ESP::oofArrows)
                     FrontierUI::SliderFloat("OOF Radius", &variables::ESP::oofRadius, 40, 300, "%.0f");
                 ImGui::Dummy(ImVec2(0, 8));
-                UIFx::EspPreviewPanel(160.f);
+                UIFx::EspPreviewPanel(220.f);
             }
             FrontierUI::EndCard();
             FrontierUI::EndTwoCol();
@@ -822,10 +836,6 @@ namespace FrontierMenu {
             }
             FrontierUI::Checkbox("Anti-AFK", &variables::Misc::antiAfk);
             FrontierUI::OptionCheck("Aimbot Always On", &variables::Aimbot::alwaysOn);
-            if (ImGui::Button("Fake Ban Screen", ImVec2(-1, 0)))
-                ServerBrowser::ShowFakeBanScreen();
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("Roblox-style disconnect prank (local overlay only)");
             FrontierUI::Checkbox("Watermark / FPS", &variables::Misc::showFps);
             FrontierUI::Checkbox("Panic Key", &variables::Misc::panicKey, nullptr, &variables::Misc::panicVk);
             FrontierUI::Checkbox("VSync", &variables::Perf::vsync);
@@ -834,8 +844,11 @@ namespace FrontierMenu {
         FrontierUI::EndCard();
         FrontierUI::NextCol();
         if (FrontierUI::BeginCard("Appearance", true)) {
-            const char* presets[] = { "Frontier Green", "Violet", "Ice", "OLED" };
-            if (FrontierUI::Combo("Preset", &variables::Theme::preset, presets, 4))
+            const char* presets[] = {
+                "Frontier Green", "Violet", "Ice", "OLED",
+                "Liquid Glass", "Crimson", "Midnight"
+            };
+            if (FrontierUI::Combo("Preset", &variables::Theme::preset, presets, 7))
                 FrontierTheme::ApplyPreset(variables::Theme::preset);
 
             FrontierUI::Checkbox("Link accent to UI", &variables::Theme::linkBrandAccent);
@@ -880,6 +893,42 @@ namespace FrontierMenu {
             }
             ImGui::TextColored(FrontierUI::V4(variables::Theme::text), "Menu key");
             FrontierUI::KeybindChip("menuk", &variables::Misc::menuVk);
+        }
+        FrontierUI::EndCard();
+
+        if (FrontierUI::BeginCard("Identity Spoofer", true)) {
+            ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim),
+                "Client-side only — changes local memory, not your Roblox account.");
+            ImGui::Dummy(ImVec2(0, 4));
+            FrontierUI::Checkbox("Spoof UserId", &variables::Spoof::userIdEnabled);
+            if (variables::Spoof::userIdEnabled) {
+                ImGui::SetNextItemWidth(-1);
+                char uidBuf[32]{};
+                sprintf_s(uidBuf, "%lld", (long long)variables::Spoof::fakeUserId);
+                if (ImGui::InputText("##fakeuid", uidBuf, sizeof(uidBuf), ImGuiInputTextFlags_CharsDecimal)) {
+                    variables::Spoof::fakeUserId = _strtoi64(uidBuf, nullptr, 10);
+                    if (variables::Spoof::fakeUserId < 1)
+                        variables::Spoof::fakeUserId = 1;
+                }
+            }
+            FrontierUI::Checkbox("Spoof Display Name", &variables::Spoof::displayNameEnabled);
+            if (variables::Spoof::displayNameEnabled) {
+                ImGui::SetNextItemWidth(-1);
+                ImGui::InputText("##fakedisp", variables::Spoof::fakeDisplayName,
+                    sizeof(variables::Spoof::fakeDisplayName));
+            }
+            FrontierUI::Checkbox("Spoof Username (menu only)", &variables::Spoof::usernameEnabled);
+            if (variables::Spoof::usernameEnabled) {
+                ImGui::SetNextItemWidth(-1);
+                ImGui::InputText("##fakeuser", variables::Spoof::fakeUsername,
+                    sizeof(variables::Spoof::fakeUsername));
+            }
+            if (ImGui::Button("Restore Real Identity", ImVec2(-1, 28))) {
+                variables::Spoof::userIdEnabled = false;
+                variables::Spoof::displayNameEnabled = false;
+                variables::Spoof::usernameEnabled = false;
+                IdentitySpoof::Restore();
+            }
         }
         FrontierUI::EndCard();
     }
@@ -991,6 +1040,7 @@ namespace FrontierMenu {
         ServerBrowser::TickAutoRefresh();
         bool busy = ServerBrowser::gLoading.load();
         auto list = ServerBrowser::Snapshot();
+        const float t = (float)ImGui::GetTime();
 
         const char* filter = variables::Servers::searchFilter;
         auto matchesFilter = [&](const ServerBrowser::Entry& s) -> bool {
@@ -1008,39 +1058,63 @@ namespace FrontierMenu {
             return false;
         };
 
+        int filteredTotal = 0;
+        int filteredPlayers = 0;
+        int hist[12]{};
+        int histIdx = 0;
+        int bestIdx = -1;
+        float bestScore = -1.f;
+        for (int i = 0; i < (int)list.size(); i++) {
+            const auto& s = list[i];
+            if (!matchesFilter(s)) continue;
+            filteredTotal++;
+            filteredPlayers += s.playing;
+            hist[histIdx++ % 12] = s.playing;
+            const bool isCurrent = variables::Servers::currentId[0] &&
+                strcmp(variables::Servers::currentId, s.id) == 0;
+            if (isCurrent) continue;
+            float fill = (s.maxPlayers > 0) ? (float)s.playing / (float)s.maxPlayers : 0.35f;
+            float pingScore = 1.f - (float)s.ping / 260.f;
+            if (pingScore < 0.f) pingScore = 0.f;
+            float popScore = 1.f - fabsf(fill - 0.55f) * 1.6f;
+            if (popScore < 0.f) popScore = 0.f;
+            float score = pingScore * 0.62f + popScore * 0.38f;
+            if (score > bestScore) { bestScore = score; bestIdx = i; }
+        }
+
         if (FrontierUI::BeginCard("Browse", true)) {
             const char* sortItems[] = { "Most players", "Least players" };
             const char* autoItems[] = { "Off", "5s", "15s" };
 
-            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 8.f);
+            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
             ImGui::InputTextWithHint("##srvsearch", "Search job id or player count...", variables::Servers::searchFilter,
                 sizeof(variables::Servers::searchFilter));
 
-            ImGui::Dummy(ImVec2(0, 6));
+            ImGui::Dummy(ImVec2(0, 10));
             ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.10f, 0.10f, 0.12f, 1));
             ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.0f);
 
             ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim), "Sort");
-            ImGui::SameLine(0, 8);
+            ImGui::SameLine(0, 10);
             ImGui::SetNextItemWidth(132.f);
             ImGui::Combo("##sort", &variables::Servers::sortMode, sortItems, 2);
 
-            ImGui::SameLine(0, 14);
+            ImGui::SameLine(0, 16);
             ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim), "Auto");
-            ImGui::SameLine(0, 8);
+            ImGui::SameLine(0, 10);
             ImGui::SetNextItemWidth(68.f);
             ImGui::Combo("##auto", &variables::Servers::autoRefresh, autoItems, 3);
 
-            ImGui::SameLine(0, 14);
+            ImGui::SameLine(0, 16);
             if (busy) ImGui::BeginDisabled();
             if (StatusActionButton(busy ? "Loading..." : "Refresh",
-                    ImVec4(0.14f, 0.14f, 0.16f, 1.f), ImVec4(0.22f, 0.22f, 0.26f, 1.f), ImVec2(92, 28)))
+                    ImVec4(0.14f, 0.14f, 0.16f, 1.f), ImVec4(0.22f, 0.22f, 0.26f, 1.f), ImVec2(92, 30)))
                 ServerBrowser::RequestRefresh(true);
             if (busy) ImGui::EndDisabled();
 
             ImGui::SameLine(0, 8);
             if (StatusActionButton("Server Hop",
-                    ImVec4(0.12f, 0.18f, 0.14f, 1.f), ImVec4(0.16f, 0.26f, 0.18f, 1.f), ImVec2(92, 28)))
+                    ImVec4(0.12f, 0.18f, 0.14f, 1.f), ImVec4(0.16f, 0.26f, 0.18f, 1.f), ImVec2(92, 30)))
                 ServerBrowser::HopRandomServer();
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Join a random public server (not your current one)");
@@ -1048,54 +1122,94 @@ namespace FrontierMenu {
             ImGui::PopStyleVar();
             ImGui::PopStyleColor();
 
-            ImGui::Dummy(ImVec2(0, 8));
+            ImGui::Dummy(ImVec2(0, 12));
             ImDrawList* dl = ImGui::GetWindowDrawList();
             float chipY = ImGui::GetCursorScreenPos().y;
             float chipX = ImGui::GetCursorScreenPos().x;
             auto chip = [&](const char* label, ImU32 col) {
                 ImVec2 ts = ImGui::CalcTextSize(label);
                 ImVec2 p0(chipX, chipY);
-                ImVec2 p1(chipX + ts.x + 16.f, chipY + ts.y + 8.f);
-                dl->AddRectFilled(p0, p1, IM_COL32(255, 255, 255, 10), 6.f);
-                dl->AddRect(p0, p1, IM_COL32(255, 255, 255, 22), 6.f);
-                dl->AddText(ImVec2(chipX + 8.f, chipY + 4.f), col, label);
-                chipX = p1.x + 8.f;
+                ImVec2 p1(chipX + ts.x + 18.f, chipY + ts.y + 10.f);
+                dl->AddRectFilled(p0, p1, IM_COL32(255, 255, 255, 12), 8.f);
+                dl->AddRect(p0, p1, IM_COL32(255, 255, 255, 24), 8.f);
+                dl->AddText(ImVec2(chipX + 9.f, chipY + 5.f), col, label);
+                chipX = p1.x + 10.f;
             };
             char placeChip[48];
             sprintf_s(placeChip, "Place %s", variables::Status::placeId);
             chip(placeChip, IM_COL32(210, 212, 220, 255));
             char countChip[32];
-            sprintf_s(countChip, "%d servers", variables::Servers::serverCount);
+            sprintf_s(countChip, "%d listed", filteredTotal);
             chip(countChip, IM_COL32(130, 200, 150, 255));
-            if (ServerBrowser::gStatus[0]) {
-                char stChip[80];
-                sprintf_s(stChip, "%s", ServerBrowser::gStatus);
-                chip(stChip, IM_COL32(160, 164, 176, 255));
+            char popChip[48];
+            sprintf_s(popChip, "%d players visible", filteredPlayers);
+            chip(popChip, IM_COL32(150, 190, 240, 255));
+            ImGui::Dummy(ImVec2(0, 34));
+
+            if (filteredTotal > 1) {
+                ImVec2 sparkMin = ImGui::GetCursorScreenPos();
+                ImVec2 sparkMax(sparkMin.x + ImGui::GetContentRegionAvail().x, sparkMin.y + 54.f);
+                UIFx::DrawPopulationSparkline(dl, sparkMin, sparkMax, hist, 12, t);
+                dl->AddText(ImVec2(sparkMin.x + 10.f, sparkMin.y + 6.f),
+                    IM_COL32(150, 156, 170, 230), "Population Atlas");
+                ImGui::Dummy(ImVec2(0, 60));
             }
-            ImGui::Dummy(ImVec2(0, 28));
+
+            if (bestIdx >= 0 && bestIdx < (int)list.size()) {
+                const auto& pick = list[bestIdx];
+                ImVec2 recMin = ImGui::GetCursorScreenPos();
+                float recW = ImGui::GetContentRegionAvail().x;
+                ImVec2 recMax(recMin.x + recW, recMin.y + 56.f);
+                float pulse = 0.65f + 0.35f * sinf(t * 3.f);
+                dl->AddRectFilled(recMin, recMax, IM_COL32(28, 72, 44, (int)(130 * pulse)), 12.f);
+                dl->AddRect(recMin, recMax, IM_COL32(80, 210, 120, (int)(180 * pulse)), 12.f, 0, 1.4f);
+                dl->AddText(ImVec2(recMin.x + 14.f, recMin.y + 10.f), IM_COL32(130, 240, 170, 255), "SMART HOP PICK");
+                char pickLine[96];
+                if (pick.maxPlayers > 0)
+                    sprintf_s(pickLine, "%d / %d players  ·  %d ms ping  ·  score %.0f%%",
+                        pick.playing, pick.maxPlayers, pick.ping, bestScore * 100.f);
+                else
+                    sprintf_s(pickLine, "%d players  ·  %d ms ping  ·  score %.0f%%",
+                        pick.playing, pick.ping, bestScore * 100.f);
+                dl->AddText(ImVec2(recMin.x + 14.f, recMin.y + 30.f), IM_COL32(210, 220, 228, 240), pickLine);
+
+                ImGui::InvisibleButton("##smarthop", ImVec2(recW, 56.f));
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Join the best balance of ping + population");
+                if (ImGui::IsItemClicked())
+                    ServerBrowser::JoinServer(pick.id);
+                ImGui::Dummy(ImVec2(0, 12));
+            }
 
             if (ServerBrowser::gError[0])
                 ImGui::TextColored(ImVec4(1.f, 0.45f, 0.4f, 1.f), "%s", ServerBrowser::gError);
         }
         FrontierUI::EndCard();
 
-        float listH = ImGui::GetContentRegionAvail().y - 8.f;
+        float listH = ImGui::GetContentRegionAvail().y - 12.f;
         if (listH < 220.f) listH = 220.f;
 
         ImGui::PushStyleColor(ImGuiCol_ChildBg, FrontierUI::V4(variables::Theme::card));
         ImGui::PushStyleColor(ImGuiCol_Border, FrontierUI::V4(variables::Theme::border));
         ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 12.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14, 12));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16, 14));
         ImGui::BeginChild("##publicservers", ImVec2(0, listH), ImGuiChildFlags_Borders);
 
-        int shown = 0;
-        for (const auto& s : list)
-            if (matchesFilter(s)) shown++;
+        int shown = filteredTotal;
 
         ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim), "Public servers");
         ImGui::SameLine();
         ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim), "(%d)", shown);
-        ImGui::Dummy(ImVec2(0, 6));
+        ImGui::Dummy(ImVec2(0, 8));
+
+        ImDrawList* hdrDl = ImGui::GetWindowDrawList();
+        ImVec2 hdrMin = ImGui::GetCursorScreenPos();
+        float hdrW = ImGui::GetContentRegionAvail().x;
+        hdrDl->AddRectFilled(hdrMin, ImVec2(hdrMin.x + hdrW, hdrMin.y + 24.f), IM_COL32(255, 255, 255, 8), 6.f);
+        hdrDl->AddText(ImVec2(hdrMin.x + 12.f, hdrMin.y + 4.f), IM_COL32(130, 134, 148, 255), "Players");
+        hdrDl->AddText(ImVec2(hdrMin.x + hdrW - 148.f, hdrMin.y + 4.f), IM_COL32(130, 134, 148, 255), "Ping");
+        hdrDl->AddText(ImVec2(hdrMin.x + hdrW - 72.f, hdrMin.y + 4.f), IM_COL32(130, 134, 148, 255), "Actions");
+        ImGui::Dummy(ImVec2(0, 28));
 
         if (list.empty()) {
             const char* empty = busy ? "Fetching from Roblox..." : "No servers found — hit Refresh";
@@ -1121,11 +1235,12 @@ namespace FrontierMenu {
                 ImGui::PushID(i);
                 bool isCurrent = (variables::Servers::currentId[0] &&
                     strcmp(variables::Servers::currentId, s.id) == 0);
+                bool isSmartPick = (i == bestIdx);
 
                 ImDrawList* dl = ImGui::GetWindowDrawList();
                 ImVec2 rowMin = ImGui::GetCursorScreenPos();
                 float rowW = ImGui::GetContentRegionAvail().x;
-                float rowH = 72.f;
+                float rowH = 78.f;
                 ImVec2 rowMax(rowMin.x + rowW, rowMin.y + rowH);
 
                 ImGui::SetCursorScreenPos(rowMin);
@@ -1133,13 +1248,16 @@ namespace FrontierMenu {
                 bool hovered = ImGui::IsItemHovered();
 
                 ImU32 bg = isCurrent ? IM_COL32(36, 88, 52, 120)
+                    : isSmartPick ? IM_COL32(32, 64, 44, 90)
                     : hovered ? IM_COL32(255, 255, 255, 16)
                     : (i % 2 == 0 ? IM_COL32(255, 255, 255, 7) : IM_COL32(0, 0, 0, 0));
-                dl->AddRectFilled(rowMin, rowMax, bg, 10.f);
+                dl->AddRectFilled(rowMin, rowMax, bg, 12.f);
                 if (isCurrent)
-                    dl->AddRect(rowMin, rowMax, IM_COL32(80, 200, 110, 200), 10.f, 0, 1.4f);
+                    dl->AddRect(rowMin, rowMax, IM_COL32(80, 200, 110, 200), 12.f, 0, 1.4f);
+                else if (isSmartPick)
+                    dl->AddRect(rowMin, rowMax, IM_COL32(70, 180, 110, 140), 12.f, 0, 1.1f);
                 else if (hovered)
-                    dl->AddRect(rowMin, rowMax, FrontierUI::U32(variables::Theme::border, 0.9f), 10.f, 0, 1.f);
+                    dl->AddRect(rowMin, rowMax, FrontierUI::U32(variables::Theme::border, 0.9f), 12.f, 0, 1.f);
 
                 char line[96];
                 if (s.maxPlayers > 0)
@@ -1147,30 +1265,46 @@ namespace FrontierMenu {
                 else
                     sprintf_s(line, "%d players", s.playing);
                 ImVec2 lineSz = ImGui::CalcTextSize(line);
-                dl->AddText(ImVec2(rowMin.x + 14.f, rowMin.y + 10.f),
+                dl->AddText(ImVec2(rowMin.x + 14.f, rowMin.y + 12.f),
                     isCurrent ? IM_COL32(130, 240, 160, 255) : IM_COL32(240, 240, 245, 255), line);
                 if (isCurrent) {
                     const char* here = "YOU ARE HERE";
                     ImVec2 hs = ImGui::CalcTextSize(here);
                     float hx = rowMin.x + 14.f + lineSz.x + 10.f;
                     dl->AddRectFilled(
-                        ImVec2(hx - 6.f, rowMin.y + 7.f),
-                        ImVec2(hx + hs.x + 6.f, rowMin.y + 10.f + hs.y),
-                        IM_COL32(34, 88, 52, 200), 4.f);
-                    dl->AddText(ImVec2(hx, rowMin.y + 10.f), IM_COL32(120, 220, 150, 255), here);
+                        ImVec2(hx - 6.f, rowMin.y + 9.f),
+                        ImVec2(hx + hs.x + 6.f, rowMin.y + 12.f + hs.y),
+                        IM_COL32(34, 88, 52, 200), 5.f);
+                    dl->AddText(ImVec2(hx, rowMin.y + 12.f), IM_COL32(120, 220, 150, 255), here);
+                } else if (isSmartPick) {
+                    const char* tag = "RECOMMENDED";
+                    ImVec2 hs = ImGui::CalcTextSize(tag);
+                    float hx = rowMin.x + 14.f + lineSz.x + 10.f;
+                    dl->AddRectFilled(
+                        ImVec2(hx - 6.f, rowMin.y + 9.f),
+                        ImVec2(hx + hs.x + 6.f, rowMin.y + 12.f + hs.y),
+                        IM_COL32(28, 72, 48, 210), 5.f);
+                    dl->AddText(ImVec2(hx, rowMin.y + 12.f), IM_COL32(120, 220, 150, 255), tag);
                 }
 
                 float fill = (s.maxPlayers > 0) ? (float)s.playing / (float)s.maxPlayers : 0.f;
                 if (fill < 0.f) fill = 0.f;
                 if (fill > 1.f) fill = 1.f;
-                ImVec2 barMin(rowMin.x + 14.f, rowMin.y + 30.f);
-                ImVec2 barMax(rowMin.x + rowW - 160.f, rowMin.y + 36.f);
-                dl->AddRectFilled(barMin, barMax, IM_COL32(255, 255, 255, 12), 4.f);
+                ImVec2 barMin(rowMin.x + 14.f, rowMin.y + 34.f);
+                ImVec2 barMax(rowMin.x + rowW - 168.f, rowMin.y + 42.f);
+                dl->AddRectFilled(barMin, barMax, IM_COL32(255, 255, 255, 12), 5.f);
                 if (fill > 0.01f) {
                     ImU32 barCol = fill > 0.85f ? IM_COL32(240, 90, 70, 220)
                         : fill > 0.55f ? IM_COL32(230, 180, 60, 220)
                         : IM_COL32(80, 190, 110, 220);
-                    dl->AddRectFilled(barMin, ImVec2(barMin.x + (barMax.x - barMin.x) * fill, barMax.y), barCol, 4.f);
+                    dl->AddRectFilled(barMin, ImVec2(barMin.x + (barMax.x - barMin.x) * fill, barMax.y), barCol, 5.f);
+                    if (fill > 0.75f) {
+                        float pulse = 0.5f + 0.5f * sinf(t * 4.f + i);
+                        dl->AddRectFilled(
+                            ImVec2(barMin.x + (barMax.x - barMin.x) * fill - 8.f, barMin.y - 1.f),
+                            ImVec2(barMin.x + (barMax.x - barMin.x) * fill, barMax.y + 1.f),
+                            IM_COL32(255, 120, 90, (int)(120 * pulse)), 3.f);
+                    }
                 }
 
                 ImU32 pingCol = s.ping < 80 ? IM_COL32(100, 220, 130, 255)
@@ -1178,32 +1312,39 @@ namespace FrontierMenu {
                     : IM_COL32(240, 100, 90, 255);
                 char pingLine[32];
                 sprintf_s(pingLine, "%d ms", s.ping);
-                dl->AddText(ImVec2(rowMin.x + 14.f, rowMin.y + 44.f), pingCol, pingLine);
+                dl->AddText(ImVec2(rowMin.x + 14.f, rowMin.y + 50.f), pingCol, pingLine);
 
                 char idShort[40];
-                strncpy_s(idShort, s.id, 8);
-                idShort[8] = 0;
+                strncpy_s(idShort, s.id, 10);
+                idShort[10] = 0;
                 strcat_s(idShort, "...");
-                dl->AddText(ImVec2(rowMin.x + 70.f, rowMin.y + 44.f),
+                dl->AddText(ImVec2(rowMin.x + 72.f, rowMin.y + 50.f),
                     IM_COL32(130, 134, 148, 255), idShort);
 
                 float btnW = 64.f;
-                float btnX = rowMax.x - btnW * 2.f - 18.f;
-                float btnY = rowMin.y + (rowH - 28.f) * 0.5f;
+                float btnX = rowMax.x - btnW * 2.f - 20.f;
+                float btnY = rowMin.y + (rowH - 30.f) * 0.5f;
                 ImGui::SetCursorScreenPos(ImVec2(btnX, btnY));
                 ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.f);
                 if (isCurrent) ImGui::BeginDisabled();
-                if (ImGui::Button("Join", ImVec2(btnW, 28)))
+                if (ImGui::Button("Join", ImVec2(btnW, 30)))
                     ServerBrowser::JoinServer(s.id);
                 if (isCurrent) ImGui::EndDisabled();
                 ImGui::SameLine(0, 8);
-                if (ImGui::Button("Copy", ImVec2(btnW, 28)))
+                if (ImGui::Button("Copy", ImVec2(btnW, 30))) {
                     ServerBrowser::CopyJobId(s.id);
+                    variables::Toast::show = true;
+                    variables::Toast::warning = false;
+                    variables::Toast::timer = 2.5f;
+                    strcpy_s(variables::Toast::title, "Job ID copied");
+                    strcpy_s(variables::Toast::body, idShort);
+                    strcpy_s(variables::Toast::footer, s.id);
+                }
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip("%s", s.id);
                 ImGui::PopStyleVar();
 
-                ImGui::SetCursorScreenPos(ImVec2(rowMin.x, rowMax.y + 6.f));
+                ImGui::SetCursorScreenPos(ImVec2(rowMin.x, rowMax.y + 8.f));
                 ImGui::Dummy(ImVec2(0, 0));
                 ImGui::PopID();
             }
@@ -1228,71 +1369,144 @@ namespace FrontierMenu {
 
     inline void DrawMusic() {
         CustomMusic::Tick();
-        if (variables::Audio::musicSource == 0)
+        if (variables::Audio::musicSource == 0) {
             SpotifyPlayer::Refresh();
+            SpotifyPlayer::TickAlbumArt();
+        }
 
         const char* nowTitle = "Nothing playing";
         const char* nowArtist = "Select a source below";
         bool nowPlaying = false;
+        const char* moodSeed = "frontier";
 
         if (variables::Audio::musicSource == 0 && SpotifyPlayer::connected) {
             nowTitle = SpotifyPlayer::trackTitle;
             nowArtist = SpotifyPlayer::trackArtist;
             nowPlaying = SpotifyPlayer::playing;
+            moodSeed = nowTitle;
         } else if (variables::Audio::musicSource == 1 && variables::Audio::localPath[0]) {
             nowTitle = CustomMusic::PlaylistBaseName(variables::Audio::localPath);
             nowArtist = variables::Audio::localPlaying
                 ? (CustomMusic::IsLocalPaused() ? "Paused — local file" : "Playing — local file")
                 : "Stopped — local file";
             nowPlaying = variables::Audio::localPlaying && !CustomMusic::IsLocalPaused();
+            moodSeed = nowTitle;
         } else if (variables::Audio::musicSource == 2 && variables::Audio::robloxId[0]) {
             nowTitle = variables::Audio::robloxId;
             nowArtist = "Roblox SoundId";
             nowPlaying = true;
+            moodSeed = nowTitle;
         }
 
-        float heroH = 118.f;
-        float volH = 36.f;
-        float heroW = ImGui::GetContentRegionAvail().x;
+        static char lastMoodTrack[384] = "";
+        static int sessionTracks = 0;
+        static float sessionStart = 0.f;
+        char trackKey[384]{};
+        sprintf_s(trackKey, "%s|%s", nowArtist, nowTitle);
+        if (_stricmp(trackKey, lastMoodTrack) != 0 && nowPlaying) {
+            strncpy_s(lastMoodTrack, trackKey, _TRUNCATE);
+            sessionTracks++;
+            if (sessionStart <= 0.f) sessionStart = (float)ImGui::GetTime();
+        }
+
+        const float t = (float)ImGui::GetTime();
+        const float heroH = 210.f;
+        const float heroW = ImGui::GetContentRegionAvail().x;
         ImVec2 heroMin = ImGui::GetCursorScreenPos();
-        ImGui::InvisibleButton("##musicHero", ImVec2(heroW, heroH - volH));
-        ImVec2 heroMax(heroMin.x + heroW, heroMin.y + heroH - volH);
+        ImGui::InvisibleButton("##musicHero", ImVec2(heroW, heroH));
+        ImVec2 heroMax(heroMin.x + heroW, heroMin.y + heroH);
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        dl->AddRectFilled(heroMin, heroMax, IM_COL32(18, 20, 24, 255), 12.f);
-        dl->AddRect(heroMin, heroMax, FrontierUI::U32(variables::Theme::border, 0.65f), 12.f);
 
-        const char* srcLabel = variables::Audio::musicSource == 0 ? "Spotify"
-            : variables::Audio::musicSource == 1 ? "Local" : "Roblox";
-        dl->AddText(ImVec2(heroMin.x + 16.f, heroMin.y + 12.f), IM_COL32(130, 134, 148, 255), srcLabel);
+        ID3D11ShaderResourceView* art = (variables::Audio::musicSource == 0)
+            ? SpotifyPlayer::ArtSrvForDraw() : nullptr;
+        const bool artReady = art && variables::Audio::musicSource == 0 &&
+            SpotifyPlayer::ArtStateForDraw() == 2;
 
-        ImVec2 titleSz = ImGui::CalcTextSize(nowTitle);
-        if (titleSz.x > heroW - 32.f) {
-            ImGui::PushTextWrapPos(heroMin.x + heroW - 16.f);
-            ImGui::SetCursorScreenPos(ImVec2(heroMin.x + 16.f, heroMin.y + 30.f));
-            ImGui::TextColored(ImVec4(0.95f, 0.95f, 0.97f, 1.f), "%s", nowTitle);
-            ImGui::PopTextWrapPos();
-        } else {
-            dl->AddText(ImVec2(heroMin.x + 16.f, heroMin.y + 32.f), IM_COL32(242, 242, 248, 255), nowTitle);
+        if (artReady) {
+            dl->AddImageRounded(ImTextureRef((void*)art),
+                ImVec2(heroMin.x - 20.f, heroMin.y - 10.f),
+                ImVec2(heroMax.x + 20.f, heroMax.y + 10.f),
+                ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, 48), 16.f);
+            dl->AddImageRounded(ImTextureRef((void*)art),
+                heroMin, heroMax,
+                ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, 28), 16.f);
         }
-        dl->AddText(ImVec2(heroMin.x + 16.f, heroMin.y + 54.f), IM_COL32(150, 154, 168, 255), nowArtist);
 
-        if (nowPlaying) {
-            float bx = heroMin.x + 16.f;
-            float by = heroMin.y + 78.f;
-            for (int b = 0; b < 4; b++) {
-                float h = 6.f + (float)((b * 37 + (int)(ImGui::GetTime() * 8.f)) % 14);
-                dl->AddRectFilled(ImVec2(bx + b * 8.f, by + 14.f - h), ImVec2(bx + b * 8.f + 4.f, by + 14.f),
-                    FrontierUI::U32(variables::Theme::brand, 0.9f), 2.f);
+        const float hue = UIFx::HashHue01(moodSeed, 3);
+        dl->AddRectFilledMultiColor(heroMin, heroMax,
+            UIFx::HsvToU32(hue, 0.35f, 0.35f, 0.55f),
+            UIFx::HsvToU32(fmodf(hue + 0.08f, 1.f), 0.30f, 0.28f, 0.50f),
+            IM_COL32(8, 10, 14, 230), IM_COL32(12, 16, 22, 240));
+        dl->AddRect(heroMin, heroMax, FrontierUI::U32(variables::Theme::brand, 0.35f), 16.f);
+
+        const float artSize = 96.f;
+        ImVec2 artMin(heroMin.x + 20.f, heroMin.y + (heroH - artSize) * 0.5f - 8.f);
+        ImVec2 artMax(artMin.x + artSize, artMin.y + artSize);
+        ImVec2 artCenter((artMin.x + artMax.x) * 0.5f, (artMin.y + artMax.y) * 0.5f);
+        UIFx::DrawAlbumGlowRing(dl, artCenter, artSize * 0.58f, t, nowPlaying, moodSeed);
+
+        if (artReady) {
+            dl->AddImageRounded(ImTextureRef((void*)art), artMin, artMax,
+                ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, 255), 14.f);
+            if (nowPlaying) {
+                float spin = fmodf(t * 0.25f, 6.2831853f);
+                dl->AddLine(artCenter,
+                    ImVec2(artCenter.x + cosf(spin) * artSize * 0.42f,
+                        artCenter.y + sinf(spin) * artSize * 0.42f),
+                    IM_COL32(255, 255, 255, 90), 1.6f);
             }
+        } else {
+            dl->AddRectFilled(artMin, artMax, IM_COL32(10, 12, 16, 220), 14.f);
+            dl->AddRect(artMin, artMax, FrontierUI::U32(variables::Theme::brand, 0.75f), 14.f, 0, 1.6f);
+            const char* glyph = variables::Audio::musicSource == 0 ? "SP"
+                : variables::Audio::musicSource == 1 ? "LC" : "RB";
+            ImVec2 gs = ImGui::CalcTextSize(glyph);
+            dl->AddText(ImVec2(artCenter.x - gs.x * 0.5f, artCenter.y - gs.y * 0.5f),
+                IM_COL32(220, 224, 235, 220), glyph);
         }
 
-        ImGui::SetCursorScreenPos(ImVec2(heroMin.x + 16.f, heroMin.y + heroH - volH));
+        const float textX = artMax.x + 18.f;
+        const char* srcLabel = variables::Audio::musicSource == 0 ? "Spotify"
+            : variables::Audio::musicSource == 1 ? "Local File" : "Roblox Sound";
+        dl->AddRectFilled(
+            ImVec2(textX, heroMin.y + 16.f),
+            ImVec2(textX + ImGui::CalcTextSize(srcLabel).x + 14.f, heroMin.y + 34.f),
+            IM_COL32(255, 255, 255, 14), 6.f);
+        dl->AddText(ImVec2(textX + 7.f, heroMin.y + 18.f),
+            FrontierUI::U32(variables::Theme::brand, 0.95f), srcLabel);
+
+        ImGui::PushTextWrapPos(heroMax.x - 16.f);
+        ImGui::SetCursorScreenPos(ImVec2(textX, heroMin.y + 42.f));
+        ImGui::TextColored(ImVec4(0.96f, 0.96f, 0.98f, 1.f), "%s", nowTitle);
+        ImGui::SetCursorScreenPos(ImVec2(textX, heroMin.y + 66.f));
+        ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim), "%s", nowArtist);
+        ImGui::PopTextWrapPos();
+
+        UIFx::DrawSpectrumBars(dl, ImVec2(textX, heroMin.y + 92.f), heroMax.x - textX - 16.f, 28.f, t, nowPlaying, 28);
+
+        char vibeLine[96];
+        int vibeScore = (int)(40.f + 60.f * (0.5f + 0.5f * sinf(hue * 6.2831853f)));
+        if (sessionTracks > 0) {
+            int mins = (int)((t - sessionStart) / 60.f);
+            if (mins < 0) mins = 0;
+            sprintf_s(vibeLine, "Mood ring %d%%  ·  %d tracks this session  ·  %dm listening",
+                vibeScore, sessionTracks, mins);
+        } else {
+            sprintf_s(vibeLine, "Mood ring %d%%  ·  start a track to begin session stats", vibeScore);
+        }
+        dl->AddText(ImVec2(textX, heroMin.y + 126.f), IM_COL32(150, 158, 172, 230), vibeLine);
+
+        if (variables::Audio::musicSource == 0 && SpotifyPlayer::ArtStateForDraw() == 1) {
+            dl->AddText(ImVec2(textX, heroMin.y + 146.f), IM_COL32(160, 170, 185, 200), "Fetching album art...");
+        }
+
+        ImGui::SetCursorScreenPos(ImVec2(heroMin.x + 16.f, heroMax.y + 10.f));
         ImGui::PushItemWidth(heroW - 32.f);
         float volPct = variables::Audio::musicVolume * 100.f;
         if (FrontierUI::SliderFloat("Volume", &volPct, 0.f, 100.f, "%.0f%%"))
             variables::Audio::musicVolume = volPct * 0.01f;
         ImGui::PopItemWidth();
-        ImGui::Dummy(ImVec2(0, 10.f));
+        ImGui::Dummy(ImVec2(0, 12.f));
 
         float segW = (ImGui::GetContentRegionAvail().x - 16.f) / 3.f;
         if (MusicSegment("Spotify", variables::Audio::musicSource == 0, segW))

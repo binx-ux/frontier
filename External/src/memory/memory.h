@@ -55,6 +55,7 @@ public:
 	std::uint64_t get_module_address();
 	std::uint64_t get_module_size();
 	HANDLE get_process_handle();
+	bool is_valid_address(std::uint64_t address, std::size_t size = 8);
 private:
 	bool read_raw(std::uint64_t address, void* buffer, std::size_t size);
 	bool write_raw(std::uint64_t address, const void* buffer, std::size_t size);

@@ -58,10 +58,55 @@ namespace FrontierUI {
         case VK_DELETE: strncpy_s(out, outSz, "del", _TRUNCATE); return;
         case VK_RCONTROL: strncpy_s(out, outSz, "rctrl", _TRUNCATE); return;
         case VK_LCONTROL: strncpy_s(out, outSz, "lctrl", _TRUNCATE); return;
+        case VK_LEFT: strncpy_s(out, outSz, "left", _TRUNCATE); return;
+        case VK_RIGHT: strncpy_s(out, outSz, "right", _TRUNCATE); return;
+        case VK_UP: strncpy_s(out, outSz, "up", _TRUNCATE); return;
+        case VK_DOWN: strncpy_s(out, outSz, "down", _TRUNCATE); return;
+        case VK_HOME: strncpy_s(out, outSz, "home", _TRUNCATE); return;
+        case VK_END: strncpy_s(out, outSz, "end", _TRUNCATE); return;
+        case VK_PRIOR: strncpy_s(out, outSz, "pgup", _TRUNCATE); return;
+        case VK_NEXT: strncpy_s(out, outSz, "pgdn", _TRUNCATE); return;
+        case VK_CAPITAL: strncpy_s(out, outSz, "caps", _TRUNCATE); return;
+        case VK_NUMLOCK: strncpy_s(out, outSz, "numlock", _TRUNCATE); return;
+        case VK_SCROLL: strncpy_s(out, outSz, "scroll", _TRUNCATE); return;
+        case VK_PAUSE: strncpy_s(out, outSz, "pause", _TRUNCATE); return;
+        case VK_SNAPSHOT: strncpy_s(out, outSz, "prtsc", _TRUNCATE); return;
+        case VK_APPS: strncpy_s(out, outSz, "menu", _TRUNCATE); return;
+        case VK_LWIN: strncpy_s(out, outSz, "lwin", _TRUNCATE); return;
+        case VK_RWIN: strncpy_s(out, outSz, "rwin", _TRUNCATE); return;
+        case VK_LSHIFT: strncpy_s(out, outSz, "lshift", _TRUNCATE); return;
+        case VK_RSHIFT: strncpy_s(out, outSz, "rshift", _TRUNCATE); return;
+        case VK_LMENU: strncpy_s(out, outSz, "lalt", _TRUNCATE); return;
+        case VK_RMENU: strncpy_s(out, outSz, "ralt", _TRUNCATE); return;
         default:
+            if (vk >= VK_F1 && vk <= VK_F24) {
+                sprintf_s(out, outSz, "f%d", vk - VK_F1 + 1);
+                return;
+            }
+            if (vk >= VK_NUMPAD0 && vk <= VK_NUMPAD9) {
+                sprintf_s(out, outSz, "num%d", vk - VK_NUMPAD0);
+                return;
+            }
+            if (vk == VK_DECIMAL) { strncpy_s(out, outSz, "num.", _TRUNCATE); return; }
+            if (vk == VK_DIVIDE) { strncpy_s(out, outSz, "num/", _TRUNCATE); return; }
+            if (vk == VK_MULTIPLY) { strncpy_s(out, outSz, "num*", _TRUNCATE); return; }
+            if (vk == VK_SUBTRACT) { strncpy_s(out, outSz, "num-", _TRUNCATE); return; }
+            if (vk == VK_ADD) { strncpy_s(out, outSz, "num+", _TRUNCATE); return; }
+            if (vk >= VK_OEM_1 && vk <= VK_OEM_102) {
+                if (GetKeyNameTextA((LONG)(MapVirtualKeyA(vk, MAPVK_VK_TO_VSC) << 16), out, (int)outSz) > 0) {
+                    for (char* c = out; *c; ++c) *c = (char)tolower((unsigned char)*c);
+                    return;
+                }
+            }
             if (vk >= 'A' && vk <= 'Z') { out[0] = (char)(vk + 32); out[1] = 0; return; }
             if (vk >= '0' && vk <= '9') { out[0] = (char)vk; out[1] = 0; return; }
-            sprintf_s(out, outSz, "%d", vk);
+            if (vk >= 0xBA && vk <= 0xC0) {
+                if (GetKeyNameTextA((LONG)(MapVirtualKeyA(vk, MAPVK_VK_TO_VSC) << 16), out, (int)outSz) > 0) {
+                    for (char* c = out; *c; ++c) *c = (char)tolower((unsigned char)*c);
+                    return;
+                }
+            }
+            strncpy_s(out, outSz, "?", _TRUNCATE);
         }
     }
 
@@ -452,14 +497,22 @@ namespace FrontierUI {
 
     inline int g_cardDepth = 0;
     inline bool g_cardOpen[16] = {};
+    inline ImVec2 g_cardMin[16]{};
     inline bool g_tableOpen = false;
 
     inline bool BeginCard(const char* title, bool /*defaultOpen*/ = true, bool* headerToggle = nullptr) {
         ImGui::PushID(title ? title : "section");
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, V4(variables::Theme::card));
-        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1.f, 1.f, 1.f, 0.05f));
-        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.f);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16, 14));
+        const bool glass = variables::Theme::preset == 4;
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, glass
+            ? ImVec4(variables::Theme::card[0], variables::Theme::card[1],
+                variables::Theme::card[2], variables::Theme::card[3] * 0.85f)
+            : V4(variables::Theme::card));
+        ImGui::PushStyleColor(ImGuiCol_Border, glass
+            ? ImVec4(variables::Theme::border[0], variables::Theme::border[1],
+                variables::Theme::border[2], variables::Theme::border[3] * 0.75f)
+            : ImVec4(1.f, 1.f, 1.f, 0.05f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, glass ? 12.f : 10.f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(18, 16));
 
         const bool visible = ImGui::BeginChild("##sec", ImVec2(0, 0),
             ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Borders, ImGuiWindowFlags_None);
@@ -468,13 +521,17 @@ namespace FrontierUI {
             g_cardOpen[g_cardDepth] = true;
         else
             g_cardOpen[15] = true;
+        if (visible && g_cardDepth < 16)
+            g_cardMin[g_cardDepth] = ImGui::GetWindowPos();
+        else if (visible)
+            g_cardMin[15] = ImGui::GetWindowPos();
         g_cardDepth++;
 
         if (visible && title && title[0]) {
             ImDrawList* dl = ImGui::GetWindowDrawList();
             ImVec2 p = ImGui::GetCursorScreenPos();
             dl->AddRectFilled(
-                ImVec2(p.x - 2.f, p.y + 2.f), ImVec2(p.x, p.y + 18.f),
+                ImVec2(p.x - 2.f, p.y + 2.f), ImVec2(p.x, p.y + 20.f),
                 AccentU32(0.95f), 2.f);
 
             char upper[64];
@@ -483,13 +540,15 @@ namespace FrontierUI {
                 if (*c >= 'a' && *c <= 'z') *c = (char)(*c - 'a' + 'A');
             }
 
-            ImGui::TextColored(V4(variables::Theme::text), "%s", upper);
+            ImGui::PushStyleColor(ImGuiCol_Text, V4(variables::Theme::text));
+            ImGui::Text("%s", upper);
+            ImGui::PopStyleColor();
             if (headerToggle) {
                 ImGui::SameLine(0, 0);
                 ImGui::SetCursorPosX(ImGui::GetWindowContentRegionMax().x - 36.f);
                 ToggleSwitch("##hdr", headerToggle);
             }
-            ImGui::Dummy(ImVec2(0, 6));
+            ImGui::Dummy(ImVec2(0, 10));
         }
 
         return visible;
@@ -500,12 +559,27 @@ namespace FrontierUI {
         g_cardDepth--;
         const int slot = g_cardDepth < 16 ? g_cardDepth : 15;
         if (!g_cardOpen[slot]) return;
+
+        if (variables::Theme::preset == 4) {
+            ImDrawList* dl = ImGui::GetWindowDrawList();
+            ImVec2 p0 = g_cardMin[slot];
+            ImVec2 p1 = ImGui::GetWindowPos();
+            p1.x += ImGui::GetWindowSize().x;
+            p1.y += ImGui::GetWindowSize().y;
+            dl->AddRectFilledMultiColor(p0, p1,
+                IM_COL32(255, 255, 255, 18), IM_COL32(255, 255, 255, 10),
+                IM_COL32(255, 255, 255, 6), IM_COL32(255, 255, 255, 14));
+            dl->AddRect(p0, p1, U32(variables::Theme::border, 0.55f), 12.f, 0, 1.2f);
+            dl->AddLine(ImVec2(p0.x + 12.f, p0.y + 1.f), ImVec2(p1.x - 12.f, p0.y + 1.f),
+                IM_COL32(255, 255, 255, 42), 1.f);
+        }
+
         g_cardOpen[slot] = false;
         ImGui::EndChild();
         ImGui::PopStyleVar(2);
         ImGui::PopStyleColor(2);
         ImGui::PopID();
-        ImGui::Dummy(ImVec2(0, 10));
+        ImGui::Dummy(ImVec2(0, 14));
     }
 
     inline bool BeginSettings(const char* label, bool /*defaultOpen*/ = true) {
@@ -739,27 +813,49 @@ namespace FrontierUI {
     }
 
     inline void RadarPreviewPanel(float height = 220.f) {
+        ImGui::TextColored(V4(variables::Theme::textDim), "Radar preview");
+        ImGui::Dummy(ImVec2(0, 4));
         ImVec2 p = ImGui::GetCursorScreenPos();
         float w = ImGui::GetContentRegionAvail().x;
         if (w < 140.f) w = 140.f;
         ImGui::Dummy(ImVec2(w, height));
         ImDrawList* dl = ImGui::GetWindowDrawList();
         ImVec2 br(p.x + w, p.y + height);
-        dl->AddRectFilled(p, br, IM_COL32(30, 30, 30, 255), 8.f);
-        dl->AddRect(p, br, IM_COL32(255, 255, 255, 12), 8.f);
-        dl->AddText(ImVec2(p.x + 12.f, p.y + 10.f), IM_COL32(230, 230, 235, 255), "Radar Preview");
+        dl->AddRectFilledMultiColor(p, br,
+            IM_COL32(16, 18, 22, 255), IM_COL32(12, 14, 18, 255),
+            IM_COL32(10, 12, 16, 255), IM_COL32(14, 16, 20, 255));
+        dl->AddRect(p, br, U32(variables::Theme::border, 0.6f), 10.f);
 
         const float cx = p.x + w * 0.5f;
-        const float cy = p.y + height * 0.55f;
-        const float rad = (w < height ? w : height) * 0.34f;
-        dl->AddCircle(ImVec2(cx, cy), rad, IM_COL32(255, 255, 255, 30), 48, 1.f);
-        dl->AddLine(ImVec2(cx - rad, cy), ImVec2(cx + rad, cy), IM_COL32(255, 255, 255, 20), 1.f);
-        dl->AddLine(ImVec2(cx, cy - rad), ImVec2(cx, cy + rad), IM_COL32(255, 255, 255, 20), 1.f);
-        dl->AddCircleFilled(ImVec2(cx, cy), 3.f, IM_COL32(255, 255, 255, 180), 12);
+        const float cy = p.y + height * 0.58f;
+        const float rad = (w < height ? w : height) * 0.36f;
 
-        const ImU32 enemy = IM_COL32(255, 80, 80, 255);
-        dl->AddCircleFilled(ImVec2(cx + rad * 0.45f, cy - rad * 0.25f), 4.f, enemy, 12);
-        dl->AddCircleFilled(ImVec2(cx - rad * 0.55f, cy + rad * 0.35f), 4.f, enemy, 12);
-        dl->AddCircleFilled(ImVec2(cx + rad * 0.15f, cy + rad * 0.62f), 4.f, enemy, 12);
+        for (int ring = 1; ring <= 3; ring++) {
+            float rr = rad * (ring / 3.f);
+            dl->AddCircle(ImVec2(cx, cy), rr, IM_COL32(255, 255, 255, ring == 3 ? 28 : 16), 48, 1.f);
+        }
+        dl->AddLine(ImVec2(cx - rad, cy), ImVec2(cx + rad, cy), IM_COL32(255, 255, 255, 22), 1.f);
+        dl->AddLine(ImVec2(cx, cy - rad), ImVec2(cx, cy + rad), IM_COL32(255, 255, 255, 22), 1.f);
+
+        const float sweep = fmodf((float)ImGui::GetTime() * 1.6f, 6.2831853f);
+        dl->AddLine(ImVec2(cx, cy),
+            ImVec2(cx + cosf(sweep) * rad, cy + sinf(sweep) * rad),
+            U32(variables::Theme::brand, 0.55f), 1.4f);
+
+        dl->AddCircleFilled(ImVec2(cx, cy), 3.5f, IM_COL32(255, 255, 255, 220), 12);
+        dl->AddText(ImVec2(p.x + 10.f, p.y + 8.f), IM_COL32(150, 154, 168, 220), "Top-down");
+
+        struct Blip { float dx, dy; const char* label; };
+        const Blip blips[] = {
+            { 0.42f, -0.28f, "Enemy" },
+            { -0.50f, 0.30f, "Enemy" },
+            { 0.12f, 0.58f, "Far" },
+        };
+        for (const auto& b : blips) {
+            ImVec2 pt(cx + b.dx * rad, cy + b.dy * rad);
+            dl->AddCircleFilled(pt, 4.5f, IM_COL32(255, 90, 90, 255), 12);
+            if (variables::Radar::showNames)
+                dl->AddText(ImVec2(pt.x + 6.f, pt.y - 6.f), IM_COL32(220, 220, 230, 200), b.label);
+        }
     }
 }

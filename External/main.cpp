@@ -18,6 +18,7 @@
 #include "src/core/tp_handler/tp_handler.h"
 #include "src/core/features/visuals/visuals.h"
 #include "src/core/features/aimbot/aimbot.h"
+#include "src/core/features/spoof/identity_spoof.h"
 #include "src/core/features/exploits/exploits.h"
 #include "src/core/features/exploits/gun_mods.h"
 #include "src/core/audio/custom_music.h"
@@ -496,6 +497,7 @@ namespace
 			}
 
 			GunMods::Apply();
+			IdentitySpoof::Tick();
 
 			if (Globals::players.Addr) {
 				const uintptr_t lpAddr = memory->read<uintptr_t>(
@@ -1842,8 +1844,24 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 			telemetryReady = true;
 		}
 
-		overlay.RenderMenu();
+        overlay.RenderMenu();
 		overlay.RenderSpotifyMini();
+		ImDrawList* fgDraw = ImGui::GetForegroundDrawList();
+		if (variables::Aimbot::showFOV && !variables::Loading::active)
+			overlay.RenderFovCircles(fgDraw);
+		if (variables::MagicBullet::showFov && variables::MagicBullet::enabled && !variables::Loading::active) {
+			Aimbot::RefreshFovCenter();
+			ImVec2 c(Aimbot::fovCenterX, Aimbot::fovCenterY);
+			float fr = variables::MagicBullet::fovColor[0];
+			float fg = variables::MagicBullet::fovColor[1];
+			float fb = variables::MagicBullet::fovColor[2];
+			int a = (int)(variables::MagicBullet::fovColor[3] * 255);
+			if (a < 40) a = 200;
+			ImU32 col = IM_COL32((int)(fr * 255), (int)(fg * 255), (int)(fb * 255), a);
+			float fovDraw = variables::MagicBullet::fovRadius;
+			if (fovDraw < 20.f) fovDraw = 20.f;
+			fgDraw->AddCircle(c, fovDraw, col, 64, 1.6f);
+		}
 		ImDrawList* drawList = ImGui::GetBackgroundDrawList();
 		overlay.render(drawList);
 
@@ -1891,8 +1909,9 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 				variables::ESP::healthText ||
 				variables::ESP::distance ||
 				variables::ESP::equippedItem ||
+				variables::ESP::headDot ||
+				variables::ESP::flags ||
 				variables::ESP::skeleton ||
-				variables::ESP::chamsEnabled ||
 				variables::ESP::wireframePlayers ||
 				variables::ESP::oofArrows)
 				Visuals::RenderESP(drawList, viewMatrix, players);

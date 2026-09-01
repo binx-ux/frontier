@@ -22,7 +22,7 @@ namespace UIFx {
         float x, y, vx, vy, r, a, life;
     };
 
-    inline Particle particles[64]{};
+    inline Particle particles[96]{};
     inline bool particlesInit = false;
     inline float timeAcc = 0.0f;
 
@@ -53,27 +53,143 @@ namespace UIFx {
             IM_COL32(0, 0, 0, (int)(48 * intensity)));
     }
 
-    inline void DrawBackgroundFX(ImDrawList* dl, ImVec2 size, float dt) {
-        if (!variables::Theme::bgEffect) return;
+    inline bool IsLiquidGlass() {
+        return variables::Theme::preset == 4;
+    }
+
+    inline float HashHue01(const char* s, int salt = 0) {
+        unsigned h = 2166136261u ^ (unsigned)salt;
+        while (s && *s) { h ^= (unsigned char)*s++; h *= 16777619u; }
+        return (h % 360) / 360.f;
+    }
+
+    inline ImU32 HsvToU32(float h, float s, float v, float a) {
+        float r = 0, g = 0, b = 0;
+        ImGui::ColorConvertHSVtoRGB(h, s, v, r, g, b);
+        return IM_COL32((int)(r * 255), (int)(g * 255), (int)(b * 255), (int)(a * 255));
+    }
+
+    inline void DrawLiquidGlassAurora(ImDrawList* dl, ImVec2 size, float t) {
+        const ImU32 c1 = HsvToU32(fmodf(t * 0.04f, 1.f), 0.55f, 0.95f, 0.14f);
+        const ImU32 c2 = HsvToU32(fmodf(t * 0.03f + 0.35f, 1.f), 0.45f, 0.88f, 0.12f);
+        const ImU32 c3 = HsvToU32(fmodf(t * 0.05f + 0.62f, 1.f), 0.50f, 0.92f, 0.10f);
+        dl->AddCircleFilled(ImVec2(size.x * 0.18f + sinf(t * 0.35f) * 40.f, size.y * 0.22f + cosf(t * 0.28f) * 30.f), 180.f, c1, 48);
+        dl->AddCircleFilled(ImVec2(size.x * 0.78f + cosf(t * 0.31f) * 50.f, size.y * 0.38f + sinf(t * 0.24f) * 35.f), 220.f, c2, 48);
+        dl->AddCircleFilled(ImVec2(size.x * 0.52f + sinf(t * 0.22f) * 60.f, size.y * 0.72f + cosf(t * 0.19f) * 25.f), 160.f, c3, 48);
+    }
+
+    inline void DrawGlassCardFrame(ImDrawList* dl, ImVec2 p0, ImVec2 p1, float rounding = 10.f) {
+        dl->AddRectFilledMultiColor(p0, p1,
+            IM_COL32(255, 255, 255, 18), IM_COL32(255, 255, 255, 10),
+            IM_COL32(255, 255, 255, 6), IM_COL32(255, 255, 255, 14));
+        dl->AddRect(p0, p1, FrontierUI::U32(variables::Theme::border, 0.55f), rounding, 0, 1.2f);
+        dl->AddLine(ImVec2(p0.x + 12.f, p0.y + 1.f), ImVec2(p1.x - 12.f, p0.y + 1.f),
+            IM_COL32(255, 255, 255, 42), 1.f);
+        dl->AddLine(ImVec2(p0.x + 14.f, p1.y - 1.f), ImVec2(p1.x - 14.f, p1.y - 1.f),
+            IM_COL32(255, 255, 255, 10), 1.f);
+    }
+
+    inline void DrawSpectrumBars(ImDrawList* dl, ImVec2 origin, float width, float height, float t,
+        bool active, int bars = 24)
+    {
+        const float gap = 2.f;
+        const float barW = (width - gap * (bars - 1)) / (float)bars;
+        for (int i = 0; i < bars; i++) {
+            float phase = (float)i * 0.55f + t * (active ? 8.5f : 1.2f);
+            float norm = active ? (0.35f + 0.65f * fabsf(sinf(phase))) : 0.18f;
+            float h = height * norm;
+            float x = origin.x + i * (barW + gap);
+            float y0 = origin.y + height - h;
+            ImU32 col = FrontierUI::U32(variables::Theme::brand, active ? (0.55f + norm * 0.45f) : 0.25f);
+            dl->AddRectFilled(ImVec2(x, y0), ImVec2(x + barW, origin.y + height), col, 2.f);
+        }
+    }
+
+    inline void DrawAlbumGlowRing(ImDrawList* dl, ImVec2 center, float radius, float t, bool playing,
+        const char* moodSeed)
+    {
+        const float hue = HashHue01(moodSeed ? moodSeed : "frontier", 7);
+        const int segments = 64;
+        for (int i = 0; i < segments; i++) {
+            float a0 = (float)i / (float)segments * 6.2831853f + (playing ? t * 1.6f : 0.f);
+            float a1 = (float)(i + 1) / (float)segments * 6.2831853f + (playing ? t * 1.6f : 0.f);
+            float pulse = playing ? (0.55f + 0.45f * sinf(t * 3.2f + i * 0.25f)) : 0.35f;
+            ImU32 col = HsvToU32(fmodf(hue + i * 0.012f, 1.f), 0.65f, 1.f, 0.22f * pulse);
+            dl->PathClear();
+            dl->PathArcTo(center, radius, a0, a1, 8);
+            dl->PathStroke(col, 0, 2.4f);
+        }
+    }
+
+    inline void DrawPopulationSparkline(ImDrawList* dl, ImVec2 p0, ImVec2 p1, const int* values,
+        int count, float t)
+    {
+        if (count < 2) return;
+        int vmax = 1;
+        for (int i = 0; i < count; i++)
+            if (values[i] > vmax) vmax = values[i];
+
+        dl->AddRectFilled(p0, p1, IM_COL32(255, 255, 255, 8), 8.f);
+        dl->AddRect(p0, p1, IM_COL32(255, 255, 255, 18), 8.f);
+
+        const float pad = 8.f;
+        const float w = (p1.x - p0.x) - pad * 2.f;
+        const float h = (p1.y - p0.y) - pad * 2.f;
+        const float step = w / (float)(count - 1);
+
+        ImVec2 prev(p0.x + pad, p1.y - pad - (values[0] / (float)vmax) * h);
+        for (int i = 1; i < count; i++) {
+            ImVec2 cur(p0.x + pad + step * i, p1.y - pad - (values[i] / (float)vmax) * h);
+            float pulse = 0.7f + 0.3f * sinf(t * 2.4f + i * 0.4f);
+            dl->AddLine(prev, cur, FrontierUI::U32(variables::Theme::brand, 0.35f + pulse * 0.35f), 2.f);
+            dl->AddCircleFilled(cur, 2.2f, FrontierUI::U32(variables::Theme::brand, 0.55f + pulse * 0.25f), 8);
+            prev = cur;
+        }
+    }
+
+    inline void DrawBackgroundFX(ImDrawList* dl, ImVec2 size, float dt, bool menuVisible) {
+        if (!menuVisible && !variables::Theme::bgEffect) return;
         EnsureParticles(size.x, size.y);
-        timeAcc += dt;
 
-        // soft charcoal wash
-        dl->AddRectFilledMultiColor(
-            ImVec2(0, 0), size,
-            IM_COL32(12, 12, 16, 70),
-            IM_COL32(8, 8, 10, 50),
-            IM_COL32(14, 14, 18, 80),
-            IM_COL32(6, 6, 8, 55));
+        float fpsScale = 1.f;
+        if (variables::Perf::currentFps > 0)
+            fpsScale = 60.f / (float)variables::Perf::currentFps;
+        if (fpsScale < 0.5f) fpsScale = 0.5f;
+        if (fpsScale > 2.f) fpsScale = 2.f;
+        const float step = dt * fpsScale;
+        const float t = (float)ImGui::GetTime();
 
-        if (variables::Theme::snowEffect) {
+        if (IsLiquidGlass()) {
+            dl->AddRectFilledMultiColor(
+                ImVec2(0, 0), size,
+                IM_COL32(8, 14, 24, menuVisible ? 120 : 90),
+                IM_COL32(6, 10, 18, menuVisible ? 100 : 75),
+                IM_COL32(10, 16, 28, menuVisible ? 130 : 95),
+                IM_COL32(5, 8, 14, menuVisible ? 105 : 80));
+            DrawLiquidGlassAurora(dl, size, t);
+        } else {
+            dl->AddRectFilledMultiColor(
+                ImVec2(0, 0), size,
+                IM_COL32(12, 12, 16, menuVisible ? 90 : 70),
+                IM_COL32(8, 8, 10, menuVisible ? 70 : 50),
+                IM_COL32(14, 14, 18, menuVisible ? 100 : 80),
+                IM_COL32(6, 6, 8, menuVisible ? 75 : 55));
+        }
+
+        const bool drawParticles = menuVisible || variables::Theme::snowEffect;
+        if (drawParticles) {
+            const ImU32 pc = variables::Theme::snowEffect
+                ? IM_COL32(220, 240, 230, 180)
+                : IM_COL32((int)(variables::Theme::brand[0] * 255),
+                    (int)(variables::Theme::brand[1] * 255),
+                    (int)(variables::Theme::brand[2] * 255), 90);
             for (auto& p : particles) {
-                p.x += p.vx * dt;
-                p.y += p.vy * dt;
+                p.x += p.vx * step;
+                p.y += p.vy * step;
                 if (p.y > size.y + 10) { p.y = -10; p.x = (float)(rand() % (int)(size.x + 1)); }
                 if (p.x < -10) p.x = size.x + 10;
                 if (p.x > size.x + 10) p.x = -10;
-                dl->AddCircleFilled(ImVec2(p.x, p.y), p.r, IM_COL32(220, 240, 230, (int)(p.a * 180)), 8);
+                dl->AddCircleFilled(ImVec2(p.x, p.y), p.r, pc, 8);
             }
         }
     }
@@ -226,8 +342,12 @@ namespace UIFx {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 18.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 8));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.055f, 0.055f, 0.065f, 0.94f));
-        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1, 1, 1, 0.12f));
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, UIFx::IsLiquidGlass()
+            ? ImVec4(0.06f, 0.08f, 0.12f, 0.72f)
+            : ImVec4(0.055f, 0.055f, 0.065f, 0.94f));
+        ImGui::PushStyleColor(ImGuiCol_Border, UIFx::IsLiquidGlass()
+            ? ImVec4(0.62f, 0.84f, 1.f, 0.28f)
+            : ImVec4(1, 1, 1, 0.12f));
         if (!ImGui::Begin("##floathead", nullptr,
             ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar |
             ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings)) {
@@ -359,24 +479,35 @@ namespace UIFx {
 
     inline void DrawEspPreview(ImDrawList* dl, ImVec2 origin, ImVec2 size) {
         const ImVec2 br(origin.x + size.x, origin.y + size.y);
-        dl->AddRectFilled(origin, br, IM_COL32(0, 0, 0, 255), 4.f);
-        dl->AddRect(origin, br, IM_COL32(255, 255, 255, 18), 4.f);
+        dl->AddRectFilledMultiColor(origin, br,
+            IM_COL32(14, 16, 20, 255), IM_COL32(10, 12, 16, 255),
+            IM_COL32(8, 10, 14, 255), IM_COL32(12, 14, 18, 255));
+        dl->AddRect(origin, br, FrontierUI::U32(variables::Theme::border, 0.55f), 8.f);
+
+        // subtle floor grid
+        const float gridStep = 18.f;
+        for (float gx = origin.x + 8.f; gx < br.x - 4.f; gx += gridStep)
+            dl->AddLine(ImVec2(gx, origin.y + 8.f), ImVec2(gx, br.y - 8.f), IM_COL32(255, 255, 255, 6));
+        for (float gy = origin.y + 8.f; gy < br.y - 4.f; gy += gridStep)
+            dl->AddLine(ImVec2(origin.x + 8.f, gy), ImVec2(br.x - 8.f, gy), IM_COL32(255, 255, 255, 6));
+
+        dl->AddText(ImVec2(origin.x + 10.f, origin.y + 8.f), IM_COL32(150, 154, 168, 220), "ESP Preview");
 
         if (!variables::ESP::enabled) {
-            const char* off = "ESP off";
+            const char* off = "Enable ESP to preview";
             ImVec2 ts = ImGui::CalcTextSize(off);
             dl->AddText(
                 ImVec2(origin.x + (size.x - ts.x) * 0.5f, origin.y + (size.y - ts.y) * 0.5f),
-                IM_COL32(120, 120, 125, 200), off);
+                IM_COL32(120, 124, 132, 200), off);
             return;
         }
 
-        const float padX = size.x * 0.22f;
-        const float padY = size.y * 0.14f;
+        const float padX = size.x * 0.18f;
+        const float padY = size.y * 0.12f;
         const float minX = origin.x + padX;
         const float maxX = origin.x + size.x - padX;
-        const float minY = origin.y + padY;
-        const float maxY = origin.y + size.y - padY;
+        const float minY = origin.y + padY + 10.f;
+        const float maxY = origin.y + size.y - padY - 8.f;
         const float cx = (minX + maxX) * 0.5f;
 
         ImU32 bc = IM_COL32(
@@ -385,43 +516,69 @@ namespace UIFx {
             (int)(variables::ESP::boxColor[2] * 255), 255);
 
         if (variables::ESP::fillBox)
-            dl->AddRectFilled(ImVec2(minX, minY), ImVec2(maxX, maxY), IM_COL32(255, 255, 255, 16));
-        if (variables::ESP::boxes)
-            dl->AddRect(ImVec2(minX, minY), ImVec2(maxX, maxY), bc, 0.f, 0, variables::ESP::boxThickness);
+            dl->AddRectFilled(ImVec2(minX, minY), ImVec2(maxX, maxY), IM_COL32(255, 255, 255, 14));
+        if (variables::ESP::boxes) {
+            if (variables::ESP::cornerBox || variables::ESP::boxType == 2) {
+                const float w = maxX - minX, h = maxY - minY;
+                const float cl = w * 0.28f, ct = h * 0.22f;
+                auto corner = [&](float x, float y, float dx, float dy) {
+                    dl->AddLine(ImVec2(x, y), ImVec2(x + dx * cl, y), bc, variables::ESP::boxThickness);
+                    dl->AddLine(ImVec2(x, y), ImVec2(x, y + dy * ct), bc, variables::ESP::boxThickness);
+                };
+                corner(minX, minY, 1, 1); corner(maxX, minY, -1, 1);
+                corner(minX, maxY, 1, -1); corner(maxX, maxY, -1, -1);
+            } else {
+                dl->AddRect(ImVec2(minX, minY), ImVec2(maxX, maxY), bc, 0.f, 0, variables::ESP::boxThickness);
+            }
+        }
         if (variables::ESP::healthBar) {
-            dl->AddRectFilled(ImVec2(minX - 5.f, minY), ImVec2(minX - 2.f, maxY), IM_COL32(0, 0, 0, 180));
-            dl->AddRectFilled(ImVec2(minX - 4.f, minY + (maxY - minY) * 0.25f), ImVec2(minX - 3.f, maxY),
+            dl->AddRectFilled(ImVec2(minX - 6.f, minY), ImVec2(minX - 2.f, maxY), IM_COL32(0, 0, 0, 180));
+            dl->AddRectFilled(ImVec2(minX - 5.f, minY + (maxY - minY) * 0.22f), ImVec2(minX - 3.f, maxY),
                 IM_COL32(
                     (int)(variables::ESP::healthColor[0] * 255),
                     (int)(variables::ESP::healthColor[1] * 255),
                     (int)(variables::ESP::healthColor[2] * 255), 255));
         }
         if (variables::ESP::skeleton) {
-            const ImU32 sk = IM_COL32(255, 255, 255, 200);
-            dl->AddLine(ImVec2(cx, minY + 8.f), ImVec2(cx, maxY - 28.f), sk, 1.4f);
-            dl->AddLine(ImVec2(cx, minY + 28.f), ImVec2(minX + 10.f, minY + 52.f), sk, 1.4f);
-            dl->AddLine(ImVec2(cx, minY + 28.f), ImVec2(maxX - 10.f, minY + 52.f), sk, 1.4f);
-            dl->AddLine(ImVec2(cx, maxY - 28.f), ImVec2(minX + 12.f, maxY - 4.f), sk, 1.4f);
-            dl->AddLine(ImVec2(cx, maxY - 28.f), ImVec2(maxX - 12.f, maxY - 4.f), sk, 1.4f);
+            const ImU32 sk = IM_COL32(255, 255, 255, 210);
+            const float headY = minY + 12.f;
+            dl->AddCircleFilled(ImVec2(cx, headY), 4.f, sk, 12);
+            dl->AddLine(ImVec2(cx, headY + 4.f), ImVec2(cx, maxY - 28.f), sk, 1.5f);
+            dl->AddLine(ImVec2(cx, minY + 36.f), ImVec2(minX + 8.f, minY + 62.f), sk, 1.5f);
+            dl->AddLine(ImVec2(cx, minY + 36.f), ImVec2(maxX - 8.f, minY + 62.f), sk, 1.5f);
+            dl->AddLine(ImVec2(cx, maxY - 28.f), ImVec2(minX + 10.f, maxY - 6.f), sk, 1.5f);
+            dl->AddLine(ImVec2(cx, maxY - 28.f), ImVec2(maxX - 10.f, maxY - 6.f), sk, 1.5f);
         }
+        if (variables::ESP::headDot)
+            dl->AddCircleFilled(ImVec2(cx, minY + 12.f), 3.5f, IM_COL32(
+                (int)(variables::ESP::headDotColor[0] * 255),
+                (int)(variables::ESP::headDotColor[1] * 255),
+                (int)(variables::ESP::headDotColor[2] * 255), 255), 12);
         if (variables::ESP::names) {
             const char* n = "Player";
             ImVec2 ts = ImGui::CalcTextSize(n);
-            dl->AddText(ImVec2(cx - ts.x * 0.5f, minY - 16.f), IM_COL32(255, 255, 255, 240), n);
+            dl->AddText(ImVec2(cx - ts.x * 0.5f, minY - 18.f), IM_COL32(255, 255, 255, 240), n);
         }
         if (variables::ESP::distance) {
             const char* d = "42m";
             ImVec2 ts = ImGui::CalcTextSize(d);
-            dl->AddText(ImVec2(cx - ts.x * 0.5f, maxY + 4.f), IM_COL32(200, 200, 210, 230), d);
+            dl->AddText(ImVec2(cx - ts.x * 0.5f, maxY + 4.f), IM_COL32(200, 204, 214, 230), d);
         }
+        if (variables::ESP::equippedItem) {
+            const char* w = "Rifle";
+            ImVec2 ts = ImGui::CalcTextSize(w);
+            dl->AddText(ImVec2(cx - ts.x * 0.5f, maxY + 18.f), IM_COL32(255, 205, 115, 230), w);
+        }
+        if (variables::ESP::flags)
+            dl->AddText(ImVec2(maxX + 4.f, minY), IM_COL32(255, 210, 120, 230), "GUN");
         if (variables::ESP::snaplines)
-            dl->AddLine(ImVec2(origin.x + size.x * 0.5f, origin.y + size.y - 2.f),
+            dl->AddLine(ImVec2(origin.x + size.x * 0.5f, br.y - 6.f),
                 ImVec2(cx, maxY), bc, 1.2f);
     }
 
-    inline void EspPreviewPanel(float height = 180.f) {
-        ImGui::TextColored(ImVec4(0.55f, 0.57f, 0.62f, 1.f), "Preview");
-        ImGui::Dummy(ImVec2(0, 2));
+    inline void EspPreviewPanel(float height = 220.f) {
+        ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim), "Live preview");
+        ImGui::Dummy(ImVec2(0, 4));
         ImVec2 p = ImGui::GetCursorScreenPos();
         float w = ImGui::GetContentRegionAvail().x;
         if (w < 120.f) w = 120.f;

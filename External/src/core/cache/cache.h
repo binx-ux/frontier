@@ -500,7 +500,83 @@ namespace PlayerCache {
     inline bool IsSpectatorTeamKey(const std::string& key)
     {
         return key.empty() || key == "spectator" || key == "spectators" || key == "lobby"
-            || key == "none" || key == "neutral" || key == "waiting" || key == "playing";
+            || key == "none" || key == "waiting";
+    }
+
+    inline bool IsArsenalFFA()
+    {
+        if (!Globals::dataModel.Addr) return false;
+        if (!Games::IsArsenalPlace(Games::ReadPlaceId(), Games::ReadGameId())) return false;
+        auto rs = Globals::dataModel.FindChildByClass("ReplicatedStorage");
+        if (!rs.Addr) rs = Globals::dataModel.FindChild("ReplicatedStorage");
+        if (!rs.Addr) return false;
+        auto wkspc = rs.FindChild("wkspc");
+        if (!wkspc.Addr) return false;
+        auto ffa = wkspc.FindChild("FFA");
+        if (!ffa.Addr || ffa.GetClass() != "BoolValue") return false;
+        bool v = memory->read<bool>(ffa.Addr + kValuePayload);
+        if (!v) v = memory->read<bool>(ffa.Addr + Offsets::Misc::Value);
+        return v;
+    }
+
+    inline bool ReadValueBaseString(RBX::RbxInstance v, std::string& out)
+    {
+        if (!v.Addr) return false;
+        std::string cls = v.GetClass();
+        if (cls == "StringValue") {
+            uintptr_t sp = memory->read<uintptr_t>(v.Addr + kValuePayload);
+            if (!sp) sp = memory->read<uintptr_t>(v.Addr + Offsets::Misc::Value);
+            out = sp ? memory->read_string(sp) : memory->read_string(v.Addr + kValuePayload);
+            return !out.empty();
+        }
+        if (cls == "IntValue" || cls == "NumberValue") {
+            int iv = memory->read<int>(v.Addr + kValuePayload);
+            if (!iv) iv = memory->read<int>(v.Addr + Offsets::Misc::Value);
+            if (iv) { out = std::to_string(iv); return true; }
+        }
+        return false;
+    }
+
+    inline bool ResolveArsenalTeam(RBX::RbxInstance plr, RBX::RbxInstance character, std::string& teamKey)
+    {
+        if (!Globals::dataModel.Addr) return false;
+        auto rs = Globals::dataModel.FindChildByClass("ReplicatedStorage");
+        if (!rs.Addr) rs = Globals::dataModel.FindChild("ReplicatedStorage");
+        if (rs.Addr) {
+            auto playersFolder = rs.FindChild("Players");
+            if (playersFolder.Addr) {
+                auto pf = playersFolder.FindChild(plr.GetName());
+                if (pf.Addr) {
+                    auto status = pf.FindChild("Status");
+                    if (status.Addr) {
+                        auto teamVal = status.FindChild("Team");
+                        std::string s;
+                        if (teamVal.Addr && ReadValueBaseString(teamVal, s)) {
+                            teamKey = NormalizeTeamKey(std::move(s));
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        if (character.Addr) {
+            auto teamVal = character.FindChild("Team");
+            std::string s;
+            if (teamVal.Addr && ReadValueBaseString(teamVal, s)) {
+                teamKey = NormalizeTeamKey(std::move(s));
+                return true;
+            }
+            auto nrpbs = character.FindChild("NRPBS");
+            if (nrpbs.Addr) {
+                auto tc = nrpbs.FindChild("TeamColor");
+                if (!tc.Addr) tc = nrpbs.FindChild("Color");
+                if (tc.Addr && ReadValueBaseString(tc, s)) {
+                    teamKey = NormalizeTeamKey(std::move(s));
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     inline bool IsPlayingSideKey(const std::string& key)
@@ -517,6 +593,7 @@ namespace PlayerCache {
         if (!plr.Addr) return;
 
         const bool blox = Games::IsBloxStrike();
+        const bool arsenal = Games::IsArsenalPlace(Games::ReadPlaceId(), Games::ReadGameId());
 
         // BloxStrike primarily uses Player:GetAttribute("Team") — never trust Player.Team
         if (blox) {
@@ -532,6 +609,12 @@ namespace PlayerCache {
             if (teamKey == "t") teamColor = 1;
             else if (teamKey == "ct") teamColor = 2;
             return;
+        }
+
+        // Arsenal: ReplicatedStorage.Players.[name].Status.Team (matches TRACE script)
+        if (arsenal) {
+            if (ResolveArsenalTeam(plr, character, teamKey))
+                return;
         }
 
         teamAddr = memory->read<uintptr_t>(plr.Addr + Offsets::Player::Team);
@@ -592,6 +675,10 @@ namespace PlayerCache {
 
     inline bool IsTeammate(const CachedPlayer& plr)
     {
+        // Arsenal FFA — every player is a valid target when team check filters teammates
+        if (Games::IsArsenalPlace(Games::ReadPlaceId(), Games::ReadGameId()) && IsArsenalFFA())
+            return false;
+
         // BloxStrike: attribute teamKey only (T/CT). Shared Player.Team would false-match everyone.
         if (Games::IsBloxStrike()) {
             if (!IsPlayingSideKey(localPlayerTeamKey) || !IsPlayingSideKey(plr.teamKey))
@@ -737,7 +824,7 @@ namespace PlayerCache {
             cachedPlayer.distance = distance;
             cachedPlayer.isValid = true;
 
-            if (variables::ESP::equippedItem) {
+            if (variables::ESP::equippedItem || variables::ESP::flags) {
                 for (auto& ch : character.GetChildList()) {
                     if (ch.GetClass() == "Tool") {
                         cachedPlayer.equippedTool = ch.GetName();

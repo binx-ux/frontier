@@ -4,9 +4,20 @@
 
 namespace LoaderConfig {
 
-    inline constexpr int kLocalVersion = 20;
-    inline constexpr const char* kDisplayVersion = "v1.2.17";
-    inline constexpr const char* kProductLine = "Roblox External";
+    inline constexpr int kLocalVersion = 26;
+    inline constexpr const char* kDisplayVersion = "v1.2.23";
+    inline constexpr const char* kProductLine = "AHEAD Products";
+
+    inline constexpr const char* kTraceLoaderUrl =
+        "https://ahead.best/ahead-load.lua";
+    inline constexpr const char* kTraceCardUrl =
+        "https://ahead.best/brand/trace-aimbot.png?v=4";
+    inline constexpr const char* kFrontierCardUrl =
+        "https://ahead.best/brand/frontier-ui.png?v=3";
+    inline constexpr const char* kTraceMascotUrl =
+        "https://ahead.best/brand/trace-chan.png?v=2";
+    inline constexpr const char* kFrontierMascotUrl =
+        "https://ahead.best/brand/frontier-chan.png?v=2";
 
     inline constexpr const wchar_t* kAppName = L"FRONTIER";
 
@@ -16,7 +27,7 @@ namespace LoaderConfig {
     inline constexpr const char* kManifestUrl =
         "https://ahead.best/releases/manifest.json";
     inline constexpr const char* kFallbackUsermodeUrl =
-        "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.17/Frontier.exe";
+        "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.21/Frontier.exe";
     inline constexpr const char* kReleasesPage =
         "https://github.com/binx-ux/frontier-releases/releases/latest";
     inline constexpr const char* kDiscordInvite =
@@ -37,8 +48,8 @@ namespace LoaderConfig {
     inline constexpr const char* kKernelModeTag = "Testing";
 
     // Reference loader dimensions (Ezeross/Cheat-Loader-Menu-KeyAuth-GUI)
-    inline constexpr int kWindowW = 390;
-    inline constexpr int kWindowH = 280;
+    inline constexpr int kWindowW = 580;
+    inline constexpr int kWindowH = 400;
     inline constexpr int kSplitX = 0;
     inline constexpr int kMarginX = 24;
     inline constexpr int kContentW = kWindowW - kMarginX * 2;

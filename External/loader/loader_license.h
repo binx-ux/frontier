@@ -73,6 +73,8 @@ namespace LoaderLicense {
             strncpy_s(out, outSz, "This license key has been revoked.", _TRUNCATE);
         else if (_stricmp(raw, "hwid_mismatch") == 0)
             strncpy_s(out, outSz, "This license is bound to another PC.", _TRUNCATE);
+        else if (_stricmp(raw, "invalid_password") == 0 || _stricmp(raw, "password_required") == 0)
+            strncpy_s(out, outSz, "Incorrect password for this license key.", _TRUNCATE);
         else if (_stricmp(raw, "forbidden") == 0)
             strncpy_s(out, outSz, "License server rejected the request. Try again later.", _TRUNCATE);
         else
@@ -212,7 +214,7 @@ namespace LoaderLicense {
         return true;
     }
 
-    inline bool ActivateKey(const char* key, const char* hwid, char* outToken, size_t tokenSz, char* outMsg, size_t msgSz, std::string& err)
+    inline bool ActivateKey(const char* key, const char* password, const char* hwid, char* outToken, size_t tokenSz, char* outMsg, size_t msgSz, std::string& err)
     {
         if (outToken && tokenSz) outToken[0] = 0;
         if (outMsg && msgSz) outMsg[0] = 0;
@@ -220,7 +222,12 @@ namespace LoaderLicense {
             err = "Enter your license key";
             return false;
         }
+        if (!password || !password[0]) {
+            err = "Enter your account password";
+            return false;
+        }
         std::string body = std::string("{\"key\":\"") + JsonEscape(key) +
+            "\",\"password\":\"" + JsonEscape(password) +
             "\",\"hwid\":\"" + JsonEscape(hwid ? hwid : "") + "\"}";
         std::string resp;
         if (!LoaderUpdate::HttpPost(LoaderConfig::kLicenseApi, "application/json", body, resp, err))

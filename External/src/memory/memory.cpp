@@ -124,6 +124,36 @@ bool memory_t::write_raw(std::uint64_t address, const void* buffer, std::size_t 
 #endif
 }
 
+bool memory_t::is_valid_address(std::uint64_t address, std::size_t size)
+{
+	if (!address || address < 0x10000 || !size)
+		return false;
+
+#ifdef FRONTIER_KERNEL
+	// Kernel path: lightweight read probe
+	uint8_t probe = 0;
+	return read_raw(address, &probe, 1) && read_raw(address + size - 1, &probe, 1);
+#else
+	if (!process_handle)
+		return false;
+
+	MEMORY_BASIC_INFORMATION mbi{};
+	if (!VirtualQueryEx(process_handle, reinterpret_cast<LPCVOID>(address), &mbi, sizeof(mbi)))
+		return false;
+	if (mbi.State != MEM_COMMIT)
+		return false;
+	if (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD))
+		return false;
+
+	const std::uint64_t regionEnd =
+		reinterpret_cast<std::uint64_t>(mbi.BaseAddress) + mbi.RegionSize;
+	if (address + size > regionEnd)
+		return false;
+
+	return (mbi.Protect & (PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)) != 0;
+#endif
+}
+
 std::uint32_t memory_t::find_process_id(const std::string& process_name)
 {
 	std::uint64_t local_process_id = 0;

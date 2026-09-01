@@ -206,7 +206,16 @@ namespace LoaderUpdate {
         if (!LocalUsermodeExists()) return true;
         if (HasPendingUpdates()) return true;
         if (m.version <= 0) return false;
-        if (LoadLocalVersion() < m.version) return true;
+
+        const int local = LoadLocalVersion();
+        // Never downgrade to an older remote build than what this loader ships with.
+        if (local >= LoaderConfig::kLocalVersion && m.version < LoaderConfig::kLocalVersion)
+            return false;
+        // Already on or ahead of the published manifest version.
+        if (local > 0 && local >= m.version)
+            return false;
+
+        if (local < m.version) return true;
         if (!InstalledDisplayMatches(m.display)) return true;
         return false;
     }
@@ -768,6 +777,10 @@ namespace LoaderUpdate {
         if (progress) progress(1.f, "Up to date");
         SaveInstallRecord(m.version, m.display);
         ApplyPendingUpdates();
+        if (!LocalUsermodeExists() || HasPendingUpdates()) {
+            err = "Usermode install incomplete";
+            return false;
+        }
         return true;
     }
 }
