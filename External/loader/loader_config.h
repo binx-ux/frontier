@@ -27,7 +27,7 @@ namespace LoaderConfig {
     inline constexpr const char* kManifestUrl =
         "https://ahead.best/releases/manifest.json";
     inline constexpr const char* kFallbackUsermodeUrl =
-        "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.21/Frontier.exe";
+        "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.23/Frontier.exe";
     inline constexpr const char* kReleasesPage =
         "https://github.com/binx-ux/frontier-releases/releases/latest";
     inline constexpr const char* kDiscordInvite =

@@ -1,12 +1,13 @@
-{
-  "version": 24,
-  "display": "FRONTIER v1.2.21",
-  "kernel_available": true,
-  "access_required": true,
-  "discord_invite": "https://discord.gg/zHGKqd92Pz",
-  "loader_url": "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.21/FrontierLoader.exe",
-  "zip_url": "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.21/Frontier-v1.2.21.zip",
-  "usermode_url": "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.21/Frontier.exe",
-  "kernel_url": "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.21/Frontier-Kernel.exe",
-  "driver_url": "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.21/FrontierDrv.sys"
-}
+{
+  "version": 26,
+  "display": "FRONTIER v1.2.23",
+  "kernel_available": true,
+  "access_required": true,
+  "discord_invite": "https://discord.gg/zHGKqd92Pz",
+  "loader_url": "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.23/FrontierLoader.exe",
+  "zip_url": "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.23/Frontier-v1.2.23.zip",
+  "usermode_url": "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.23/Frontier.exe",
+  "kernel_url": "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.23/Frontier-Kernel.exe",
+  "driver_url": "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.23/FrontierDrv.sys"
+}
+
