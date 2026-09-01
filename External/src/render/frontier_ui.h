@@ -461,13 +461,8 @@ namespace FrontierUI {
         ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16, 14));
 
-        if (!ImGui::BeginChild("##sec", ImVec2(0, 0),
-            ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Borders, ImGuiWindowFlags_None)) {
-            ImGui::PopStyleVar(2);
-            ImGui::PopStyleColor(2);
-            ImGui::PopID();
-            return false;
-        }
+        const bool visible = ImGui::BeginChild("##sec", ImVec2(0, 0),
+            ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Borders, ImGuiWindowFlags_None);
 
         if (g_cardDepth < 16)
             g_cardOpen[g_cardDepth] = true;
@@ -475,7 +470,7 @@ namespace FrontierUI {
             g_cardOpen[15] = true;
         g_cardDepth++;
 
-        if (title && title[0]) {
+        if (visible && title && title[0]) {
             ImDrawList* dl = ImGui::GetWindowDrawList();
             ImVec2 p = ImGui::GetCursorScreenPos();
             dl->AddRectFilled(
@@ -497,7 +492,7 @@ namespace FrontierUI {
             ImGui::Dummy(ImVec2(0, 6));
         }
 
-        return true;
+        return visible;
     }
 
     inline void EndCard() {
@@ -602,53 +597,57 @@ namespace FrontierUI {
         ImGui::Dummy(ImVec2(0, 4));
     }
 
+    inline void DrawSubTabCellAt(ImVec2 p, const char* label, bool on, bool hov, float tabW, float barH) {
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        ImVec2 btnEnd(p.x + tabW, p.y + barH);
+
+        ImU32 bg = IM_COL32(42, 42, 42, 255);
+        ImU32 border = on ? AccentU32(0.85f) : IM_COL32(255, 255, 255, 25);
+        if (hov && !on) border = IM_COL32(255, 255, 255, 55);
+        dl->AddRectFilled(p, btnEnd, bg, 6.f);
+        dl->AddRect(p, btnEnd, border, 6.f);
+        if (on)
+            dl->AddRectFilled(
+                ImVec2(p.x + 1.f, p.y + 1.f), ImVec2(btnEnd.x - 1.f, btnEnd.y - 1.f),
+                AccentU32(0.08f), 5.f);
+
+        ImVec2 ts = ImGui::CalcTextSize(label);
+        ImU32 tc = on ? AccentU32(1.f)
+            : (hov ? IM_COL32(255, 255, 255, 230) : LabelTextDimCol());
+        dl->AddText(
+            ImVec2(p.x + (tabW - ts.x) * 0.5f, p.y + (barH - ts.y) * 0.5f),
+            tc, label);
+    }
+
     inline void SubTabs(const char* const names[], int count, int* selected) {
         if (!selected || count <= 0) return;
         ImGui::PushID(names[0]);
 
-        const float fullW = ImGui::GetContentRegionAvail().x;
-        const float gap = 8.f;
-        float tabW = (fullW - gap * (count - 1)) / (float)count;
-        if (tabW < 72.f) tabW = 72.f;
         const float barH = 30.f;
+        ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(4.f, 0.f));
+        if (ImGui::BeginTable("##subtabs", count,
+            ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_NoPadOuterX)) {
+            ImGui::TableNextRow(ImGuiTableRowFlags_None, barH);
+            for (int i = 0; i < count; i++) {
+                ImGui::TableSetColumnIndex(i);
+                const float tabW = ImGui::GetContentRegionAvail().x;
+                const bool on = (*selected == i);
+                const ImVec2 p = ImGui::GetCursorScreenPos();
 
-        ImDrawList* dl = ImGui::GetWindowDrawList();
-        ImVec2 rowOrigin = ImGui::GetCursorScreenPos();
+                ImGui::PushID(i);
+                if (ImGui::InvisibleButton("##sub", ImVec2(tabW, barH)))
+                    *selected = i;
+                const bool hov = ImGui::IsItemHovered();
+                ImGui::PopID();
 
-        for (int i = 0; i < count; i++) {
-            if (i) ImGui::SameLine(0, gap);
-            bool on = (*selected == i);
-            ImVec2 p = ImGui::GetCursorScreenPos();
-            ImVec2 btnEnd(p.x + tabW, p.y + barH);
-
-            ImGui::PushID(i);
-            if (ImGui::InvisibleButton("##sub", ImVec2(tabW, barH)))
-                *selected = i;
-            bool hov = ImGui::IsItemHovered();
-            ImGui::PopID();
-
-            ImU32 bg = IM_COL32(42, 42, 42, 255);
-            ImU32 border = on ? AccentU32(0.85f) : IM_COL32(255, 255, 255, 25);
-            if (hov && !on) border = IM_COL32(255, 255, 255, 55);
-            dl->AddRectFilled(p, btnEnd, bg, 6.f);
-            dl->AddRect(p, btnEnd, border, 6.f);
-            if (on)
-                dl->AddRectFilled(
-                    ImVec2(p.x + 1.f, p.y + 1.f), ImVec2(btnEnd.x - 1.f, btnEnd.y - 1.f),
-                    AccentU32(0.08f), 5.f);
-
-            ImVec2 ts = ImGui::CalcTextSize(names[i]);
-            ImU32 tc = on ? AccentU32(1.f)
-                : (hov ? IM_COL32(255, 255, 255, 230) : LabelTextDimCol());
-            dl->AddText(
-                ImVec2(p.x + (tabW - ts.x) * 0.5f, p.y + (barH - ts.y) * 0.5f),
-                tc, names[i]);
-            ImGui::Dummy(ImVec2(tabW, barH));
+                DrawSubTabCellAt(p, names[i], on, hov, tabW, barH);
+            }
+            ImGui::EndTable();
         }
+        ImGui::PopStyleVar();
 
         ImGui::PopID();
         ImGui::Dummy(ImVec2(0, 10));
-        (void)rowOrigin;
     }
 
     inline void SubTabList(const char* const names[], int count, int* selected, float width = 132.f, float height = 0.f) {

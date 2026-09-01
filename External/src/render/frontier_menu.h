@@ -893,91 +893,94 @@ namespace FrontierMenu {
         char fpsBuf[16];
         sprintf_s(fpsBuf, "%d", variables::Perf::currentFps > 0 ? variables::Perf::currentFps : 0);
 
-        if (FrontierUI::BeginCard("Overview", true)) {
-            ImVec2 p = ImGui::GetCursorScreenPos();
-            float w = ImGui::GetContentRegionAvail().x;
-            ImDrawList* dl = ImGui::GetWindowDrawList();
-            dl->AddRectFilledMultiColor(
-                p, ImVec2(p.x + w, p.y + 78.f),
-                IM_COL32(251, 27, 8, 28), IM_COL32(251, 27, 8, 10),
-                IM_COL32(8, 8, 10, 0), IM_COL32(8, 8, 10, 0));
-            dl->AddRectFilled(p, ImVec2(p.x + w, p.y + 78.f), IM_COL32(12, 12, 14, 180), 6.f);
-            dl->AddLine(ImVec2(p.x, p.y), ImVec2(p.x + w, p.y), FrontierUI::AccentSoftU32(0.7f), 2.f);
+        if (FrontierUI::BeginTwoCol("##statusrow1")) {
+            if (FrontierUI::BeginCard("Overview", true)) {
+                ImVec2 p = ImGui::GetCursorScreenPos();
+                float w = ImGui::GetContentRegionAvail().x;
+                ImDrawList* dl = ImGui::GetWindowDrawList();
+                dl->AddRectFilledMultiColor(
+                    p, ImVec2(p.x + w, p.y + 78.f),
+                    IM_COL32(251, 27, 8, 28), IM_COL32(251, 27, 8, 10),
+                    IM_COL32(8, 8, 10, 0), IM_COL32(8, 8, 10, 0));
+                dl->AddRectFilled(p, ImVec2(p.x + w, p.y + 78.f), IM_COL32(12, 12, 14, 180), 6.f);
+                dl->AddLine(ImVec2(p.x, p.y), ImVec2(p.x + w, p.y), FrontierUI::AccentSoftU32(0.7f), 2.f);
 
-            const char* disp = variables::Status::displayName[0] ? variables::Status::displayName : "Guest";
-            const char* user = variables::Status::username[0] ? variables::Status::username : "—";
-            dl->AddText(ImVec2(p.x + 12.f, p.y + 12.f), IM_COL32(255, 255, 255, 245), disp);
-            char userLine[80];
-            sprintf_s(userLine, "@%s", user);
-            dl->AddText(ImVec2(p.x + 12.f, p.y + 32.f), IM_COL32(255, 255, 255, 110), userLine);
+                const char* disp = variables::Status::displayName[0] ? variables::Status::displayName : "Guest";
+                const char* user = variables::Status::username[0] ? variables::Status::username : "—";
+                dl->AddText(ImVec2(p.x + 12.f, p.y + 12.f), IM_COL32(255, 255, 255, 245), disp);
+                char userLine[80];
+                sprintf_s(userLine, "@%s", user);
+                dl->AddText(ImVec2(p.x + 12.f, p.y + 32.f), IM_COL32(255, 255, 255, 110), userLine);
 
-            ImU32 badgeBg = attached ? IM_COL32(34, 120, 62, 220) : IM_COL32(120, 70, 34, 220);
-            ImU32 badgeTx = attached ? IM_COL32(170, 255, 190, 255) : IM_COL32(255, 210, 160, 255);
-            const char* badge = attached ? "IN GAME" : "WAITING";
-            ImVec2 bs = ImGui::CalcTextSize(badge);
-            float bx = p.x + w - bs.x - 22.f;
-            float by = p.y + 14.f;
-            dl->AddRectFilled(ImVec2(bx - 8.f, by - 3.f), ImVec2(bx + bs.x + 8.f, by + bs.y + 3.f), badgeBg, 10.f);
-            dl->AddText(ImVec2(bx, by), badgeTx, badge);
+                ImU32 badgeBg = attached ? IM_COL32(34, 120, 62, 220) : IM_COL32(120, 70, 34, 220);
+                ImU32 badgeTx = attached ? IM_COL32(170, 255, 190, 255) : IM_COL32(255, 210, 160, 255);
+                const char* badge = attached ? "IN GAME" : "WAITING";
+                ImVec2 bs = ImGui::CalcTextSize(badge);
+                float bx = p.x + w - bs.x - 22.f;
+                float by = p.y + 14.f;
+                dl->AddRectFilled(ImVec2(bx - 8.f, by - 3.f), ImVec2(bx + bs.x + 8.f, by + bs.y + 3.f), badgeBg, 10.f);
+                dl->AddText(ImVec2(bx, by), badgeTx, badge);
 
-            const char* gameLbl = Games::IsSupported() ? Games::Name() : "Unsupported / idle";
-            ImU32 gameCol = Games::IsSupported() ? IM_COL32(130, 230, 150, 230) : IM_COL32(255, 170, 120, 220);
-            dl->AddText(ImVec2(p.x + 12.f, p.y + 54.f), gameCol, gameLbl);
+                const char* gameLbl = Games::IsSupported() ? Games::Name() : "Unsupported / idle";
+                ImU32 gameCol = Games::IsSupported() ? IM_COL32(130, 230, 150, 230) : IM_COL32(255, 170, 120, 220);
+                dl->AddText(ImVec2(p.x + 12.f, p.y + 54.f), gameCol, gameLbl);
 
-            ImGui::Dummy(ImVec2(0, 84.f));
+                ImGui::Dummy(ImVec2(0, 84.f));
 
-            if (ImGui::BeginTable("##statrow", 3, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoSavedSettings)) {
-                ImGui::TableNextColumn(); StatusMetric("FPS", fpsBuf, FrontierUI::AccentU32(0.85f));
-                ImGui::TableNextColumn(); StatusMetric("Players", variables::Status::playersOnline);
-                ImGui::TableNextColumn(); StatusMetric("Build", variables::Status::clientVersion);
-                ImGui::EndTable();
+                StatusMetric("FPS", fpsBuf, FrontierUI::AccentU32(0.85f));
+                StatusMetric("Players", variables::Status::playersOnline);
+                StatusMetric("Build", variables::Status::clientVersion);
             }
+            FrontierUI::EndCard();
+
+            FrontierUI::NextCol();
+
+            if (FrontierUI::BeginCard("Account", true)) {
+                StatusFieldRow("Username", variables::Status::username, "Cp");
+                StatusFieldRow("Display", variables::Status::displayName, "Cp2");
+                StatusFieldRow("User ID", variables::Status::userId, "Cp3");
+            }
+            FrontierUI::EndCard();
+
+            FrontierUI::EndTwoCol();
         }
-        FrontierUI::EndCard();
 
-        FrontierUI::BeginTwoCol("##statuscols");
+        if (FrontierUI::BeginTwoCol("##statusrow2")) {
+            if (FrontierUI::BeginCard("Session", true)) {
+                StatusFieldRow("Place ID", variables::Status::placeId, "Cp4");
+                StatusFieldRow("Game ID", variables::Status::gameId, "Cp5");
+                StatusFieldRow("Job ID", variables::Status::jobId, "Cp6");
+                StatusFieldRow("Streamproof", streamOn ? "Active" : "Off");
+            }
+            FrontierUI::EndCard();
 
-        if (FrontierUI::BeginCard("Account", true)) {
-            StatusFieldRow("Username", variables::Status::username, "Cp");
-            StatusFieldRow("Display", variables::Status::displayName, "Cp2");
-            StatusFieldRow("User ID", variables::Status::userId, "Cp3");
+            FrontierUI::NextCol();
+
+            if (FrontierUI::BeginCard("Quick Actions", true)) {
+                float btnW = (ImGui::GetContentRegionAvail().x - 8.f) * 0.5f;
+                if (btnW < 100.f) btnW = -1.f;
+
+                if (StatusActionButton("Refresh", ImVec4(0.14f, 0.14f, 0.16f, 1.f), ImVec4(0.20f, 0.20f, 0.24f, 1.f), ImVec2(btnW, 30.f)))
+                    variables::Status::lastRefresh = 0.f;
+                if (btnW > 0.f) ImGui::SameLine(0, 8);
+                if (StatusActionButton("Copy User ID", ImVec4(0.14f, 0.14f, 0.16f, 1.f), ImVec4(0.20f, 0.20f, 0.24f, 1.f), ImVec2(btnW, 30.f)))
+                    ImGui::SetClipboardText(variables::Status::userId);
+
+                if (StatusActionButton("Open Site", ImVec4(0.16f, 0.10f, 0.10f, 1.f), ImVec4(0.24f, 0.12f, 0.12f, 1.f), ImVec2(btnW, 30.f)))
+                    ShellExecuteA(nullptr, "open", "https://ahead.best/", nullptr, nullptr, SW_SHOWNORMAL);
+                if (btnW > 0.f) ImGui::SameLine(0, 8);
+                if (StatusActionButton("Join Discord", ImVec4(0.12f, 0.13f, 0.20f, 1.f), ImVec4(0.16f, 0.18f, 0.28f, 1.f), ImVec2(btnW, 30.f)))
+                    ShellExecuteA(nullptr, "open", "https://discord.gg/zHGKqd92Pz", nullptr, nullptr, SW_SHOWNORMAL);
+
+                ImGui::Dummy(ImVec2(0, 4));
+                if (StatusActionButton("Exit FRONTIER", ImVec4(0.55f, 0.12f, 0.12f, 1.f), ImVec4(0.70f, 0.16f, 0.16f, 1.f), ImVec2(-1, 34)))
+                    Globals::running = false;
+                ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim), "Closes FRONTIER cleanly.");
+            }
+            FrontierUI::EndCard();
+
+            FrontierUI::EndTwoCol();
         }
-        FrontierUI::EndCard();
-
-        FrontierUI::NextCol();
-
-        if (FrontierUI::BeginCard("Session", true)) {
-            StatusFieldRow("Place ID", variables::Status::placeId, "Cp4");
-            StatusFieldRow("Game ID", variables::Status::gameId, "Cp5");
-            StatusFieldRow("Job ID", variables::Status::jobId, "Cp6");
-            StatusFieldRow("Streamproof", streamOn ? "Active" : "Off");
-        }
-        FrontierUI::EndCard();
-
-        FrontierUI::EndTwoCol();
-
-        if (FrontierUI::BeginCard("Quick Actions", true)) {
-            float btnW = (ImGui::GetContentRegionAvail().x - 8.f) * 0.5f;
-            if (btnW < 100.f) btnW = -1.f;
-
-            if (StatusActionButton("Refresh", ImVec4(0.14f, 0.14f, 0.16f, 1.f), ImVec4(0.20f, 0.20f, 0.24f, 1.f), ImVec2(btnW, 30.f)))
-                variables::Status::lastRefresh = 0.f;
-            if (btnW > 0.f) ImGui::SameLine(0, 8);
-            if (StatusActionButton("Copy User ID", ImVec4(0.14f, 0.14f, 0.16f, 1.f), ImVec4(0.20f, 0.20f, 0.24f, 1.f), ImVec2(btnW, 30.f)))
-                ImGui::SetClipboardText(variables::Status::userId);
-
-            if (StatusActionButton("Open Site", ImVec4(0.16f, 0.10f, 0.10f, 1.f), ImVec4(0.24f, 0.12f, 0.12f, 1.f), ImVec2(btnW, 30.f)))
-                ShellExecuteA(nullptr, "open", "https://trace-host.vercel.app/", nullptr, nullptr, SW_SHOWNORMAL);
-            if (btnW > 0.f) ImGui::SameLine(0, 8);
-            if (StatusActionButton("Join Discord", ImVec4(0.12f, 0.13f, 0.20f, 1.f), ImVec4(0.16f, 0.18f, 0.28f, 1.f), ImVec2(btnW, 30.f)))
-                ShellExecuteA(nullptr, "open", "https://discord.gg/zHGKqd92Pz", nullptr, nullptr, SW_SHOWNORMAL);
-
-            ImGui::Dummy(ImVec2(0, 4));
-            if (StatusActionButton("Exit FRONTIER", ImVec4(0.55f, 0.12f, 0.12f, 1.f), ImVec4(0.70f, 0.16f, 0.16f, 1.f), ImVec2(-1, 34)))
-                Globals::running = false;
-            ImGui::TextColored(FrontierUI::V4(variables::Theme::textDim), "Closes FRONTIER cleanly.");
-        }
-        FrontierUI::EndCard();
 
         ImGui::PopStyleVar();
     }
