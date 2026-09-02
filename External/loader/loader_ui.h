@@ -322,13 +322,13 @@ namespace LoaderUI {
     inline RECT TraceProductRect()
     {
         RECT r = ContentRect();
-        return RECT{ r.left, r.top + 58, r.right, r.top + 58 + 64 };
+        return RECT{ r.left, r.top + 58, r.right, r.top + 58 + 72 };
     }
 
     inline RECT FrontierProductRect()
     {
         RECT r = ContentRect();
-        return RECT{ r.left, r.top + 130, r.right, r.top + 130 + 64 };
+        return RECT{ r.left, r.top + 138, r.right, r.top + 138 + 72 };
     }
 
     inline RECT GamePanelRect()
@@ -613,12 +613,12 @@ namespace LoaderUI {
 
         SelectObject(hdc, gFont);
         SetTextColor(hdc, locked ? LoaderConfig::kWarning : LoaderConfig::kTextDim);
-        RECT lineRc{ x + 18, rc.top + 30, rc.right - 28, rc.top + 46 };
+        RECT lineRc{ x + 18, rc.top + 30, rc.right - 28, rc.top + 48 };
         DrawTextA(hdc, line, -1, &lineRc, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS);
 
         SetTextColor(hdc, LoaderConfig::kTextMuted);
-        RECT hintRc{ x + 18, rc.top + 46, rc.right - 28, rc.bottom - 10 };
-        DrawTextA(hdc, hint, -1, &hintRc, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS);
+        RECT hintRc{ x + 18, rc.top + 48, rc.right - 28, rc.bottom - 8 };
+        DrawTextA(hdc, hint, -1, &hintRc, DT_LEFT | DT_WORDBREAK | DT_END_ELLIPSIS);
 
         SelectObject(hdc, gFontBold);
         SetTextColor(hdc, hot ? accent : LoaderConfig::kTextMuted);
@@ -628,22 +628,30 @@ namespace LoaderUI {
 
     inline void DrawProducts(HDC hdc, const State* s)
     {
-        const char* sub = !s || !s->authenticated
-            ? "TRACE is free. Enter your key for FRONTIER."
-            : (s->licenseActive
-                ? "Pick a product to launch."
-                : "Key saved. Purchase FRONTIER to unlock the external.");
+        const bool hasKey = s && s->authenticated;
+        const bool licensed = s && s->licenseActive;
+        const char* sub = !hasKey
+            ? "TRACE is free. Activate your key for FRONTIER."
+            : (licensed
+                ? "Ready to launch."
+                : "Key saved — purchase at ahead.best to unlock.");
         DrawSectionTitle(hdc, "Products", sub);
         const bool frontierDown = LoaderConfig::kFrontierMaintenance;
-        const bool frontierLocked = !s || !s->authenticated || !s->licenseActive;
+        const bool frontierLocked = !hasKey || !licensed;
+        const char* frontierHint = frontierDown
+            ? LoaderConfig::kFrontierMaintenanceMsg
+            : (!hasKey
+                ? "Activate your key first"
+                : (!licensed
+                    ? "Buy at ahead.best to unlock"
+                    : "Usermode or Kernel mode"));
         DrawProductRow(hdc, TraceProductRect(), "TRACE",
             LoaderProducts::ProductTagline(LoaderProducts::ProductTrace),
             "Copies loadstring to clipboard",
             LoaderConfig::kTraceAccent, gHover == HoverProductTrace, false);
         DrawProductRow(hdc, FrontierProductRect(), "FRONTIER",
             LoaderProducts::ProductTagline(LoaderProducts::ProductFrontier),
-            frontierDown ? LoaderConfig::kFrontierMaintenanceMsg
-                : (frontierLocked ? "Enter your license key" : "Launch external"),
+            frontierHint,
             LoaderConfig::kFrontierAccent, gHover == HoverProductFrontier,
             frontierLocked || frontierDown);
     }
@@ -709,7 +717,7 @@ namespace LoaderUI {
             DrawButton(hdc, AuthContinueRect(s), "Continue", true, gHover == HoverPrimary);
             DrawGhostButton(hdc, SignOutButtonRect(), "Clear key", gHover == HoverSignOut);
         } else {
-            DrawSectionTitle(hdc, "Activate", "Enter your FRONTIER license key.");
+            DrawSectionTitle(hdc, "Activate", "Paste your FRONTIER license key.");
             DrawInputChrome(hdc);
             if (s->authStatus[0]) {
                 SelectObject(hdc, gFont);
@@ -745,7 +753,7 @@ namespace LoaderUI {
         TextOutA(hdc, ip.left + 12, ip.top + 14, buf, (int)strlen(buf));
         if (s->authenticated) {
             SetTextColor(hdc, s->licenseActive ? LoaderConfig::kSuccess : LoaderConfig::kWarning);
-            const char* lic = s->licenseActive ? "License: active" : "License: purchase required";
+            const char* lic = s->licenseActive ? "License: active" : "License: not active";
             TextOutA(hdc, ip.left + 12, ip.top + 34, lic, (int)strlen(lic));
         }
         DrawButton(hdc, LaunchButtonRect(), "Start", true, gHover == HoverPrimary);

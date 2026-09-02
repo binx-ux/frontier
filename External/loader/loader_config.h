@@ -10,9 +10,9 @@ namespace LoaderConfig {
 
 
 
-    inline constexpr int kLocalVersion = 38;
+    inline constexpr int kLocalVersion = 39;
 
-    inline constexpr const char* kDisplayVersion = "v1.2.34";
+    inline constexpr const char* kDisplayVersion = "v1.2.35";
 
     inline constexpr const char* kProductLine = "AHEAD Products";
 
@@ -66,7 +66,7 @@ namespace LoaderConfig {
 
         "FRONTIER is temporarily down. Check ahead.best for status.";
 
-    inline constexpr const char* kKernelModeTag = "Testing";
+    inline constexpr const char* kKernelModeTag = "Kernel";
 
 
 
