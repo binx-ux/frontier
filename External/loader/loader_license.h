@@ -61,6 +61,12 @@ namespace LoaderLicense {
             strncpy_s(out, outSz, "No account found for that email. Use your purchase email.", _TRUNCATE);
         else if (_stricmp(raw, "invalid_password") == 0 || _stricmp(raw, "password_required") == 0)
             strncpy_s(out, outSz, "Incorrect password for this account.", _TRUNCATE);
+        else if (_stricmp(raw, "email_not_verified") == 0)
+            strncpy_s(out, outSz, "Verify your email on ahead.best before signing in.", _TRUNCATE);
+        else if (_stricmp(raw, "missing_credentials") == 0)
+            strncpy_s(out, outSz, "Enter your email and password.", _TRUNCATE);
+        else if (_stricmp(raw, "bind_failed") == 0)
+            strncpy_s(out, outSz, "Could not bind this PC. Try again in a minute.", _TRUNCATE);
         else if (_stricmp(raw, "forbidden") == 0)
             strncpy_s(out, outSz, "License server rejected the request. Try again later.", _TRUNCATE);
         else
@@ -81,6 +87,34 @@ namespace LoaderLicense {
         memcpy(out, json.data() + p, n);
         out[n] = 0;
         return true;
+    }
+
+    inline bool ParseJsonStrLast(const std::string& json, const char* key, char* out, size_t outSz)
+    {
+        out[0] = 0;
+        std::string needle = std::string("\"") + key + "\":\"";
+        size_t p = json.rfind(needle);
+        if (p == std::string::npos) return false;
+        p += needle.size();
+        size_t e = json.find('"', p);
+        if (e == std::string::npos) return false;
+        size_t n = e - p;
+        if (n >= outSz) n = outSz - 1;
+        memcpy(out, json.data() + p, n);
+        out[n] = 0;
+        return true;
+    }
+
+    inline void ParseApiMessage(const std::string& json, char* out, size_t outSz)
+    {
+        if (!out || outSz < 2) return;
+        out[0] = 0;
+        char errCode[64]{};
+        if (ParseJsonStr(json, "error", errCode, sizeof(errCode)) && errCode[0]) {
+            FriendlyLicenseError(errCode, out, outSz);
+            return;
+        }
+        ParseJsonStrLast(json, "message", out, outSz);
     }
 
     inline bool ParseJsonBool(const std::string& json, const char* key, bool fallback)
@@ -192,8 +226,9 @@ namespace LoaderLicense {
         WritePrivateProfileStringW(L"license", nullptr, nullptr, ini.c_str());
     }
 
-    inline bool ValidateTokenRemote(const char* token, const char* hwid, std::string& err)
+    inline bool ValidateTokenRemote(const char* token, const char* hwid, bool* outLicensed, std::string& err)
     {
+        if (outLicensed) *outLicensed = false;
         if (!token || !token[0]) {
             err = "Not signed in";
             return false;
@@ -204,17 +239,18 @@ namespace LoaderLicense {
         std::string resp;
         if (!LoaderUpdate::HttpGet(url, resp, err))
             return false;
-        if (!ParseJsonBool(resp, "ok", false) || !ParseJsonBool(resp, "allowed", false)) {
+        if (!ParseJsonBool(resp, "ok", false)) {
             char msg[256]{};
-            ParseJsonStr(resp, "message", msg, sizeof(msg));
-            if (!msg[0]) ParseJsonStr(resp, "error", msg, sizeof(msg));
-            err = msg[0] ? msg : "License expired or revoked";
+            ParseApiMessage(resp, msg, sizeof(msg));
+            err = msg[0] ? msg : "Session expired. Sign in again.";
             return false;
         }
+        const bool licensed = ParseJsonBool(resp, "allowed", ParseJsonBool(resp, "licensed", true));
+        if (outLicensed) *outLicensed = licensed;
         return true;
     }
 
-    inline bool ActivateEmail(const char* email, const char* password, const char* hwid, char* outToken, size_t tokenSz, char* outMsg, size_t msgSz, std::string& err)
+    inline bool ActivateEmail(const char* email, const char* password, const char* hwid, char* outToken, size_t tokenSz, char* outMsg, size_t msgSz, bool* outLicensed, std::string& err)
     {
         if (outToken && tokenSz) outToken[0] = 0;
         if (outMsg && msgSz) outMsg[0] = 0;
@@ -232,27 +268,29 @@ namespace LoaderLicense {
         std::string resp;
         if (!LoaderUpdate::HttpPost(LoaderConfig::kLicenseApi, "application/json", body, resp, err))
             return false;
-        if (!ParseJsonBool(resp, "ok", false) || !ParseJsonBool(resp, "allowed", false)) {
-            ParseJsonStr(resp, "message", outMsg, msgSz);
-            if (!outMsg || !outMsg[0]) ParseJsonStr(resp, "error", outMsg, msgSz);
+        if (!ParseJsonBool(resp, "ok", false)) {
             char friendly[256]{};
-            const char* raw = outMsg && outMsg[0] ? outMsg : err.c_str();
-            FriendlyLicenseError(raw, friendly, sizeof(friendly));
+            ParseApiMessage(resp, friendly, sizeof(friendly));
+            if (!friendly[0]) strncpy_s(friendly, err.c_str(), _TRUNCATE);
             err = friendly;
             if (outMsg && msgSz) strncpy_s(outMsg, msgSz, friendly, _TRUNCATE);
             return false;
         }
         ParseJsonStr(resp, "token", outToken, tokenSz);
-        ParseJsonStr(resp, "message", outMsg, msgSz);
         if (!outToken || !outToken[0]) {
             err = "Bad license response";
             return false;
         }
+        const bool licensed = ParseJsonBool(resp, "allowed", ParseJsonBool(resp, "licensed", true));
+        if (outLicensed) *outLicensed = licensed;
+        ParseJsonStrLast(resp, "message", outMsg, msgSz);
+        if (outMsg && msgSz && !outMsg[0])
+            strncpy_s(outMsg, msgSz, licensed ? "Signed in." : "Signed in. Purchase FRONTIER to unlock.", _TRUNCATE);
         SaveLicense(outToken, hwid, email);
         return true;
     }
 
-    inline bool ActivateKey(const char* key, const char* password, const char* hwid, char* outToken, size_t tokenSz, char* outMsg, size_t msgSz, std::string& err)
+    inline bool ActivateKey(const char* key, const char* password, const char* hwid, char* outToken, size_t tokenSz, char* outMsg, size_t msgSz, bool* outLicensed, std::string& err)
     {
         if (outToken && tokenSz) outToken[0] = 0;
         if (outMsg && msgSz) outMsg[0] = 0;
@@ -270,22 +308,24 @@ namespace LoaderLicense {
         std::string resp;
         if (!LoaderUpdate::HttpPost(LoaderConfig::kLicenseApi, "application/json", body, resp, err))
             return false;
-        if (!ParseJsonBool(resp, "ok", false) || !ParseJsonBool(resp, "allowed", false)) {
-            ParseJsonStr(resp, "message", outMsg, msgSz);
-            if (!outMsg || !outMsg[0]) ParseJsonStr(resp, "error", outMsg, msgSz);
+        if (!ParseJsonBool(resp, "ok", false)) {
             char friendly[256]{};
-            const char* raw = outMsg && outMsg[0] ? outMsg : err.c_str();
-            FriendlyLicenseError(raw, friendly, sizeof(friendly));
+            ParseApiMessage(resp, friendly, sizeof(friendly));
+            if (!friendly[0]) strncpy_s(friendly, err.c_str(), _TRUNCATE);
             err = friendly;
             if (outMsg && msgSz) strncpy_s(outMsg, msgSz, friendly, _TRUNCATE);
             return false;
         }
         ParseJsonStr(resp, "token", outToken, tokenSz);
-        ParseJsonStr(resp, "message", outMsg, msgSz);
         if (!outToken || !outToken[0]) {
             err = "Bad license response";
             return false;
         }
+        const bool licensed = ParseJsonBool(resp, "allowed", ParseJsonBool(resp, "licensed", true));
+        if (outLicensed) *outLicensed = licensed;
+        ParseJsonStrLast(resp, "message", outMsg, msgSz);
+        if (outMsg && msgSz && !outMsg[0])
+            strncpy_s(outMsg, msgSz, licensed ? "License active." : "Signed in. Purchase FRONTIER to unlock.", _TRUNCATE);
         SaveLicense(outToken, hwid, nullptr, key);
         return true;
     }

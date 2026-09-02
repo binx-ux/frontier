@@ -76,10 +76,12 @@ namespace LoaderUI {
         bool indeterminate = false;
         bool filesReady = false;
         bool authenticated = false;
+        bool licenseActive = false;
         bool authBusy = false;
+        int authStatusTone = 0; // 0=hint, 1=busy, 2=error, 3=success
         char licenseToken[768] = "";
         char licenseHwid[64] = "";
-        char authStatus[256] = "Enter your email and password.";
+        char authStatus[256] = "";
         char signedInAs[64] = "";
         LoaderUpdate::Manifest manifest{};
         int selectedProduct = LoaderProducts::ProductNone;
@@ -137,6 +139,7 @@ namespace LoaderUI {
 
     struct AuthDonePayload {
         bool ok = false;
+        bool licensed = false;
         char status[256]{};
         char token[768]{};
         char signedInAs[64]{};
@@ -144,6 +147,7 @@ namespace LoaderUI {
 
     struct BootDoneMsg {
         bool authenticated = false;
+        bool licenseActive = false;
         char authStatus[256]{};
         char licenseToken[768]{};
         char licenseHwid[64]{};
@@ -202,6 +206,14 @@ namespace LoaderUI {
     {
         if (!s || !msg) return;
         strncpy_s(s->status, msg, _TRUNCATE);
+        RequestRedraw();
+    }
+
+    inline void SetAuthStatus(State* s, const char* msg, int tone = 0)
+    {
+        if (!s || !msg) return;
+        strncpy_s(s->authStatus, msg, _TRUNCATE);
+        s->authStatusTone = tone;
         RequestRedraw();
     }
 
@@ -449,6 +461,9 @@ namespace LoaderUI {
         FillVerticalGradient(hdc, client, LoaderConfig::kBgTop, LoaderConfig::kBgBottom);
         RECT brand = BrandPanelRect();
         FillVerticalGradient(hdc, brand, RGB(14, 15, 20), RGB(9, 10, 14));
+        RECT content = ContentRect();
+        InflateRect(&content, 8, 4);
+        FillRoundRect(hdc, content, RGB(12, 16, 24), RGB(24, 30, 42), 12);
         RECT sep{ brand.right - 1, brand.top, brand.right, brand.bottom };
         HBRUSH b = CreateSolidBrush(LoaderConfig::kBorder);
         FillRect(hdc, &sep, b);
@@ -475,7 +490,7 @@ namespace LoaderUI {
         SelectObject(hdc, gFont);
         SetTextColor(hdc, LoaderConfig::kTextDim);
         char sub[64];
-        sprintf_s(sub, "%s · ahead.best", LoaderConfig::kDisplayVersion);
+        sprintf_s(sub, "%s - ahead.best", LoaderConfig::kDisplayVersion);
         RECT subRc{ panel.left + 28, cy + 22, panel.right - 16, cy + 42 };
         DrawTextA(hdc, sub, -1, &subRc, DT_LEFT | DT_SINGLELINE);
 
@@ -526,8 +541,12 @@ namespace LoaderUI {
 
     inline void DrawInputChrome(HDC hdc)
     {
-        FillRoundRect(hdc, KeyFieldRect(), LoaderConfig::kInputBg, LoaderConfig::kInputBorder, 6);
-        FillRoundRect(hdc, PasswordFieldRect(), LoaderConfig::kInputBg, LoaderConfig::kInputBorder, 6);
+        const bool emailFocus = gKeyEdit && GetFocus() == gKeyEdit;
+        const bool passFocus = gPassEdit && GetFocus() == gPassEdit;
+        FillRoundRect(hdc, KeyFieldRect(), LoaderConfig::kInputBg,
+            emailFocus ? LoaderConfig::kBorderActive : LoaderConfig::kInputBorder, 6);
+        FillRoundRect(hdc, PasswordFieldRect(), LoaderConfig::kInputBg,
+            passFocus ? LoaderConfig::kBorderActive : LoaderConfig::kInputBorder, 6);
         if (!gKeyEdit || !IsWindowVisible(gKeyEdit) || !GetWindowTextLengthA(gKeyEdit)) {
             SelectObject(hdc, gFont);
             SetTextColor(hdc, LoaderConfig::kTextPlaceholder);
@@ -608,7 +627,7 @@ namespace LoaderUI {
         SelectObject(hdc, gFont);
         SetTextColor(hdc, locked ? LoaderConfig::kWarning : LoaderConfig::kTextDim);
         RECT lineRc{ x + 18, rc.top + 30, rc.right - 28, rc.top + 46 };
-        DrawTextA(hdc, locked ? "Sign in required" : line, -1, &lineRc, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS);
+        DrawTextA(hdc, line, -1, &lineRc, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS);
 
         SetTextColor(hdc, LoaderConfig::kTextMuted);
         RECT hintRc{ x + 18, rc.top + 46, rc.right - 28, rc.bottom - 10 };
@@ -622,20 +641,24 @@ namespace LoaderUI {
 
     inline void DrawProducts(HDC hdc, const State* s)
     {
-        const char* sub = s && s->authenticated
-            ? "Pick a product. FRONTIER requires your license."
-            : "TRACE is free. Sign in for FRONTIER.";
+        const char* sub = !s || !s->authenticated
+            ? "TRACE is free. Sign in for FRONTIER."
+            : (s->licenseActive
+                ? "Pick a product to launch."
+                : "Signed in. Purchase FRONTIER to unlock the external.");
         DrawSectionTitle(hdc, "Products", sub);
         const bool frontierDown = LoaderConfig::kFrontierMaintenance;
+        const bool frontierLocked = !s || !s->authenticated || !s->licenseActive;
         DrawProductRow(hdc, TraceProductRect(), "TRACE",
             LoaderProducts::ProductTagline(LoaderProducts::ProductTrace),
             "Copies loadstring to clipboard",
             LoaderConfig::kTraceAccent, gHover == HoverProductTrace, false);
         DrawProductRow(hdc, FrontierProductRect(), "FRONTIER",
             LoaderProducts::ProductTagline(LoaderProducts::ProductFrontier),
-            frontierDown ? LoaderConfig::kFrontierMaintenanceMsg : "Launch external after sign-in",
+            frontierDown ? LoaderConfig::kFrontierMaintenanceMsg
+                : (frontierLocked ? "Sign in with a licensed account" : "Launch external"),
             LoaderConfig::kFrontierAccent, gHover == HoverProductFrontier,
-            s && !s->authenticated);
+            frontierLocked || frontierDown);
     }
 
     inline void DrawModeCard(HDC hdc, const State* s, int idx, int mode, const char* label, bool hot)
@@ -703,7 +726,11 @@ namespace LoaderUI {
             DrawInputChrome(hdc);
             if (s->authStatus[0]) {
                 SelectObject(hdc, gFont);
-                SetTextColor(hdc, RGB(255, 140, 150));
+                COLORREF tone = LoaderConfig::kTextMuted;
+                if (s->authStatusTone == 1) tone = LoaderConfig::kAccentLight;
+                else if (s->authStatusTone == 2) tone = RGB(255, 140, 150);
+                else if (s->authStatusTone == 3) tone = LoaderConfig::kSuccess;
+                SetTextColor(hdc, tone);
                 DrawTextA(hdc, s->authStatus, -1, &AuthStatusRect(), DT_LEFT | DT_WORDBREAK);
             }
             const char* label = s->authBusy ? "Please wait..." : "Sign in";
@@ -730,8 +757,9 @@ namespace LoaderUI {
         sprintf_s(buf, "Mode: %s  |  %s", mode, LoaderConfig::kDisplayVersion);
         TextOutA(hdc, ip.left + 12, ip.top + 14, buf, (int)strlen(buf));
         if (s->authenticated) {
-            SetTextColor(hdc, LoaderConfig::kSuccess);
-            TextOutA(hdc, ip.left + 12, ip.top + 34, "License: active", 15);
+            SetTextColor(hdc, s->licenseActive ? LoaderConfig::kSuccess : LoaderConfig::kWarning);
+            const char* lic = s->licenseActive ? "License: active" : "License: purchase required";
+            TextOutA(hdc, ip.left + 12, ip.top + 34, lic, (int)strlen(lic));
         }
         DrawButton(hdc, LaunchButtonRect(), "Start", true, gHover == HoverPrimary);
     }
@@ -960,8 +988,8 @@ namespace LoaderUI {
     inline void RunLaunch(State* s)
     {
         if (!s) return;
-        if (!s->authenticated || !s->licenseToken[0]) {
-            ShowMessage(L"Activate your license before launching.", MB_OK | MB_ICONWARNING);
+        if (!s->authenticated || !s->licenseToken[0] || !s->licenseActive) {
+            ShowMessage(L"Activate your FRONTIER license before launching.", MB_OK | MB_ICONWARNING);
             return;
         }
         if (s->selectedMode == 1 && !LoaderUpdate::ProbeKernelAvailable()) {
@@ -1009,13 +1037,15 @@ namespace LoaderUI {
         if (!s || !p) return;
         if (p->ok) {
             strncpy_s(s->licenseToken, p->token, _TRUNCATE);
-            strncpy_s(s->authStatus, p->status, _TRUNCATE);
+            s->licenseActive = p->licensed;
+            SetAuthStatus(s, p->status, p->licensed ? 3 : 0);
             if (p->signedInAs[0])
                 strncpy_s(s->signedInAs, p->signedInAs, _TRUNCATE);
             s->authenticated = true;
         } else {
-            strncpy_s(s->authStatus, p->status, _TRUNCATE);
+            SetAuthStatus(s, p->status, 2);
             s->authenticated = false;
+            s->licenseActive = false;
         }
         s->authBusy = false;
         RefreshAuthUi(s);
@@ -1087,18 +1117,18 @@ namespace LoaderUI {
         if (gPassEdit && IsWindow(gPassEdit))
             GetWindowTextA(gPassEdit, pass, sizeof(pass));
         if (!email[0]) {
-            strncpy_s(s->authStatus, "Enter your account email.", _TRUNCATE);
+            SetAuthStatus(s, "Enter your account email.", 2);
             RefreshAuthUi(s);
             return;
         }
         if (!pass[0]) {
-            strncpy_s(s->authStatus, "Enter your account password.", _TRUNCATE);
+            SetAuthStatus(s, "Enter your account password.", 2);
             RefreshAuthUi(s);
             return;
         }
         SetWindowTextA(gKeyEdit, email);
         s->authBusy = true;
-        strncpy_s(s->authStatus, "Signing in...", _TRUNCATE);
+        SetAuthStatus(s, "Signing in...", 1);
         RefreshAuthUi(s);
         const std::string hw = s->licenseHwid[0] ? s->licenseHwid : LoaderLicense::GetHwid();
         strncpy_s(s->licenseHwid, hw.c_str(), _TRUNCATE);
@@ -1108,9 +1138,11 @@ namespace LoaderUI {
             auto* payload = new AuthDonePayload{};
             char token[768]{}, msg[256]{};
             std::string err;
+            bool licensed = false;
             const bool ok = LoaderLicense::ActivateEmail(emailCopy.c_str(), passCopy.c_str(), hw.c_str(),
-                token, sizeof(token), msg, sizeof(msg), err);
+                token, sizeof(token), msg, sizeof(msg), &licensed, err);
             payload->ok = ok;
+            payload->licensed = licensed;
             if (ok) {
                 strncpy_s(payload->token, token, _TRUNCATE);
                 strncpy_s(payload->status, msg[0] ? msg : "Signed in.", _TRUNCATE);
@@ -1131,7 +1163,8 @@ namespace LoaderUI {
         s->licenseToken[0] = 0;
         s->signedInAs[0] = 0;
         s->authenticated = false;
-        strncpy_s(s->authStatus, "Signed out.", _TRUNCATE);
+        s->licenseActive = false;
+        SetAuthStatus(s, "Signed out.", 0);
         RefreshAuthUi(s);
     }
 
@@ -1156,14 +1189,17 @@ namespace LoaderUI {
             if (token[0]) {
                 strncpy_s(msg->licenseToken, token, _TRUNCATE);
                 std::string err;
-                if (LoaderLicense::ValidateTokenRemote(token, currentHw.c_str(), err)) {
+                bool licensed = false;
+                if (LoaderLicense::ValidateTokenRemote(token, currentHw.c_str(), &licensed, err)) {
                     msg->authenticated = true;
-                    strncpy_s(msg->authStatus, "License active on this PC.", _TRUNCATE);
+                    msg->licenseActive = licensed;
+                    strncpy_s(msg->authStatus, licensed ? "License active on this PC." : "Signed in.", _TRUNCATE);
                 } else if (IsHardLicenseError(err)) {
                     LoaderLicense::ClearLicense();
                     strncpy_s(msg->authStatus, err.c_str(), _TRUNCATE);
                 } else {
                     msg->authenticated = true;
+                    msg->licenseActive = true;
                     strncpy_s(msg->authStatus, "Offline mode - saved license kept.", _TRUNCATE);
                 }
             }
@@ -1215,6 +1251,10 @@ namespace LoaderUI {
             if (!s->authenticated) {
                 ShowMessage(L"Sign in with your email to launch FRONTIER.");
                 TransitionToScreen(s, ScreenAuth);
+                return;
+            }
+            if (!s->licenseActive) {
+                ShowMessage(L"Your account is signed in but FRONTIER is not licensed yet.\nPurchase at ahead.best or redeem a key in the hub.");
                 return;
             }
             s->selectedProduct = LoaderProducts::ProductFrontier;
@@ -1363,7 +1403,11 @@ namespace LoaderUI {
                 if (boot->licenseToken[0])
                     strncpy_s(s->licenseToken, boot->licenseToken, _TRUNCATE);
                 s->authenticated = boot->authenticated;
-                if (boot->authStatus[0]) strncpy_s(s->authStatus, boot->authStatus, _TRUNCATE);
+                s->licenseActive = boot->licenseActive;
+                if (boot->authStatus[0]) {
+                    strncpy_s(s->authStatus, boot->authStatus, _TRUNCATE);
+                    s->authStatusTone = boot->licenseActive ? 3 : 0;
+                }
                 if (boot->signedInAs[0]) strncpy_s(s->signedInAs, boot->signedInAs, _TRUNCATE);
                 RefreshAuthUi(s);
             }
