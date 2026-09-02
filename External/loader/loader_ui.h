@@ -284,13 +284,13 @@ namespace LoaderUI {
     inline RECT AuthStatusRect()
     {
         RECT r = ContentRect();
-        return RECT{ r.left, r.top + 116, r.right, r.top + 136 };
+        return RECT{ r.left, r.top + 86, r.right, r.top + 110 };
     }
 
     inline RECT PrimaryButtonRect()
     {
         RECT r = ContentRect();
-        return RECT{ r.left, r.top + 144, r.right, r.top + 172 };
+        return RECT{ r.left, r.top + 118, r.right, r.top + 146 };
     }
 
     inline RECT SignOutButtonRect()
@@ -302,7 +302,7 @@ namespace LoaderUI {
     inline RECT GuestButtonRect()
     {
         RECT r = ContentRect();
-        return RECT{ r.left, r.top + 180, r.right, r.top + 208 };
+        return RECT{ r.left, r.top + 154, r.right, r.top + 182 };
     }
 
     inline RECT AuthContinueRect(const State* s)
@@ -377,12 +377,8 @@ namespace LoaderUI {
             field.bottom - field.top - 10,
             SWP_NOZORDER | SWP_NOACTIVATE);
         if (gPassEdit && IsWindow(gPassEdit)) {
-            RECT pass = PasswordFieldRect();
-            SetWindowPos(gPassEdit, nullptr,
-                pass.left + pad, pass.top + 5,
-                pass.right - pass.left - pad * 2,
-                pass.bottom - pass.top - 10,
-                SWP_NOZORDER | SWP_NOACTIVATE);
+            ShowWindow(gPassEdit, SW_HIDE);
+            EnableWindow(gPassEdit, FALSE);
         }
     }
 
@@ -396,17 +392,18 @@ namespace LoaderUI {
 
     inline void SetPassEditVisible(bool visible)
     {
-        if (!gPassEdit || !IsWindow(gPassEdit)) return;
-        RepositionKeyEdit();
-        ShowWindow(gPassEdit, visible ? SW_SHOW : SW_HIDE);
-        EnableWindow(gPassEdit, visible && !(gState && gState->authBusy));
+        (void)visible;
+        if (gPassEdit && IsWindow(gPassEdit)) {
+            ShowWindow(gPassEdit, SW_HIDE);
+            EnableWindow(gPassEdit, FALSE);
+        }
     }
 
     inline void SyncAuthFields(State* s)
     {
         const bool show = s && s->screen == ScreenAuth && !s->authenticated;
         SetKeyEditVisible(show);
-        SetPassEditVisible(show);
+        SetPassEditVisible(false);
     }
 
     inline void TransitionToScreen(State* s, Screen next)
@@ -541,25 +538,15 @@ namespace LoaderUI {
 
     inline void DrawInputChrome(HDC hdc)
     {
-        const bool emailFocus = gKeyEdit && GetFocus() == gKeyEdit;
-        const bool passFocus = gPassEdit && GetFocus() == gPassEdit;
+        const bool keyFocus = gKeyEdit && GetFocus() == gKeyEdit;
         FillRoundRect(hdc, KeyFieldRect(), LoaderConfig::kInputBg,
-            emailFocus ? LoaderConfig::kBorderActive : LoaderConfig::kInputBorder, 6);
-        FillRoundRect(hdc, PasswordFieldRect(), LoaderConfig::kInputBg,
-            passFocus ? LoaderConfig::kBorderActive : LoaderConfig::kInputBorder, 6);
+            keyFocus ? LoaderConfig::kBorderActive : LoaderConfig::kInputBorder, 6);
         if (!gKeyEdit || !IsWindowVisible(gKeyEdit) || !GetWindowTextLengthA(gKeyEdit)) {
             SelectObject(hdc, gFont);
             SetTextColor(hdc, LoaderConfig::kTextPlaceholder);
             RECT hint = KeyFieldRect();
             hint.left += 10;
-            DrawTextA(hdc, "Email", -1, &hint, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-        }
-        if (!gPassEdit || !IsWindowVisible(gPassEdit) || !GetWindowTextLengthA(gPassEdit)) {
-            SelectObject(hdc, gFont);
-            SetTextColor(hdc, LoaderConfig::kTextPlaceholder);
-            RECT hint = PasswordFieldRect();
-            hint.left += 10;
-            DrawTextA(hdc, "Password", -1, &hint, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+            DrawTextA(hdc, "License key", -1, &hint, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
         }
     }
 
@@ -642,10 +629,10 @@ namespace LoaderUI {
     inline void DrawProducts(HDC hdc, const State* s)
     {
         const char* sub = !s || !s->authenticated
-            ? "TRACE is free. Sign in for FRONTIER."
+            ? "TRACE is free. Enter your key for FRONTIER."
             : (s->licenseActive
                 ? "Pick a product to launch."
-                : "Signed in. Purchase FRONTIER to unlock the external.");
+                : "Key saved. Purchase FRONTIER to unlock the external.");
         DrawSectionTitle(hdc, "Products", sub);
         const bool frontierDown = LoaderConfig::kFrontierMaintenance;
         const bool frontierLocked = !s || !s->authenticated || !s->licenseActive;
@@ -656,7 +643,7 @@ namespace LoaderUI {
         DrawProductRow(hdc, FrontierProductRect(), "FRONTIER",
             LoaderProducts::ProductTagline(LoaderProducts::ProductFrontier),
             frontierDown ? LoaderConfig::kFrontierMaintenanceMsg
-                : (frontierLocked ? "Sign in with a licensed account" : "Launch external"),
+                : (frontierLocked ? "Enter your license key" : "Launch external"),
             LoaderConfig::kFrontierAccent, gHover == HoverProductFrontier,
             frontierLocked || frontierDown);
     }
@@ -715,14 +702,14 @@ namespace LoaderUI {
         if (s->authenticated) {
             char sub[96];
             if (s->signedInAs[0])
-                sprintf_s(sub, "Signed in as %s", s->signedInAs);
+                sprintf_s(sub, "Key %s", s->signedInAs);
             else
                 strncpy_s(sub, "License active on this PC.", _TRUNCATE);
-            DrawSectionTitle(hdc, "Welcome back", sub);
+            DrawSectionTitle(hdc, "Activated", sub);
             DrawButton(hdc, AuthContinueRect(s), "Continue", true, gHover == HoverPrimary);
-            DrawGhostButton(hdc, SignOutButtonRect(), "Sign out", gHover == HoverSignOut);
+            DrawGhostButton(hdc, SignOutButtonRect(), "Clear key", gHover == HoverSignOut);
         } else {
-            DrawSectionTitle(hdc, "Sign in", "Email + account password.");
+            DrawSectionTitle(hdc, "Activate", "Enter your FRONTIER license key.");
             DrawInputChrome(hdc);
             if (s->authStatus[0]) {
                 SelectObject(hdc, gFont);
@@ -733,7 +720,7 @@ namespace LoaderUI {
                 SetTextColor(hdc, tone);
                 DrawTextA(hdc, s->authStatus, -1, &AuthStatusRect(), DT_LEFT | DT_WORDBREAK);
             }
-            const char* label = s->authBusy ? "Please wait..." : "Sign in";
+            const char* label = s->authBusy ? "Please wait..." : "Activate";
             DrawButton(hdc, PrimaryButtonRect(), label, !s->authBusy, gHover == HoverActivate);
             DrawGhostButton(hdc, GuestButtonRect(), "Browse free products", gHover == HoverGuest);
         }
@@ -1056,19 +1043,20 @@ namespace LoaderUI {
         }
     }
 
-    inline void NormalizeEmailInput(const char* in, char* out, size_t outSz)
+    inline void MaskKeyDisplay(const char* key, char* out, size_t outSz)
     {
         if (!out || outSz == 0) return;
         out[0] = 0;
-        if (!in) return;
-        size_t j = 0;
-        for (size_t i = 0; in[i] && j + 1 < outSz; i++) {
-            char c = in[i];
-            if (c == ' ' || c == '\t' || c == '\r' || c == '\n') continue;
-            if (c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 'a');
-            out[j++] = c;
+        if (!key || !key[0]) return;
+        const size_t len = strlen(key);
+        if (len <= 8) {
+            strncpy_s(out, outSz, key, _TRUNCATE);
+            return;
         }
-        out[j] = 0;
+        char head[6]{}, tail[6]{};
+        strncpy_s(head, key, 4);
+        strncpy_s(tail, key + len - 4, 4);
+        sprintf_s(out, outSz, "%s...%s", head, tail);
     }
 
     inline void MaskEmailDisplay(const char* email, char* out, size_t outSz)
@@ -1111,42 +1099,34 @@ namespace LoaderUI {
         if (!s || s->authBusy) return;
         if (s->authenticated) { GoToProducts(s); return; }
         if (!gKeyEdit || !IsWindow(gKeyEdit)) return;
-        char raw[128]{}, email[128]{}, pass[128]{};
+        char raw[128]{}, key[128]{};
         GetWindowTextA(gKeyEdit, raw, sizeof(raw));
-        NormalizeEmailInput(raw, email, sizeof(email));
-        if (gPassEdit && IsWindow(gPassEdit))
-            GetWindowTextA(gPassEdit, pass, sizeof(pass));
-        if (!email[0]) {
-            SetAuthStatus(s, "Enter your account email.", 2);
+        LoaderLicense::NormalizeKeyInput(raw, key, sizeof(key));
+        if (!key[0]) {
+            SetAuthStatus(s, "Enter your license key.", 2);
             RefreshAuthUi(s);
             return;
         }
-        if (!pass[0]) {
-            SetAuthStatus(s, "Enter your account password.", 2);
-            RefreshAuthUi(s);
-            return;
-        }
-        SetWindowTextA(gKeyEdit, email);
+        SetWindowTextA(gKeyEdit, key);
         s->authBusy = true;
-        SetAuthStatus(s, "Signing in...", 1);
+        SetAuthStatus(s, "Activating...", 1);
         RefreshAuthUi(s);
         const std::string hw = s->licenseHwid[0] ? s->licenseHwid : LoaderLicense::GetHwid();
         strncpy_s(s->licenseHwid, hw.c_str(), _TRUNCATE);
-        const std::string emailCopy = email;
-        const std::string passCopy = pass;
-        std::thread([emailCopy, passCopy, hw]() {
+        const std::string keyCopy = key;
+        std::thread([keyCopy, hw]() {
             auto* payload = new AuthDonePayload{};
             char token[768]{}, msg[256]{};
             std::string err;
             bool licensed = false;
-            const bool ok = LoaderLicense::ActivateEmail(emailCopy.c_str(), passCopy.c_str(), hw.c_str(),
+            const bool ok = LoaderLicense::ActivateKey(keyCopy.c_str(), "", hw.c_str(),
                 token, sizeof(token), msg, sizeof(msg), &licensed, err);
             payload->ok = ok;
             payload->licensed = licensed;
             if (ok) {
                 strncpy_s(payload->token, token, _TRUNCATE);
-                strncpy_s(payload->status, msg[0] ? msg : "Signed in.", _TRUNCATE);
-                MaskEmailDisplay(emailCopy.c_str(), payload->signedInAs, sizeof(payload->signedInAs));
+                strncpy_s(payload->status, msg[0] ? msg : "License activated.", _TRUNCATE);
+                MaskKeyDisplay(keyCopy.c_str(), payload->signedInAs, sizeof(payload->signedInAs));
             } else {
                 strncpy_s(payload->status, err.c_str(), _TRUNCATE);
             }
@@ -1164,7 +1144,7 @@ namespace LoaderUI {
         s->signedInAs[0] = 0;
         s->authenticated = false;
         s->licenseActive = false;
-        SetAuthStatus(s, "Signed out.", 0);
+        SetAuthStatus(s, "Key cleared.", 0);
         RefreshAuthUi(s);
     }
 
@@ -1175,8 +1155,12 @@ namespace LoaderUI {
             auto* msg = new BootDoneMsg{};
             char token[768]{}, savedHwid[64]{}, savedEmail[128]{};
             LoaderLicense::LoadSaved(token, sizeof(token), savedHwid, sizeof(savedHwid), savedEmail, sizeof(savedEmail));
-            if (savedEmail[0])
-                MaskEmailDisplay(savedEmail, msg->signedInAs, sizeof(msg->signedInAs));
+            if (savedEmail[0]) {
+                if (strchr(savedEmail, '@'))
+                    MaskEmailDisplay(savedEmail, msg->signedInAs, sizeof(msg->signedInAs));
+                else
+                    MaskKeyDisplay(savedEmail, msg->signedInAs, sizeof(msg->signedInAs));
+            }
             const std::string currentHw = LoaderLicense::GetHwid();
             strncpy_s(msg->licenseHwid, currentHw.c_str(), _TRUNCATE);
             if (savedHwid[0] && _stricmp(savedHwid, currentHw.c_str()) != 0) {
@@ -1249,12 +1233,12 @@ namespace LoaderUI {
                 return;
             }
             if (!s->authenticated) {
-                ShowMessage(L"Sign in with your email to launch FRONTIER.");
+                ShowMessage(L"Enter your license key to launch FRONTIER.");
                 TransitionToScreen(s, ScreenAuth);
                 return;
             }
             if (!s->licenseActive) {
-                ShowMessage(L"Your account is signed in but FRONTIER is not licensed yet.\nPurchase at ahead.best or redeem a key in the hub.");
+                ShowMessage(L"This key is not licensed for FRONTIER yet.\nPurchase at ahead.best or redeem in the hub.");
                 return;
             }
             s->selectedProduct = LoaderProducts::ProductFrontier;
@@ -1389,8 +1373,7 @@ namespace LoaderUI {
                 InvalidateRect(hwnd, nullptr, FALSE);
             break;
         case WM_KEYDOWN:
-            if (wp == VK_RETURN && s && s->screen == ScreenAuth &&
-                (GetFocus() == gKeyEdit || GetFocus() == gPassEdit)) {
+            if (wp == VK_RETURN && s && s->screen == ScreenAuth && GetFocus() == gKeyEdit) {
                 RunActivateKey(s);
                 return 0;
             }

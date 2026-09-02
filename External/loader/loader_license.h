@@ -298,12 +298,7 @@ namespace LoaderLicense {
             err = "Enter your license key";
             return false;
         }
-        if (!password || !password[0]) {
-            err = "Enter your account password";
-            return false;
-        }
         std::string body = std::string("{\"key\":\"") + JsonEscape(key) +
-            "\",\"password\":\"" + JsonEscape(password) +
             "\",\"hwid\":\"" + JsonEscape(hwid ? hwid : "") + "\"}";
         std::string resp;
         if (!LoaderUpdate::HttpPost(LoaderConfig::kLicenseApi, "application/json", body, resp, err))

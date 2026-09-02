@@ -10,9 +10,9 @@ namespace LoaderConfig {
 
 
 
-    inline constexpr int kLocalVersion = 37;
+    inline constexpr int kLocalVersion = 38;
 
-    inline constexpr const char* kDisplayVersion = "v1.2.33";
+    inline constexpr const char* kDisplayVersion = "v1.2.34";
 
     inline constexpr const char* kProductLine = "AHEAD Products";
 
@@ -34,7 +34,7 @@ namespace LoaderConfig {
 
     inline constexpr const char* kFallbackUsermodeUrl =
 
-        "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.33/Frontier.exe";
+        "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.34/Frontier.exe";
 
     inline constexpr const char* kReleasesPage =
 
