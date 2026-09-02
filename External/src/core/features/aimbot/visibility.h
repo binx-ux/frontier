@@ -13,12 +13,6 @@
 #include <thread>
 #include <algorithm>
 
-// External wall-check (no engine Raycast API).
-// Research takeaways that broke the old version:
-//  1) Axis-aligned boxes ignore part Rotation → thin/rotated walls are missed → aim through walls.
-//  2) Roblox spatial queries hit CanCollide parts (and CanQuery when CanCollide is off).
-//  3) Correct test is ray vs OBB: transform ray into part local space, then slab-test Size/2.
-//  4) Aim scripts only treat a target as visible if the ray to THAT bone is clear (not head OR chest).
 namespace Visibility {
 
     struct OBB {
@@ -173,6 +167,31 @@ namespace Visibility {
         return out.Valid();
     }
 
+    // Character / hitbox parts — no wall-like volume filter.
+    inline bool MakePartOBB(uintptr_t prim, OBB& out, float inflate = 1.02f)
+    {
+        if (!prim) return false;
+        RBX::Vec3 size = memory->read<RBX::Vec3>(prim + Offsets::Primitive::Size);
+        float mx = size.X; if (size.Y > mx) mx = size.Y; if (size.Z > mx) mx = size.Z;
+        if (mx < 0.08f) return false;
+        float vol = size.X * size.Y * size.Z;
+        if (vol > 12000.f) return false;
+
+        RBX::CFrame cf = memory->read<RBX::CFrame>(prim + Offsets::Primitive::Rotation);
+        RBX::Vec3 pos = memory->read<RBX::Vec3>(prim + Offsets::Primitive::Position);
+        RBX::Vec3 cfPos = cf.GetPosition();
+        if (fabsf(cfPos.X) + fabsf(cfPos.Y) + fabsf(cfPos.Z) > 0.01f)
+            pos = cfPos;
+
+        out.center = pos;
+        out.axisX = NormalizeSafe(cf.GetRightVector());
+        out.axisY = NormalizeSafe(cf.GetUpVector());
+        out.axisZ = NormalizeSafe(cf.GetLookVector());
+        out.half = { size.X * 0.5f * inflate, size.Y * 0.5f * inflate, size.Z * 0.5f * inflate };
+        ExpandWorldAABB(out);
+        return out.Valid();
+    }
+
     inline bool IsCharacterFolderName(const std::string& n)
     {
         if (n.empty()) return false;
@@ -300,7 +319,8 @@ namespace Visibility {
                     || variables::ESP::enabled || variables::ESP::visibleOnly
                     || variables::Aimbot::requireVisible || variables::Trigger::requireVisible
                     || variables::Misc::afkAssist || variables::Aimbot::alwaysOn
-                    || variables::MagicBullet::enabled || variables::Hitbox::enabled;
+                    || variables::Aimbot::silentAim || variables::MagicBullet::enabled
+                    || variables::Hitbox::enabled;
                 if (!need) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(500));
                     continue;
@@ -317,6 +337,33 @@ namespace Visibility {
                 std::this_thread::sleep_for(std::chrono::milliseconds(30));
             }
         }).detach();
+    }
+
+    // Closest wall along ray; returns maxT if nothing blocks.
+    inline float RaycastWalls(const RBX::Vec3& origin, const RBX::Vec3& dir, float maxT)
+    {
+        EnsureWorker();
+        float closest = maxT;
+        std::lock_guard<std::mutex> lock(boxesMutex);
+        if (!everBuilt || boxes.empty()) {
+            rebuildRequested.store(true);
+            return maxT;
+        }
+        for (const auto& b : boxes) {
+            if (!b.Valid()) continue;
+            RBX::Vec3 farPt{
+                origin.X + dir.X * maxT,
+                origin.Y + dir.Y * maxT,
+                origin.Z + dir.Z * maxT
+            };
+            if (!SegOverlapsAABB(origin, farPt, b.wmin, b.wmax, 1.5f)) continue;
+            float t = 0.f;
+            if (RayHitsOBB(origin, dir, maxT, b, t)) {
+                if (t >= 0.85f && t < closest)
+                    closest = t;
+            }
+        }
+        return closest;
     }
 
     // true = clear shot, false = blocked / unknown

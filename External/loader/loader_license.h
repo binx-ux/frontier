@@ -6,27 +6,11 @@
 #include <string>
 #include "loader_config.h"
 #include "loader_update.h"
+#include "../src/common/url.h"
 
 #pragma comment(lib, "bcrypt.lib")
 
 namespace LoaderLicense {
-
-    inline std::string UrlEncode(const char* s)
-    {
-        static const char* hex = "0123456789ABCDEF";
-        std::string out;
-        for (const unsigned char* p = (const unsigned char*)(s ? s : ""); *p; ++p) {
-            if ((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z') ||
-                (*p >= '0' && *p <= '9') || *p == '-' || *p == '_' || *p == '.' || *p == '~') {
-                out.push_back((char)*p);
-            } else {
-                out.push_back('%');
-                out.push_back(hex[*p >> 4]);
-                out.push_back(hex[*p & 0xF]);
-            }
-        }
-        return out;
-    }
 
     inline std::string JsonEscape(const std::string& in)
     {
@@ -73,8 +57,10 @@ namespace LoaderLicense {
             strncpy_s(out, outSz, "This license key has been revoked.", _TRUNCATE);
         else if (_stricmp(raw, "hwid_mismatch") == 0)
             strncpy_s(out, outSz, "This license is bound to another PC.", _TRUNCATE);
+        else if (_stricmp(raw, "invalid_email") == 0)
+            strncpy_s(out, outSz, "No account found for that email. Use your purchase email.", _TRUNCATE);
         else if (_stricmp(raw, "invalid_password") == 0 || _stricmp(raw, "password_required") == 0)
-            strncpy_s(out, outSz, "Incorrect password for this license key.", _TRUNCATE);
+            strncpy_s(out, outSz, "Incorrect password for this account.", _TRUNCATE);
         else if (_stricmp(raw, "forbidden") == 0)
             strncpy_s(out, outSz, "License server rejected the request. Try again later.", _TRUNCATE);
         else
@@ -157,10 +143,11 @@ namespace LoaderLicense {
         return Sha256Hex(buf).substr(0, 32);
     }
 
-    inline void LoadSaved(char* token, size_t tokenSz, char* hwid, size_t hwidSz)
+    inline void LoadSaved(char* token, size_t tokenSz, char* hwid, size_t hwidSz, char* email, size_t emailSz)
     {
         if (token && tokenSz) token[0] = 0;
         if (hwid && hwidSz) hwid[0] = 0;
+        if (email && emailSz) email[0] = 0;
         std::wstring ini = LoaderUpdate::PathJoin(LoaderUpdate::GetLoaderDir(), L"loader.ini");
         if (token && tokenSz) {
             wchar_t wbuf[768]{};
@@ -172,9 +159,16 @@ namespace LoaderLicense {
             GetPrivateProfileStringW(L"license", L"hwid", L"", wbuf, 96, ini.c_str());
             WideCharToMultiByte(CP_UTF8, 0, wbuf, -1, hwid, (int)hwidSz, nullptr, nullptr);
         }
+        if (email && emailSz) {
+            wchar_t wbuf[128]{};
+            GetPrivateProfileStringW(L"license", L"email", L"", wbuf, 128, ini.c_str());
+            if (!wbuf[0])
+                GetPrivateProfileStringW(L"license", L"key", L"", wbuf, 128, ini.c_str());
+            WideCharToMultiByte(CP_UTF8, 0, wbuf, -1, email, (int)emailSz, nullptr, nullptr);
+        }
     }
 
-    inline void SaveLicense(const char* token, const char* hwid)
+    inline void SaveLicense(const char* token, const char* hwid, const char* email = nullptr, const char* licenseKey = nullptr)
     {
         std::wstring ini = LoaderUpdate::PathJoin(LoaderUpdate::GetLoaderDir(), L"loader.ini");
         auto writeA = [&](const wchar_t* key, const char* val) {
@@ -184,6 +178,12 @@ namespace LoaderLicense {
         };
         writeA(L"token", token);
         writeA(L"hwid", hwid);
+        if (email && email[0]) {
+            writeA(L"email", email);
+            WritePrivateProfileStringW(L"license", L"key", nullptr, ini.c_str());
+        } else if (licenseKey && licenseKey[0]) {
+            writeA(L"key", licenseKey);
+        }
     }
 
     inline void ClearLicense()
@@ -200,7 +200,7 @@ namespace LoaderLicense {
         }
         char url[2048];
         sprintf_s(url, "%s?token=%s&hwid=%s", LoaderConfig::kLicenseApi,
-            UrlEncode(token).c_str(), UrlEncode(hwid ? hwid : "").c_str());
+            Net::UrlEncode(token).c_str(), Net::UrlEncode(hwid ? hwid : "").c_str());
         std::string resp;
         if (!LoaderUpdate::HttpGet(url, resp, err))
             return false;
@@ -211,6 +211,44 @@ namespace LoaderLicense {
             err = msg[0] ? msg : "License expired or revoked";
             return false;
         }
+        return true;
+    }
+
+    inline bool ActivateEmail(const char* email, const char* password, const char* hwid, char* outToken, size_t tokenSz, char* outMsg, size_t msgSz, std::string& err)
+    {
+        if (outToken && tokenSz) outToken[0] = 0;
+        if (outMsg && msgSz) outMsg[0] = 0;
+        if (!email || !email[0]) {
+            err = "Enter your account email";
+            return false;
+        }
+        if (!password || !password[0]) {
+            err = "Enter your account password";
+            return false;
+        }
+        std::string body = std::string("{\"email\":\"") + JsonEscape(email) +
+            "\",\"password\":\"" + JsonEscape(password) +
+            "\",\"hwid\":\"" + JsonEscape(hwid ? hwid : "") + "\"}";
+        std::string resp;
+        if (!LoaderUpdate::HttpPost(LoaderConfig::kLicenseApi, "application/json", body, resp, err))
+            return false;
+        if (!ParseJsonBool(resp, "ok", false) || !ParseJsonBool(resp, "allowed", false)) {
+            ParseJsonStr(resp, "message", outMsg, msgSz);
+            if (!outMsg || !outMsg[0]) ParseJsonStr(resp, "error", outMsg, msgSz);
+            char friendly[256]{};
+            const char* raw = outMsg && outMsg[0] ? outMsg : err.c_str();
+            FriendlyLicenseError(raw, friendly, sizeof(friendly));
+            err = friendly;
+            if (outMsg && msgSz) strncpy_s(outMsg, msgSz, friendly, _TRUNCATE);
+            return false;
+        }
+        ParseJsonStr(resp, "token", outToken, tokenSz);
+        ParseJsonStr(resp, "message", outMsg, msgSz);
+        if (!outToken || !outToken[0]) {
+            err = "Bad license response";
+            return false;
+        }
+        SaveLicense(outToken, hwid, email);
         return true;
     }
 
@@ -248,7 +286,7 @@ namespace LoaderLicense {
             err = "Bad license response";
             return false;
         }
-        SaveLicense(outToken, hwid);
+        SaveLicense(outToken, hwid, nullptr, key);
         return true;
     }
 

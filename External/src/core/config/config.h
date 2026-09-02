@@ -33,7 +33,6 @@ namespace ConfigIO {
         memcpy(key, line, kn);
         key[kn] = 0;
         strncpy_s(val, 64, eq + 1, _TRUNCATE);
-        // strip CR
         char* cr = strchr(val, '\r');
         if (cr) *cr = 0;
         char* nl = strchr(val, '\n');
@@ -238,6 +237,9 @@ namespace ConfigIO {
         W(f, "theme.headerY", variables::Theme::headerY);
         W(f, "theme.linkBrand", variables::Theme::linkBrandAccent);
         W(f, "theme.footerLink", variables::Theme::showFooterLink);
+        W(f, "theme.bgVideo", variables::Theme::bgVideoEnabled);
+        W(f, "theme.bgVideoOpacity", variables::Theme::bgVideoOpacity);
+        W(f, "theme.bgVideoPath", variables::Theme::bgVideoPath);
         W(f, "theme.brandR", variables::Theme::brand[0]);
         W(f, "theme.brandG", variables::Theme::brand[1]);
         W(f, "theme.brandB", variables::Theme::brand[2]);
@@ -426,6 +428,9 @@ namespace ConfigIO {
         else if (eq("theme.headerY")) variables::Theme::headerY = (float)atof(val);
         else if (eq("theme.linkBrand")) variables::Theme::linkBrandAccent = B(val);
         else if (eq("theme.footerLink")) variables::Theme::showFooterLink = B(val);
+        else if (eq("theme.bgVideo")) variables::Theme::bgVideoEnabled = B(val);
+        else if (eq("theme.bgVideoOpacity")) variables::Theme::bgVideoOpacity = (float)atof(val);
+        else if (eq("theme.bgVideoPath")) strncpy_s(variables::Theme::bgVideoPath, val, _TRUNCATE);
         else if (eq("theme.brandR")) variables::Theme::brand[0] = (float)atof(val);
         else if (eq("theme.brandG")) variables::Theme::brand[1] = (float)atof(val);
         else if (eq("theme.brandB")) variables::Theme::brand[2] = (float)atof(val);

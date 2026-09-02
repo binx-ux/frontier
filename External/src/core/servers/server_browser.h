@@ -15,6 +15,7 @@
 #include "../globals/globals.h"
 #include "../../sdk/offsets.h"
 #include "../../memory/memory.h"
+#include "../../common/url.h"
 
 #pragma comment(lib, "winhttp.lib")
 #pragma comment(lib, "shell32.lib")
@@ -241,23 +242,6 @@ namespace ServerBrowser {
         return gServers;
     }
 
-    inline std::string UrlEncode(const char* s)
-    {
-        std::string out;
-        if (!s) return out;
-        for (const unsigned char* p = (const unsigned char*)s; *p; ++p) {
-            if ((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z') || (*p >= '0' && *p <= '9')
-                || *p == '-' || *p == '_' || *p == '.' || *p == '~')
-                out.push_back((char)*p);
-            else {
-                char buf[4];
-                sprintf_s(buf, "%%%02X", *p);
-                out += buf;
-            }
-        }
-        return out;
-    }
-
     inline void JoinServer(const char* jobId)
     {
         if (!jobId || !jobId[0]) return;
@@ -276,7 +260,7 @@ namespace ServerBrowser {
             "https://assetgame.roblox.com/game/PlaceLauncher.ashx?request=RequestGameJob"
             "&browserTrackerId=0&placeId=%lld&gameInstanceId=%s&isPlayTogetherGame=false",
             (long long)place, jobId);
-        std::string encoded = UrlEncode(launcherUrl);
+        std::string encoded = Net::UrlEncode(launcherUrl);
 
         char proto[1200]{};
         sprintf_s(proto,

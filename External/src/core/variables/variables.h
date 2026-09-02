@@ -4,9 +4,7 @@
 
 namespace variables {
     inline bool menuOpen = false;
-    // Set by attach thread; consumed on the UI thread to avoid races with RenderMenu.
     inline std::atomic<bool> pendingMenuReveal{ false };
-    // 0 Combat 1 Visuals 2 World 3 Character 4 Options 5 Servers 6 Music 7 Status
     inline int selectedTab = 0;
     inline int selectedSub = 0;
     inline bool waitingForKey = false;
@@ -44,13 +42,16 @@ namespace variables {
         inline bool snowEffect = false;
         inline bool useFloatingHeader = false;
         inline float headerY = 18.0f;
-        inline int layoutMode = 1;
+        inline int layoutMode = 0;
         inline int subTabStyle = 1;
         inline float menuScale = 1.0f;
         inline bool linkBrandAccent = true;
         inline bool styleDirty = true;
-        inline int preset = 0;
+        inline int preset = 7; // AHEAD Premium default
         inline bool showFooterLink = false;
+        inline bool bgVideoEnabled = false;
+        inline float bgVideoOpacity = 0.55f;
+        inline char bgVideoPath[512] = "";
     }
 
     namespace Perf {
@@ -89,23 +90,20 @@ namespace variables {
         inline float predictionX = 0.10f;
         inline float predictionY = 0.08f;
         inline float maxDistance = 10000.0f;
-        // Easy 0–100 UI knobs (synced to the fields above)
-        inline float uiSmoothness = 10.f;   // → smoothing 4–30 (lower = snappier)
-        inline float uiStability = 35.f;    // → damping 0–0.85
-        inline float uiLockZone = 10.f;     // → deadzone 0.5–12
-        inline float uiRange = 100.f;       // → maxDistance 100–10000
-        inline float uiFov = 35.f;          // → fovRadius 20–500
-        inline float uiSilentFov = 40.f;    // → silentFovRadius 20–500
-        inline float uiStickyFov = 44.f;    // → holdFovScale 1.0–1.8
-        inline float uiAimSpeed = 52.f;     // → maxMove 4–28
-        // 0 Head 1 Body 2 LeftLeg 3 RightLeg 4 LeftArm 5 RightArm 6 Closest
+        inline float uiSmoothness = 28.f;
+        inline float uiStability = 35.f;
+        inline float uiLockZone = 10.f;
+        inline float uiRange = 100.f;
+        inline float uiFov = 35.f;
+        inline float uiSilentFov = 40.f;
+        inline float uiStickyFov = 44.f;
+        inline float uiAimSpeed = 52.f;
         inline int aimTarget = 0;
-        inline int aimbotKey = 0x02;         // RMB — hold to aim
-        inline int silentAimKey = 0;     // 0 = use aimbot hotkey
+        inline int aimbotKey = 0x02;
+        inline int silentAimKey = 0;
         inline bool toggleMode = false;
         inline bool toggledOn = false;
-        inline int smoothProfile = 0; // 0 Custom 1 Legit 2 Smooth 3 Rage
-        // 0 Closest to crosshair  1 Lowest HP  2 Closest distance
+        inline int smoothProfile = 0;
         inline int targetPriority = 0;
     }
 
@@ -159,7 +157,6 @@ namespace variables {
         inline bool aimAssist = true; // spoof mouse to bone when crosshair in big box
     }
 
-    // Magic Bullet — expanded hit registration (hitbox extender + aim assist)
     namespace MagicBullet {
         inline bool enabled = false;
         inline int key = 0x42; // B
@@ -427,6 +424,7 @@ namespace variables {
         inline bool afkAssist = false; // leave-running: always-on aim + strong anti-AFK
         inline float antiAfkSeconds = 12.0f;
         inline bool menuHovered = false;
+        inline bool menuDragging = false;
         inline float menuX = 0, menuY = 0, menuW = 600, menuH = 820;
         inline float spotX = 0, spotY = 0, spotW = 0, spotH = 0;
         inline float floatX = 0, floatY = 0, floatW = 0, floatH = 0;
@@ -441,8 +439,7 @@ namespace variables {
         inline float panelX = 0, panelY = 0, panelW = 0, panelH = 0;
         inline int selectedSubByTab[9] = {};
         inline HWND overlayHwnd = nullptr;
-        inline int onlineCount = 0; // unused — footer shows "Online" only
-        // Menu open/close animation (0 = closed, 1 = fully open)
+        inline int onlineCount = 0;
         inline float menuAnim = 0.f;
         inline float menuAnimSpeed = 14.f;
         inline bool watermark = false;
@@ -456,7 +453,6 @@ namespace variables {
         inline bool discordRpc = false;
     }
 
-    // Client-side identity spoof (local memory — does not change server-side account)
     namespace Spoof {
         inline bool userIdEnabled = false;
         inline int64_t fakeUserId = 1;
@@ -466,7 +462,6 @@ namespace variables {
         inline char fakeUsername[64] = "Guest";
     }
 
-    // Extra combat / utility packs
     namespace Extra {
         inline bool autoClicker = false;
         inline int autoClickerKey = 0;

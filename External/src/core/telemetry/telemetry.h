@@ -2,7 +2,6 @@
 #include <atomic>
 #include <string>
 
-// Telemetry removed for the public repo. Stubs keep call sites compiling.
 namespace Telemetry {
 
     inline std::atomic<bool> consentPending{ false };

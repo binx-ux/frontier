@@ -775,8 +775,10 @@ namespace PlayerCache {
 
         const bool needBones = variables::ESP::skeleton || variables::ESP::enabled
             || variables::Aimbot::enabled || variables::Aimbot::silentAim
+            || variables::Aimbot::aimType == 1
             || variables::Aimbot::alwaysOn || variables::MagicBullet::enabled
-            || variables::Trigger::enabled || variables::Misc::afkAssist
+            || variables::Hitbox::enabled || variables::Trigger::enabled
+            || variables::Misc::afkAssist
             || variables::Aimbot::aimTarget >= 2;
 
         for (auto& plr : playerList) {
@@ -891,7 +893,9 @@ namespace PlayerCache {
                     updateplayers();
                 // Aimbot wants fresher bones; ESP-only can idle longer
                 bool hot = variables::Aimbot::enabled || variables::Aimbot::silentAim
+                    || variables::Aimbot::aimType == 1
                     || variables::Aimbot::alwaysOn || variables::MagicBullet::enabled
+                    || variables::Hitbox::enabled
                     || variables::ESP::enabled || variables::ESP::skeleton
                     || variables::Misc::afkAssist
                     || variables::Rage::enabled || variables::Trigger::enabled;

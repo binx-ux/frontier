@@ -2,8 +2,8 @@
 
 namespace Frontier {
     inline constexpr const char* kName = "FRONTIER";
-    inline constexpr const char* kTagline = "ROBLOX EXTERNAL CLIENT";
-    inline constexpr const char* kVersion = "v1.2.22";
+    inline constexpr const char* kTagline = "PREMIUM ROBLOX EXTERNAL";
+    inline constexpr const char* kVersion = "v1.2.31";
     inline constexpr const char* kBuildTag = "Universal";
     inline constexpr const char* kWindowClass = "FrontierExternal";
     inline constexpr const char* kIniFolder = "frontier";

@@ -1,13 +1,13 @@
 #pragma once
-#include "../../../../src/sdk/w2s.h"
-#include "../../../../src/core/cache/cache.h"
-#include "../../../../src/core/variables/variables.h"
-#include "../../../../src/core/globals/globals.h"
-#include "../../../../src/memory/memory.h"
-#include "../../../../src/sdk/offsets.h"
-#include "../../../../src/render/avatar_cache.h"
-#include "../../../../src/core/features/aimbot/visibility.h"
-#include "../../../../src/core/features/aimbot/aimbot.h"
+#include "../../../sdk/w2s.h"
+#include "../../../core/cache/cache.h"
+#include "../../../core/variables/variables.h"
+#include "../../../core/globals/globals.h"
+#include "../../../memory/memory.h"
+#include "../../../sdk/offsets.h"
+#include "../../../render/avatar_cache.h"
+#include "../../../core/features/aimbot/visibility.h"
+#include "../../../core/features/aimbot/aimbot.h"
 #include "../../../../ext/imgui/imgui.h"
 #include <d3d11.h>
 #include <string>
@@ -595,8 +595,12 @@ namespace Visuals {
         }
     }
 
-    inline void RenderESP(ImDrawList* drawList, const RBX::Mat4& viewMatrix, std::vector<PlayerCache::CachedPlayer>& playersSnap)
+    inline void RenderESP(ImDrawList* drawList, const RBX::Mat4& viewMatrixIn, std::vector<PlayerCache::CachedPlayer>& playersSnap)
     {
+        RBX::Mat4 viewMatrix = viewMatrixIn;
+        if (Globals::renderEngine.Addr != 0)
+            viewMatrix = Globals::renderEngine.GetViewMat();
+
         RenderCrosshair(drawList);
         RenderRadar(drawList);
 
@@ -676,10 +680,9 @@ namespace Visuals {
                 !variables::ESP::skeleton &&
                 !variables::ESP::wireframePlayers) continue;
 
-            // Throttle heavy bone work — refresh positions every other frame per player
-            static uint32_t frameTick = 0;
-            frameTick++;
-            const bool refreshPos = (((frameTick + (uint32_t)plr.userId) & 1u) == 0u) || !lowFps;
+            // Head/HRP every frame (camera turns need fresh world pos + matrix together).
+            // Only throttle full skeleton bone tree reads.
+            const bool refreshPos = true;
 
             if (needBones) {
                 static uint32_t boneTick = 0;

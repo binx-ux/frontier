@@ -21,6 +21,13 @@ namespace FrontierShell {
     inline constexpr float kNavGap = 10.f;
     inline constexpr float kGhostAreaH = 64.f;
 
+    inline constexpr float kMwPad = 20.f;
+    inline constexpr float kMwTitleH = 76.f;
+    inline constexpr float kMwFooterH = 30.f;
+    inline constexpr float kMwTabH = 34.f;
+
+    inline bool UseTopTabs() { return variables::Theme::layoutMode == 0; }
+
     inline ImU32 AccentCol(float a = 1.f) {
         return FrontierUI::U32(variables::Theme::brand, a);
     }
@@ -35,8 +42,8 @@ namespace FrontierShell {
 
     inline const TabItem* Tabs() {
         static const TabItem kTabs[] = {
-            { "Aimbot", 0 }, { "Visuals", 2 }, { "World", 3 }, { "Player", 1 },
-            { "Miscellaneous", 5 }, { "Servers", 7 }, { "Music", 8 }, { "Status", 6 }, { "Configs", 9 },
+            { "Aimbot", 0 }, { "Visuals", 2 }, { "World", 3 }, { "Character", 1 },
+            { "Options", 5 }, { "Servers", 7 }, { "Music", 8 }, { "Status", 6 }, { "Configs", 9 },
         };
         return kTabs;
     }
@@ -134,24 +141,151 @@ namespace FrontierShell {
             dl->AddLine(ImVec2(min.x, y), ImVec2(max.x, y), gridCol, 1.f);
     }
 
-    inline void DrawWindowChrome(ImDrawList* dl, ImVec2 wp, float ww, float wh) {
-        dl->AddRectFilled(wp, ImVec2(wp.x + ww, wp.y + wh), IM_COL32(10, 10, 10, 252), 12.f);
-        dl->AddRect(wp, ImVec2(wp.x + ww, wp.y + wh), IM_COL32(255, 255, 255, 12), 12.f, 0, 1.f);
+    inline void DrawMwByteChrome(ImDrawList* dl, ImVec2 wp, float ww, float wh) {
+        const float shellA = 220;
+        dl->AddRectFilled(wp, ImVec2(wp.x + ww, wp.y + wh), IM_COL32(8, 12, 20, shellA), 14.f);
+        dl->AddRect(wp, ImVec2(wp.x + ww, wp.y + wh), IM_COL32(255, 255, 255, 20), 14.f, 0, 1.f);
+        dl->AddRectFilledMultiColor(
+            wp, ImVec2(wp.x + ww, wp.y + wh),
+            IM_COL32(255, 255, 255, 12), IM_COL32(255, 255, 255, 8),
+            IM_COL32(255, 255, 255, 4), IM_COL32(255, 255, 255, 10));
+    }
+
+    inline void DrawMwByteBrand(ImDrawList* dl, ImVec2 wp) {
+        const float bx = wp.x + kMwPad;
+        const float by = wp.y + 16.f;
+        const float logoSize = 34.f;
+        ImVec2 logoMin(bx, by);
+        ImVec2 logoMax(bx + logoSize, by + logoSize);
+        dl->AddRectFilled(logoMin, logoMax, FrontierUI::AccentU32(0.95f), 8.f);
+        dl->AddRectFilledMultiColor(logoMin, logoMax,
+            IM_COL32(255, 255, 255, 40), IM_COL32(255, 255, 255, 10),
+            IM_COL32(255, 255, 255, 0), IM_COL32(255, 255, 255, 16));
+        if (BrandAssets::logoSrv && BrandAssets::logoW > 0) {
+            DrawBrandMark(dl, ImVec2(bx + logoSize * 0.5f, by + logoSize * 0.5f), 22.f);
+        } else {
+            ImFont* font = ImGui::GetFont();
+            const char* t = "A";
+            ImVec2 ts = font->CalcTextSizeA(16.f, FLT_MAX, 0.f, t);
+            dl->AddText(font, 16.f,
+                ImVec2(bx + logoSize * 0.5f - ts.x * 0.5f, by + logoSize * 0.5f - ts.y * 0.5f),
+                IM_COL32(4, 16, 24, 255), t);
+        }
+
+        const float tx = bx + logoSize + 10.f;
+        dl->AddText(ImVec2(tx, by + 2.f), IM_COL32(244, 247, 251, 255), Frontier::kName);
+        char verLine[48];
+        sprintf_s(verLine, "%s · ahead", Frontier::kVersion);
+        dl->AddText(ImVec2(tx, by + 20.f), Gray500(), verLine);
+    }
+
+    inline void DrawTopTabBar(ImDrawList* dl, ImVec2 wp, float ww, int* selected) {
+        const TabItem* tabs = Tabs();
+        const float tabY = wp.y + 14.f;
+        const float tabStartX = wp.x + 190.f;
+        const float tabEndX = wp.x + ww - kMwPad;
+        float x = tabStartX;
+        float dt = ImGui::GetIO().DeltaTime;
+        if (dt < 0.f) dt = 0.f;
+        if (dt > 0.05f) dt = 0.05f;
+
+        for (int i = 0; i < TabCount(); i++) {
+            ImVec2 labelSz = ImGui::CalcTextSize(tabs[i].label);
+            const float tabW = labelSz.x + 44.f;
+            if (x + tabW > tabEndX)
+                break;
+
+            ImVec2 a(x, tabY);
+            ImVec2 b(x + tabW, tabY + kMwTabH);
+            ImGui::SetCursorScreenPos(a);
+            ImGui::PushID(300 + i);
+            if (ImGui::InvisibleButton("##tab", ImVec2(b.x - a.x, b.y - a.y))) {
+                if (*selected != i) {
+                    *selected = i;
+                    variables::selectedSub = variables::Misc::selectedSubByTab[i];
+                    UIMotion::NotifyTabChanged(i);
+                }
+            }
+            bool hov = ImGui::IsItemHovered();
+            ImGui::PopID();
+
+            const bool on = (*selected == i);
+            UIMotion::SetNavHoverTarget(i, hov || on, dt);
+
+            if (on) {
+                dl->AddRectFilled(a, b, IM_COL32(255, 255, 255, 16), 8.f);
+                dl->AddRect(a, b, FrontierUI::AccentU32(0.35f), 8.f, 0, 1.f);
+            } else if (hov) {
+                dl->AddRectFilled(a, b, IM_COL32(255, 255, 255, 8), 8.f);
+            }
+
+            DrawNavIcon(dl, ImVec2(a.x + 16.f, (a.y + b.y) * 0.5f), tabs[i].iconKind,
+                on ? AccentCol(1.f) : (hov ? IM_COL32(210, 215, 225, 255) : Gray500()), 0.85f);
+            dl->AddText(ImVec2(a.x + 28.f, a.y + (kMwTabH - labelSz.y) * 0.5f),
+                on ? IM_COL32(244, 247, 251, 255) : (hov ? IM_COL32(220, 225, 235, 255) : Gray500()),
+                tabs[i].label);
+
+            x += tabW + 6.f;
+        }
+
+        const float sepY = wp.y + kMwTitleH - 1.f;
+        dl->AddLine(ImVec2(wp.x + kMwPad, sepY), ImVec2(wp.x + ww - kMwPad, sepY),
+            IM_COL32(255, 255, 255, 20));
+    }
+
+    inline void DrawMwByteFooter(ImDrawList* dl, ImVec2 wp, float ww, float wh) {
+        const float y = wp.y + wh - kMwFooterH + 8.f;
+        dl->AddCircleFilled(ImVec2(wp.x + kMwPad + 4.f, y + 6.f), 3.f, AccentCol(1.f), 12);
+        dl->AddText(ImVec2(wp.x + kMwPad + 14.f, y), AccentCol(0.9f), "UNDETECTED");
+
+        char fps[32];
+        sprintf_s(fps, "FPS %d", variables::Perf::currentFps > 0 ? variables::Perf::currentFps : 0);
+        ImVec2 fpsSz = ImGui::CalcTextSize(fps);
+        dl->AddText(ImVec2(wp.x + ww - fpsSz.x - kMwPad, y), Gray400(), fps);
+
+        char hint[48];
+        sprintf_s(hint, "%s hide", FrontierUI::KeyName(variables::Misc::menuVk));
+        ImVec2 hintSz = ImGui::CalcTextSize(hint);
+        dl->AddText(ImVec2(wp.x + ww - fpsSz.x - hintSz.x - kMwPad - 16.f, y), Gray500(), hint);
+    }
+
+    inline void DrawWindowChrome(ImDrawList* dl, ImVec2 wp, float ww, float wh, bool lite = false) {
+        if (UseTopTabs() && !lite) {
+            DrawMwByteChrome(dl, wp, ww, wh);
+            return;
+        }
+        const bool premium = variables::Theme::preset == 7;
+        const ImU32 shellBg = premium ? IM_COL32(8, 12, 20, 252) : IM_COL32(10, 10, 10, 252);
+        dl->AddRectFilled(wp, ImVec2(wp.x + ww, wp.y + wh), shellBg, 12.f);
+        dl->AddRect(wp, ImVec2(wp.x + ww, wp.y + wh), IM_COL32(255, 255, 255, premium ? 18 : 12), 12.f, 0, 1.f);
 
         const float footY = wp.y + wh - kFooterH;
         const ImVec2 railEnd(wp.x + kSidebarW, footY);
-        dl->AddRectFilled(wp, railEnd, IM_COL32(30, 30, 30, 255), 12.f, ImDrawFlags_RoundCornersTopLeft);
+        if (premium && !lite) {
+            dl->AddRectFilledMultiColor(wp, railEnd,
+                IM_COL32(14, 20, 34, 255), IM_COL32(10, 14, 24, 255),
+                IM_COL32(8, 12, 20, 255), IM_COL32(12, 18, 30, 255));
+            dl->AddRectFilled(ImVec2(wp.x + kSidebarW - 1.f, wp.y + 8.f),
+                ImVec2(wp.x + kSidebarW + 1.f, footY - 4.f),
+                FrontierUI::AccentU32(0.35f), 1.f);
+        } else {
+            dl->AddRectFilled(wp, railEnd, IM_COL32(30, 30, 30, 255), 12.f, ImDrawFlags_RoundCornersTopLeft);
+        }
         dl->AddLine(
             ImVec2(wp.x + kSidebarW, wp.y + 8.f), ImVec2(wp.x + kSidebarW, footY - 4.f),
-            IM_COL32(255, 255, 255, 12));
+            IM_COL32(255, 255, 255, premium ? 18 : 12));
 
         const ImVec2 mainMin(wp.x + kSidebarW, wp.y);
         const ImVec2 mainMax(wp.x + ww, footY);
-        dl->AddRectFilledMultiColor(
-            mainMin, mainMax,
-            IM_COL32(42, 42, 42, 242), IM_COL32(38, 38, 38, 242),
-            IM_COL32(36, 36, 36, 242), IM_COL32(40, 40, 40, 242));
-        DrawGridPattern(dl, ImVec2(mainMin.x + 1.f, wp.y + kHeaderH + 1.f), mainMax);
+        if (lite) {
+            dl->AddRectFilled(mainMin, mainMax, IM_COL32(38, 38, 38, 242));
+        } else {
+            dl->AddRectFilledMultiColor(
+                mainMin, mainMax,
+                IM_COL32(42, 42, 42, 242), IM_COL32(38, 38, 38, 242),
+                IM_COL32(36, 36, 36, 242), IM_COL32(40, 40, 40, 242));
+            DrawGridPattern(dl, ImVec2(mainMin.x + 1.f, wp.y + kHeaderH + 1.f), mainMax);
+        }
 
         dl->AddRectFilled(
             ImVec2(wp.x + kSidebarW, wp.y), ImVec2(wp.x + ww, wp.y + kHeaderH),
@@ -166,7 +300,7 @@ namespace FrontierShell {
         dl->AddLine(ImVec2(wp.x + kSidebarW, footY), ImVec2(wp.x + ww, footY), IM_COL32(255, 255, 255, 12));
     }
 
-    inline void DrawIconRail(ImDrawList* dl, ImVec2 wp, float wh, int* selected) {
+    inline void DrawIconRail(ImDrawList* dl, ImVec2 wp, float wh, int* selected, bool lite = false) {
         const float sbW = kSidebarW;
         float dt = ImGui::GetIO().DeltaTime;
         if (dt < 0.f) dt = 0.f;
@@ -200,7 +334,7 @@ namespace FrontierShell {
             ImGui::PopID();
 
             UIMotion::SetNavHoverTarget(i, hov || on, dt);
-            const float hb = UIMotion::NavHover(i);
+            const float hb = lite ? (on ? 1.f : 0.f) : UIMotion::NavHover(i);
 
             if (on) {
                 dl->AddRectFilled(
@@ -227,11 +361,17 @@ namespace FrontierShell {
     inline void DrawTopHeader(ImDrawList* dl, ImVec2 wp, float ww, int /*tab*/) {
         const float x0 = wp.x + kSidebarW + 32.f;
         const float y0 = wp.y + 18.f;
+        const bool premium = variables::Theme::preset == 7;
 
         const char* title = Frontier::kName;
         ImVec2 titlePos(x0, y0);
-        dl->AddText(ImVec2(titlePos.x + 1.f, titlePos.y + 1.f), AccentCol(0.12f), title);
-        dl->AddText(titlePos, IM_COL32(255, 255, 255, 255), title);
+        if (premium) {
+            dl->AddText(ImVec2(titlePos.x + 1.f, titlePos.y + 1.f), FrontierUI::AccentU32(0.18f), title);
+            dl->AddText(titlePos, IM_COL32(255, 255, 255, 255), title);
+        } else {
+            dl->AddText(ImVec2(titlePos.x + 1.f, titlePos.y + 1.f), AccentCol(0.12f), title);
+            dl->AddText(titlePos, IM_COL32(255, 255, 255, 255), title);
+        }
 
         ImVec2 nameSz = ImGui::CalcTextSize(title);
         dl->AddText(ImVec2(x0 + nameSz.x + 6.f, y0 - 1.f), AccentCol(0.85f), Frontier::kVersion);
@@ -269,7 +409,8 @@ namespace FrontierShell {
             IM_COL32(255, 255, 255, 25));
         dl->AddText(ImVec2(wp.x + kSidebarW + 140.f, y), Gray500(), build);
 
-        const char* hint = "INSERT to hide";
+        char hint[48];
+        sprintf_s(hint, "%s to hide", FrontierUI::KeyName(variables::Misc::menuVk));
         ImVec2 hintSz = ImGui::CalcTextSize(hint);
         dl->AddText(ImVec2(wp.x + ww - hintSz.x - 24.f, y), Gray500(), hint);
 
@@ -283,18 +424,38 @@ namespace FrontierShell {
         dl->AddText(ImVec2(wp.x + ww - hintSz.x - fpsSz.x - pingSz.x - 56.f, y), Gray500(), ping);
     }
 
-    inline void DrawHeader(ImDrawList* dl, ImVec2 wp, float ww, float wh, int* selected) {
-        DrawWindowChrome(dl, wp, ww, wh);
-        DrawIconRail(dl, wp, wh, selected);
-        DrawTopHeader(dl, wp, ww, *selected);
-        DrawStatusFooter(dl, wp, ww, wh);
+    inline void DrawHeader(ImDrawList* dl, ImVec2 wp, float ww, float wh, int* selected, bool lite = false) {
+        DrawWindowChrome(dl, wp, ww, wh, lite);
+        if (UseTopTabs() && !lite) {
+            DrawMwByteBrand(dl, wp);
+            DrawTopTabBar(dl, wp, ww, selected);
+            DrawMwByteFooter(dl, wp, ww, wh);
+            return;
+        }
+        DrawIconRail(dl, wp, wh, selected, lite);
+        if (!lite) {
+            DrawTopHeader(dl, wp, ww, *selected);
+            DrawStatusFooter(dl, wp, ww, wh);
+        }
     }
 
     inline ImVec2 ContentOrigin(ImVec2 wp) {
+        if (UseTopTabs())
+            return ImVec2(wp.x + kMwPad, wp.y + kMwTitleH + 12.f);
         return ImVec2(wp.x + kSidebarW + 32.f, wp.y + kHeaderH + 24.f);
     }
 
     inline ImVec2 ContentSize(float ww, float wh) {
+        if (UseTopTabs())
+            return ImVec2(ww - kMwPad * 2.f, wh - kMwTitleH - kMwFooterH - 20.f);
         return ImVec2(ww - kSidebarW - 64.f, wh - kHeaderH - kFooterH - 36.f);
+    }
+
+    inline float DragZoneWidth(float ww) {
+        return UseTopTabs() ? ww : kSidebarW;
+    }
+
+    inline float DragZoneHeight() {
+        return UseTopTabs() ? kMwTitleH : kGhostAreaH;
     }
 }

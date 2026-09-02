@@ -5,7 +5,6 @@
 #include "../../resource.h"
 #include "../../ext/imgui/imgui.h"
 
-// Embedded font pack (RCDATA) — loads UI fonts from the exe resources.
 namespace EmbeddedFonts {
 
     inline std::vector<uint8_t> gRoboto;

@@ -54,7 +54,11 @@ namespace UIFx {
     }
 
     inline bool IsLiquidGlass() {
-        return variables::Theme::preset == 4;
+        return variables::Theme::preset == 4 || variables::Theme::preset == 7;
+    }
+
+    inline bool IsPremiumTheme() {
+        return variables::Theme::preset == 7;
     }
 
     inline float HashHue01(const char* s, int salt = 0) {
@@ -70,12 +74,15 @@ namespace UIFx {
     }
 
     inline void DrawLiquidGlassAurora(ImDrawList* dl, ImVec2 size, float t) {
-        const ImU32 c1 = HsvToU32(fmodf(t * 0.04f, 1.f), 0.55f, 0.95f, 0.14f);
-        const ImU32 c2 = HsvToU32(fmodf(t * 0.03f + 0.35f, 1.f), 0.45f, 0.88f, 0.12f);
-        const ImU32 c3 = HsvToU32(fmodf(t * 0.05f + 0.62f, 1.f), 0.50f, 0.92f, 0.10f);
-        dl->AddCircleFilled(ImVec2(size.x * 0.18f + sinf(t * 0.35f) * 40.f, size.y * 0.22f + cosf(t * 0.28f) * 30.f), 180.f, c1, 48);
-        dl->AddCircleFilled(ImVec2(size.x * 0.78f + cosf(t * 0.31f) * 50.f, size.y * 0.38f + sinf(t * 0.24f) * 35.f), 220.f, c2, 48);
-        dl->AddCircleFilled(ImVec2(size.x * 0.52f + sinf(t * 0.22f) * 60.f, size.y * 0.72f + cosf(t * 0.19f) * 25.f), 160.f, c3, 48);
+        const float premium = IsPremiumTheme() ? 1.15f : 1.f;
+        const ImU32 c1 = HsvToU32(fmodf(t * 0.04f, 1.f), 0.55f, 0.95f, 0.16f * premium);
+        const ImU32 c2 = HsvToU32(fmodf(t * 0.03f + 0.35f, 1.f), 0.45f, 0.88f, 0.14f * premium);
+        const ImU32 c3 = HsvToU32(fmodf(t * 0.05f + 0.62f, 1.f), 0.50f, 0.92f, 0.12f * premium);
+        const ImU32 c4 = HsvToU32(fmodf(t * 0.02f + 0.15f, 1.f), 0.62f, 0.90f, 0.10f * premium);
+        dl->AddCircleFilled(ImVec2(size.x * 0.18f + sinf(t * 0.35f) * 40.f, size.y * 0.22f + cosf(t * 0.28f) * 30.f), 200.f, c1, 48);
+        dl->AddCircleFilled(ImVec2(size.x * 0.78f + cosf(t * 0.31f) * 50.f, size.y * 0.38f + sinf(t * 0.24f) * 35.f), 240.f, c2, 48);
+        dl->AddCircleFilled(ImVec2(size.x * 0.52f + sinf(t * 0.22f) * 60.f, size.y * 0.72f + cosf(t * 0.19f) * 25.f), 180.f, c3, 48);
+        dl->AddCircleFilled(ImVec2(size.x * 0.35f + cosf(t * 0.18f) * 35.f, size.y * 0.55f + sinf(t * 0.26f) * 20.f), 140.f, c4, 40);
     }
 
     inline void DrawGlassCardFrame(ImDrawList* dl, ImVec2 p0, ImVec2 p1, float rounding = 10.f) {
@@ -147,8 +154,24 @@ namespace UIFx {
         }
     }
 
-    inline void DrawBackgroundFX(ImDrawList* dl, ImVec2 size, float dt, bool menuVisible) {
-        if (!menuVisible && !variables::Theme::bgEffect) return;
+    inline void DrawBackgroundFX(ImDrawList* dl, ImVec2 size, float dt, bool menuVisible, bool uiDragging = false) {
+        if (!menuVisible && !variables::Theme::bgEffect && !variables::Theme::bgVideoEnabled) return;
+        if (uiDragging) {
+            dl->AddRectFilled(ImVec2(0, 0), size, IM_COL32(4, 8, 14, 120));
+            return;
+        }
+
+        if (variables::Theme::bgVideoEnabled) {
+            const float ov = Clampf(variables::Theme::bgVideoOpacity, 0.2f, 0.9f);
+            const int a = (int)(ov * 255.f);
+            const float t = (float)ImGui::GetTime();
+            const ImU32 c1 = HsvToU32(fmodf(t * 0.02f + 0.88f, 1.f), 0.55f, 0.55f, 0.35f);
+            const ImU32 c2 = HsvToU32(fmodf(t * 0.015f + 0.62f, 1.f), 0.45f, 0.42f, 0.32f);
+            dl->AddRectFilledMultiColor(ImVec2(0, 0), size, c1, c2, c2, c1);
+            dl->AddRectFilled(ImVec2(0, 0), size, IM_COL32(6, 8, 14, a));
+            if (!variables::Theme::bgEffect) return;
+        }
+
         EnsureParticles(size.x, size.y);
 
         float fpsScale = 1.f;
@@ -160,12 +183,17 @@ namespace UIFx {
         const float t = (float)ImGui::GetTime();
 
         if (IsLiquidGlass()) {
+            const int bgA = menuVisible ? (IsPremiumTheme() ? 165 : 145) : (IsPremiumTheme() ? 125 : 105);
             dl->AddRectFilledMultiColor(
                 ImVec2(0, 0), size,
-                IM_COL32(8, 14, 24, menuVisible ? 120 : 90),
-                IM_COL32(6, 10, 18, menuVisible ? 100 : 75),
-                IM_COL32(10, 16, 28, menuVisible ? 130 : 95),
-                IM_COL32(5, 8, 14, menuVisible ? 105 : 80));
+                IM_COL32(6, 12, 22, bgA),
+                IM_COL32(4, 8, 16, bgA - 20),
+                IM_COL32(8, 14, 26, bgA + 10),
+                IM_COL32(3, 6, 12, bgA - 15));
+            dl->AddRectFilledMultiColor(
+                ImVec2(0, 0), ImVec2(size.x, size.y * 0.45f),
+                IM_COL32(255, 255, 255, menuVisible ? 18 : 12), IM_COL32(255, 255, 255, 8),
+                IM_COL32(255, 255, 255, 0), IM_COL32(255, 255, 255, 0));
             DrawLiquidGlassAurora(dl, size, t);
         } else {
             dl->AddRectFilledMultiColor(
@@ -343,10 +371,14 @@ namespace UIFx {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 8));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
         ImGui::PushStyleColor(ImGuiCol_WindowBg, UIFx::IsLiquidGlass()
-            ? ImVec4(0.06f, 0.08f, 0.12f, 0.72f)
+            ? (UIFx::IsPremiumTheme()
+                ? ImVec4(0.04f, 0.06f, 0.10f, 0.78f)
+                : ImVec4(0.06f, 0.08f, 0.12f, 0.72f))
             : ImVec4(0.055f, 0.055f, 0.065f, 0.94f));
         ImGui::PushStyleColor(ImGuiCol_Border, UIFx::IsLiquidGlass()
-            ? ImVec4(0.62f, 0.84f, 1.f, 0.28f)
+            ? (UIFx::IsPremiumTheme()
+                ? ImVec4(0.22f, 0.52f, 1.f, 0.35f)
+                : ImVec4(0.62f, 0.84f, 1.f, 0.28f))
             : ImVec4(1, 1, 1, 0.12f));
         if (!ImGui::Begin("##floathead", nullptr,
             ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar |
@@ -411,7 +443,6 @@ namespace UIFx {
         return changed;
     }
 
-    // --- 3D bacon R6 ESP preview ---
     struct V3 { float x, y, z; };
 
     inline V3 RotY(V3 v, float a) {

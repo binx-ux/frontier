@@ -648,7 +648,7 @@ namespace LoaderUpdate {
         si.cb = sizeof(si);
         PROCESS_INFORMATION pi{};
         if (CreateProcessW(exe.c_str(), buf.data(), nullptr, nullptr, FALSE, 0,
-                const_cast<LPWSTR>(work.c_str()), nullptr, &si, &pi)) {
+                nullptr, work.c_str(), &si, &pi)) {
             CloseHandle(pi.hThread);
             CloseHandle(pi.hProcess);
             return true;

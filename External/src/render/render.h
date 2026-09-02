@@ -26,6 +26,7 @@
 #include "../../src/render/brand_assets.h"
 #include "../../src/render/brand.h"
 #include "../../src/render/frontier_shell.h"
+#include "../../src/render/frontier_theme.h"
 #include "../../src/render/frontier_menu.h"
 #include "../../src/core/features/aimbot/aimbot.h"
 #include "../../src/core/telemetry/telemetry.h"
@@ -58,8 +59,8 @@ namespace UI {
 
     inline void ApplyStyle() {
         ImGuiStyle& s = ImGui::GetStyle();
-        s.WindowRounding = 12.0f;
-        s.ChildRounding = 10.0f;
+        s.WindowRounding = variables::Theme::layoutMode == 0 ? 14.0f : 12.0f;
+        s.ChildRounding = variables::Theme::layoutMode == 0 ? 10.0f : 10.0f;
         s.FrameRounding = 8.0f;
         s.GrabRounding = 8.0f;
         s.PopupRounding = 10.0f;
@@ -232,6 +233,7 @@ public:
             }
         }
         EmbeddedFonts::Apply(io);
+        FrontierTheme::ApplyPreset(variables::Theme::preset);
         UI::ApplyStyle();
         ImGui_ImplWin32_Init(windowHandle);
         ImGui_ImplDX11_Init(d3dDevice, d3dContext);
@@ -707,6 +709,40 @@ public:
         ImGui::End();
     }
 
+    static void UpdateClassicMenuDrag()
+    {
+        ImGuiIO& io = ImGui::GetIO();
+        const float mx = io.MousePos.x;
+        const float my = io.MousePos.y;
+
+        auto inDragZone = [&]() -> bool {
+            if (variables::Misc::menuW < 80.f || variables::Misc::menuH < 80.f)
+                return false;
+            const float dragW = FrontierShell::DragZoneWidth(variables::Misc::menuW);
+            const float dragH = FrontierShell::DragZoneHeight();
+            return mx >= variables::Misc::menuX &&
+                mx <= variables::Misc::menuX + dragW &&
+                my >= variables::Misc::menuY &&
+                my <= variables::Misc::menuY + dragH;
+        };
+
+        if (variables::Misc::menuDragging) {
+            if (!io.MouseDown[0]) {
+                variables::Misc::menuDragging = false;
+                return;
+            }
+            variables::Misc::menuX += io.MouseDelta.x;
+            variables::Misc::menuY += io.MouseDelta.y;
+            return;
+        }
+
+        if (io.MouseDown[0] && inDragZone()) {
+            variables::Misc::menuDragging = true;
+            variables::Misc::menuX += io.MouseDelta.x;
+            variables::Misc::menuY += io.MouseDelta.y;
+        }
+    }
+
     void RenderMenu() {
         if (variables::Loading::active) return;
 
@@ -735,7 +771,7 @@ public:
             }
 
             const bool menuVisible = variables::Misc::floatingPanelOpen || variables::menuOpen;
-            UIFx::DrawBackgroundFX(bg, ds, dt, menuVisible);
+            UIFx::DrawBackgroundFX(bg, ds, dt, menuVisible, variables::Misc::menuDragging);
 
             RenderFloatingPanel();
 
@@ -768,24 +804,32 @@ public:
         }
 
         // Classic full menu (floating header disabled)
-        UIMotion::Tick(dt);
+        if (!variables::Misc::menuDragging)
+            UIMotion::Tick(dt);
 
         float target = variables::menuOpen ? 1.f : 0.f;
         float speed = variables::Misc::menuAnimSpeed;
         if (speed < 4.f) speed = 4.f;
-        float t = 1.f - expf(-speed * dt);
-        variables::Misc::menuAnim += (target - variables::Misc::menuAnim) * t;
-        if (fabsf(variables::Misc::menuAnim - target) < 0.001f)
-            variables::Misc::menuAnim = target;
+        if (!variables::Misc::menuDragging) {
+            float t = 1.f - expf(-speed * dt);
+            variables::Misc::menuAnim += (target - variables::Misc::menuAnim) * t;
+            if (fabsf(variables::Misc::menuAnim - target) < 0.001f)
+                variables::Misc::menuAnim = target;
+        }
 
-        if (variables::Misc::menuAnim < 0.01f) return;
+        if (variables::Misc::menuAnim < 0.01f) {
+            variables::Misc::menuDragging = false;
+            return;
+        }
+
+        UpdateClassicMenuDrag();
 
         const bool menuVisible = variables::Misc::menuAnim > 0.02f;
-        UIFx::DrawBackgroundFX(bg, ds, dt, menuVisible);
+        UIFx::DrawBackgroundFX(bg, ds, dt, menuVisible, variables::Misc::menuDragging);
 
         float anim = variables::Misc::menuAnim;
-        float ease = UIMotion::EaseOutQuart(anim);
-        float slideY = (1.f - ease) * 28.f;
+        float ease = variables::Misc::menuDragging ? 1.f : UIMotion::EaseOutQuart(anim);
+        float slideY = variables::Misc::menuDragging ? 0.f : (1.f - ease) * 28.f;
         float uiScale = variables::Theme::menuScale;
         if (uiScale < 0.85f) uiScale = 0.85f;
         if (uiScale > 1.15f) uiScale = 1.15f;
@@ -799,14 +843,17 @@ public:
             static bool haveDragPos = false;
             float px = haveDragPos ? variables::Misc::menuX : (ds.x * 0.5f - baseW * 0.5f);
             float py = (haveDragPos ? variables::Misc::menuY : (ds.y * 0.5f - baseH * 0.5f)) + slideY;
-            ImGui::SetNextWindowPos(ImVec2(px, py), ImGuiCond_Appearing);
+            if (variables::Misc::menuDragging)
+                ImGui::SetNextWindowPos(ImVec2(variables::Misc::menuX, variables::Misc::menuY), ImGuiCond_Always);
+            else
+                ImGui::SetNextWindowPos(ImVec2(px, py), ImGuiCond_Appearing);
             if (variables::Misc::menuW > 1.f && variables::Misc::menuH > 1.f)
                 haveDragPos = true;
         }
 
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ease);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 7.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, variables::Theme::layoutMode == 0 ? 14.0f : 7.0f);
         ImGui::PushStyleColor(ImGuiCol_WindowBg, UI::V4(variables::Theme::bg));
         ImGui::PushStyleColor(ImGuiCol_Border, UI::V4(variables::Theme::border));
         if (!ImGui::Begin("##mw", &variables::menuOpen,
@@ -821,36 +868,41 @@ public:
         float ww = ImGui::GetWindowSize().x;
         float wh = ImGui::GetWindowSize().y;
 
-        FrontierMenu::RefreshStatusInfo();
-        FrontierShell::DrawHeader(wdl, wp, ww, wh, &variables::selectedTab);
+        const bool liteMenu = variables::Misc::menuDragging;
+        if (!liteMenu)
+            FrontierMenu::RefreshStatusInfo();
+        FrontierShell::DrawHeader(wdl, wp, ww, wh, &variables::selectedTab, liteMenu);
 
         ImGui::SetCursorPos(ImVec2(0, 0));
-        ImGui::InvisibleButton("##mwdrag", ImVec2(FrontierShell::kSidebarW, FrontierShell::kGhostAreaH));
-        if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
-            ImVec2 d = ImGui::GetIO().MouseDelta;
-            ImGui::SetWindowPos(ImVec2(wp.x + d.x, wp.y + d.y));
-            wp = ImGui::GetWindowPos();
-        }
+        ImGui::InvisibleButton("##mwdrag",
+            ImVec2(FrontierShell::DragZoneWidth(ww), FrontierShell::DragZoneHeight()));
+        if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left))
+            variables::Misc::menuDragging = true;
 
         ImVec2 contentOrigin = FrontierShell::ContentOrigin(wp);
         ImVec2 contentSize = FrontierShell::ContentSize(ww, wh);
         if (contentSize.x < 80.f) contentSize.x = 80.f;
         if (contentSize.y < 80.f) contentSize.y = 80.f;
-        const float tabEase = UIMotion::EaseOutCubic(variables::Misc::tabContentAnim);
+        const float tabEase = liteMenu ? 1.f : UIMotion::EaseOutCubic(variables::Misc::tabContentAnim);
         ImGui::SetCursorScreenPos(contentOrigin);
         ImGui::Dummy(ImVec2(1.f, 1.f));
         ImGui::SetCursorScreenPos(contentOrigin);
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ease * tabEase);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 8));
-        if (ImGui::BeginChild("##content", contentSize, ImGuiChildFlags_None,
+        if (!liteMenu && ImGui::BeginChild("##content", contentSize, ImGuiChildFlags_None,
             ImGuiWindowFlags_AlwaysVerticalScrollbar) && ease > 0.04f) {
             FrontierMenu::RenderBody();
         }
-        ImGui::EndChild();
+        if (!liteMenu)
+            ImGui::EndChild();
+        else
+            wdl->AddRectFilled(contentOrigin,
+                ImVec2(contentOrigin.x + contentSize.x, contentOrigin.y + contentSize.y),
+                IM_COL32(36, 36, 36, 200), 6.f);
         ImGui::PopStyleVar(2);
 
-        FrontierMenu::RefreshStatusInfo();
-        FrontierUI::DrawFooter(wdl, wp, ww, wh);
+        if (!liteMenu && !FrontierShell::UseTopTabs())
+            FrontierUI::DrawFooter(wdl, wp, ww, wh);
 
         variables::Misc::menuX = wp.x;
         variables::Misc::menuY = wp.y;

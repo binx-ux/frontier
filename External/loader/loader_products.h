@@ -143,7 +143,7 @@ namespace LoaderProducts {
 
         auto executors = ScanExecutors();
         if (executors.empty()) {
-            statusOut = L"Loadstring copied!\nNo executor found — open yours manually and paste (Ctrl+V).";
+            statusOut = L"Loadstring copied!\nNo executor found - open yours manually and paste (Ctrl+V).";
             return true;
         }
 
@@ -176,8 +176,8 @@ namespace LoaderProducts {
     inline const char* ProductTagline(Product p)
     {
         switch (p) {
-        case ProductTrace: return "Free · Arsenal internal";
-        case ProductFrontier: return "Lifetime · Windows external";
+        case ProductTrace: return "Free - Arsenal internal";
+        case ProductFrontier: return "Lifetime - Windows external";
         default: return "";
         }
     }

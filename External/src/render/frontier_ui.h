@@ -241,7 +241,9 @@ namespace FrontierUI {
         return changed;
     }
 
-    inline bool ToggleSwitch(const char* id, bool* v, float w = 36.f, float h = 20.f) {
+    inline bool ToggleSwitch(const char* id, bool* v, float w = 0.f, float h = 0.f) {
+        if (w <= 0.f) w = variables::Theme::layoutMode == 0 ? 44.f : 36.f;
+        if (h <= 0.f) h = variables::Theme::layoutMode == 0 ? 24.f : 20.f;
         ImGui::PushID(id);
         ImVec2 p = ImGui::GetCursorScreenPos();
         bool pressed = ImGui::InvisibleButton("##tog", ImVec2(w, h));
@@ -260,7 +262,8 @@ namespace FrontierUI {
 
         ImDrawList* dl = ImGui::GetWindowDrawList();
         const float r = h * 0.5f;
-        ImU32 trackOff = IM_COL32(42, 42, 42, 255);
+        ImU32 trackOff = variables::Theme::layoutMode == 0
+            ? IM_COL32(255, 255, 255, 20) : IM_COL32(42, 42, 42, 255);
         ImU32 trackOn = AccentU32(hovered ? 1.f : 0.92f);
         const float invT = 1.f - t;
         ImU32 track = IM_COL32(
@@ -502,17 +505,20 @@ namespace FrontierUI {
 
     inline bool BeginCard(const char* title, bool /*defaultOpen*/ = true, bool* headerToggle = nullptr) {
         ImGui::PushID(title ? title : "section");
-        const bool glass = variables::Theme::preset == 4;
+        const bool mwbyte = variables::Theme::layoutMode == 0;
+        const bool glass = mwbyte || variables::Theme::preset == 4 || variables::Theme::preset == 7;
+        const float cardRound = mwbyte ? 10.f : (variables::Theme::preset == 7 ? 16.f : (glass ? 14.f : 10.f));
+        const float cardAlpha = mwbyte ? 0.42f : (variables::Theme::preset == 7 ? 0.82f : 0.72f);
         ImGui::PushStyleColor(ImGuiCol_ChildBg, glass
             ? ImVec4(variables::Theme::card[0], variables::Theme::card[1],
-                variables::Theme::card[2], variables::Theme::card[3] * 0.85f)
+                variables::Theme::card[2], variables::Theme::card[3] * cardAlpha)
             : V4(variables::Theme::card));
         ImGui::PushStyleColor(ImGuiCol_Border, glass
             ? ImVec4(variables::Theme::border[0], variables::Theme::border[1],
-                variables::Theme::border[2], variables::Theme::border[3] * 0.75f)
+                variables::Theme::border[2], variables::Theme::border[3] * 0.95f)
             : ImVec4(1.f, 1.f, 1.f, 0.05f));
-        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, glass ? 12.f : 10.f);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(18, 16));
+        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, cardRound);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(glass ? 16.f : 18.f, glass ? 14.f : 16.f));
 
         const bool visible = ImGui::BeginChild("##sec", ImVec2(0, 0),
             ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Borders, ImGuiWindowFlags_None);
@@ -530,9 +536,11 @@ namespace FrontierUI {
         if (visible && title && title[0]) {
             ImDrawList* dl = ImGui::GetWindowDrawList();
             ImVec2 p = ImGui::GetCursorScreenPos();
-            dl->AddRectFilled(
-                ImVec2(p.x - 2.f, p.y + 2.f), ImVec2(p.x, p.y + 20.f),
-                AccentU32(0.95f), 2.f);
+            if (!mwbyte) {
+                dl->AddRectFilled(
+                    ImVec2(p.x - 2.f, p.y + 2.f), ImVec2(p.x, p.y + 20.f),
+                    AccentU32(0.95f), 2.f);
+            }
 
             char upper[64];
             strncpy_s(upper, title, _TRUNCATE);
@@ -540,7 +548,8 @@ namespace FrontierUI {
                 if (*c >= 'a' && *c <= 'z') *c = (char)(*c - 'a' + 'A');
             }
 
-            ImGui::PushStyleColor(ImGuiCol_Text, V4(variables::Theme::text));
+            ImGui::PushStyleColor(ImGuiCol_Text,
+                mwbyte ? V4(variables::Theme::textDim) : V4(variables::Theme::text));
             ImGui::Text("%s", upper);
             ImGui::PopStyleColor();
             if (headerToggle) {
@@ -560,18 +569,31 @@ namespace FrontierUI {
         const int slot = g_cardDepth < 16 ? g_cardDepth : 15;
         if (!g_cardOpen[slot]) return;
 
-        if (variables::Theme::preset == 4) {
+        if (variables::Theme::preset == 4 || variables::Theme::preset == 7 || variables::Theme::layoutMode == 0) {
             ImDrawList* dl = ImGui::GetWindowDrawList();
             ImVec2 p0 = g_cardMin[slot];
             ImVec2 p1 = ImGui::GetWindowPos();
             p1.x += ImGui::GetWindowSize().x;
             p1.y += ImGui::GetWindowSize().y;
+            const bool mwbyte = variables::Theme::layoutMode == 0;
+            const float r = mwbyte ? 10.f : (variables::Theme::preset == 7 ? 16.f : 14.f);
+            const int glassA = mwbyte ? 18 : (variables::Theme::preset == 7 ? 28 : 22);
             dl->AddRectFilledMultiColor(p0, p1,
-                IM_COL32(255, 255, 255, 18), IM_COL32(255, 255, 255, 10),
-                IM_COL32(255, 255, 255, 6), IM_COL32(255, 255, 255, 14));
-            dl->AddRect(p0, p1, U32(variables::Theme::border, 0.55f), 12.f, 0, 1.2f);
-            dl->AddLine(ImVec2(p0.x + 12.f, p0.y + 1.f), ImVec2(p1.x - 12.f, p0.y + 1.f),
-                IM_COL32(255, 255, 255, 42), 1.f);
+                IM_COL32(255, 255, 255, glassA), IM_COL32(255, 255, 255, glassA - 8),
+                IM_COL32(255, 255, 255, glassA - 14), IM_COL32(255, 255, 255, glassA - 4));
+            dl->AddRect(p0, p1, U32(variables::Theme::border, mwbyte ? 0.45f : 0.72f), r, 0, 1.2f);
+            if (!mwbyte) {
+                dl->AddRect(ImVec2(p0.x + 1.f, p0.y + 1.f), ImVec2(p1.x - 1.f, p1.y - 1.f),
+                    IM_COL32(255, 255, 255, variables::Theme::preset == 7 ? 28 : 18), r - 1.f, 0, 1.f);
+                dl->AddLine(ImVec2(p0.x + 14.f, p0.y + 1.f), ImVec2(p1.x - 14.f, p0.y + 1.f),
+                    IM_COL32(255, 255, 255, variables::Theme::preset == 7 ? 70 : 55), 1.3f);
+                dl->AddLine(ImVec2(p0.x + 18.f, p1.y - 1.f), ImVec2(p1.x - 18.f, p1.y - 1.f),
+                    IM_COL32(255, 255, 255, 14), 1.f);
+                if (variables::Theme::preset == 7) {
+                    dl->AddRectFilled(ImVec2(p0.x + 2.f, p0.y + 10.f), ImVec2(p0.x + 4.f, p1.y - 10.f),
+                        AccentU32(0.85f), 2.f);
+                }
+            }
         }
 
         g_cardOpen[slot] = false;
@@ -579,7 +601,7 @@ namespace FrontierUI {
         ImGui::PopStyleVar(2);
         ImGui::PopStyleColor(2);
         ImGui::PopID();
-        ImGui::Dummy(ImVec2(0, 14));
+        ImGui::Dummy(ImVec2(0, variables::Theme::layoutMode == 0 ? 4.f : 14.f));
     }
 
     inline bool BeginSettings(const char* label, bool /*defaultOpen*/ = true) {
@@ -621,6 +643,28 @@ namespace FrontierUI {
             if (ImGui::GetCurrentTable() != nullptr)
                 ImGui::EndTable();
             g_tableOpen = false;
+        }
+        ImGui::PopStyleVar();
+    }
+
+    inline bool g_grid2Open = false;
+
+    inline bool BeginCardGrid2x2(const char* id) {
+        ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(8, 8));
+        g_grid2Open = ImGui::BeginTable(id, 2,
+            ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_NoSavedSettings | ImGuiTableFlags_PadOuterX);
+        if (!g_grid2Open)
+            ImGui::PopStyleVar();
+        return g_grid2Open;
+    }
+
+    inline void GridCell() { if (g_grid2Open) ImGui::TableNextColumn(); }
+    inline void GridRow() { if (g_grid2Open) { ImGui::TableNextRow(); ImGui::TableNextColumn(); } }
+
+    inline void EndCardGrid2x2() {
+        if (g_grid2Open) {
+            ImGui::EndTable();
+            g_grid2Open = false;
         }
         ImGui::PopStyleVar();
     }

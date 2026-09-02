@@ -3,7 +3,6 @@
 #include <mutex>
 #include <string>
 
-// Open-source builds: no auto-update ping. Check GitHub Releases manually.
 namespace Updater {
 
     inline constexpr int kLocalVersion = 0;

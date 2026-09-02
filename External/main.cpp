@@ -37,7 +37,6 @@ namespace
 	constexpr const char* app = "RobloxPlayerBeta.exe";
 	constexpr const wchar_t* apptitle = L"Roblox";
 
-	// Feature keybinds only while Roblox is focused and the menu is not capturing input.
 	inline bool GameKeyDown(int vk)
 	{
 		if ((GetAsyncKeyState(vk) & 0x8000) == 0)
@@ -92,6 +91,8 @@ namespace
 		variables::Aimbot::enabled = false;
 		variables::Aimbot::toggledOn = false;
 		variables::Aimbot::alwaysOn = false;
+		variables::Aimbot::silentAim = false;
+		variables::Aimbot::aimType = 0;
 		variables::Trigger::enabled = false;
 		variables::Rage::enabled = false;
 		variables::ESP::enabled = false;
@@ -123,6 +124,7 @@ namespace
 		variables::Exploits::animation_changer = false;
 		variables::Misc::afkAssist = false;
 		variables::menuOpen = false;
+		variables::Misc::floatingPanelOpen = false;
 		Aimbot::OnAimReleased();
 		Aimbot::lockedPlayerAddr = 0;
 		CustomMusic::StopLocal();
@@ -308,7 +310,6 @@ namespace
 			if (!Globals::players.Addr || !Globals::workspace.Addr || !Globals::localPlayer.Addr)
 				Globals::RefreshServices();
 
-			// World / lighting — capture originals so disable restores cleanly
 			if (Globals::dataModel.Addr != 0) {
 				struct LightSnap {
 					bool valid = false;
@@ -519,7 +520,6 @@ namespace
 				continue;
 			}
 
-			// Hitbox / desync flags mirrored into Local::
 			variables::Local::hitboxEnabled = variables::Hitbox::enabled;
 			variables::Local::hitboxSize = variables::Hitbox::size;
 			variables::Local::visualizeHitbox = variables::Hitbox::visualize;
@@ -633,7 +633,6 @@ namespace
 				jumpWasOn = false;
 			}
 
-			// Inf jump — velocity + humanoid jump (works across R6/R15/custom)
 			static bool infJumpWasSpace = false;
 			const bool spaceDown = (GetAsyncKeyState(VK_SPACE) & 0x8000) != 0;
 			const bool spaceEdge = spaceDown && !infJumpWasSpace;
@@ -659,7 +658,6 @@ namespace
 				}
 			}
 
-			// Float ΓÇö hold height
 			static float floatBaseY = 0.f;
 			static bool floatArmed = false;
 			if (variables::Local::floatEnabled) {
@@ -676,7 +674,6 @@ namespace
 				floatArmed = false;
 			}
 
-			// Walk fling — sustained HRP velocity on nearby targets (you stay stable)
 			{
 				static uintptr_t lastVictimHum = 0;
 
@@ -820,7 +817,6 @@ namespace
 				else if (!held) clickTpLatch = false;
 			}
 
-			// Auto TP Loop ΓÇö sticky teleport to nearest player (0 delay = every frame)
 			{
 				static auto lastAutoTp = std::chrono::steady_clock::now();
 				static bool autoTpKeyLatch = false;
@@ -896,7 +892,6 @@ namespace
 				}
 			}
 
-			// Rage TP ΓÇö sit behind target (hard to shoot you) + optional health stick
 			if (variables::Rage::enabled && variables::Rage::teleport) {
 				RBX::Vec3 targetPos{};
 				RBX::Vec3 targetLook{};
@@ -981,7 +976,6 @@ namespace
 				}
 			}
 
-			// Fly — menu toggle activates immediately; F key toggles on/off while enabled
 			static bool flyHumanoidSet = false;
 			static bool prevFlyEnabled = false;
 			{
@@ -1090,8 +1084,6 @@ namespace
 				}
 			}
 
-			// Hitbox extender — expand while on; restore originals for several frames when off
-			// (single-frame restore often lost the race and left giant parts stuck).
 			struct HitboxSave {
 				rbx::vector3_t size{};
 				uint8_t flags = 0;
@@ -1101,7 +1093,6 @@ namespace
 			static bool hitboxWasOn = false;
 			static int hitboxRestoreFrames = 0;
 
-			// Keep both toggles in sync (UI vs keybind / legacy)
 			variables::Local::hitboxEnabled = variables::Hitbox::enabled;
 			variables::Local::hitboxSize = variables::Hitbox::size;
 			variables::Local::visualizeHitbox = variables::Hitbox::visualize;
@@ -1209,7 +1200,6 @@ namespace
 				}
 			}
 
-			// Speed key toggle
 			static bool speedKeyLatch = false;
 			if (variables::Local::speedKey > 0) {
 				bool sk = GameKeyDown(variables::Local::speedKey);
@@ -1220,7 +1210,6 @@ namespace
 				else if (!sk) speedKeyLatch = false;
 			}
 
-			// Freeze ΓÇö zero linear/angular velocity
 			static bool freezeKeyLatch = false;
 			if (variables::Local::freezeKey > 0) {
 				bool fk = GameKeyDown(variables::Local::freezeKey);
@@ -1237,7 +1226,6 @@ namespace
 					memory->write<RBX::Vec3>(prim + Offsets::Primitive::AssemblyAngularVelocity, { 0, 0, 0 });
 			}
 
-			// Spin — yaw angular velocity (disabled while anti-fling protects you)
 			if (variables::Local::spin && !variables::Local::walkFling && !variables::Local::antiFling) {
 				auto prim = rootPart.GetPrimitivePtr();
 				if (prim)
@@ -1245,7 +1233,6 @@ namespace
 						{ 0, variables::Local::spinSpeed, 0 });
 			}
 
-			// Hip height
 			static float hipOrig = 0.f;
 			static bool hipWasOn = false;
 			if (variables::Local::hipHeightEnabled && humanoid.Addr) {
@@ -1260,7 +1247,6 @@ namespace
 				hipWasOn = false;
 			}
 
-			// Custom gravity (workspace)
 			static float gravOrig = 196.2f;
 			static bool gravWasOn = false;
 			if (variables::Local::gravityEnabled && Globals::dataModel.Addr) {
@@ -1281,14 +1267,12 @@ namespace
 				gravWasOn = false;
 			}
 
-			// God mode ΓÇö stick health near max
 			if (variables::Local::godMode && humanoid.Addr) {
 				float maxHp = memory->read<float>(humanoid.Addr + Offsets::Humanoid::MaxHealth);
 				if (maxHp < 1.f) maxHp = 100.f;
 				memory->write<float>(humanoid.Addr + Offsets::Humanoid::Health, maxHp);
 			}
 
-			// Anti-void ΓÇö teleport up if falling too far
 			if (variables::Local::antiVoid) {
 				auto pos = rootPart.GetPos();
 				if (pos.Y < -50.f) {
@@ -1297,7 +1281,6 @@ namespace
 				}
 			}
 
-			// TP walk — nudge HRP while holding WASD (dt-scaled, keep Y)
 			if (variables::Local::tpWalk && Globals::camera.Addr) {
 				auto cf = Globals::camera.GetCameraCFrame();
 				RBX::Vec3 look = cf.GetLookVector();
@@ -1326,7 +1309,6 @@ namespace
 				}
 			}
 
-			// Auto clicker
 			if (variables::Local::autoClicker) {
 				bool keyOk = variables::Local::autoClickerKey == 0 ||
 					GameKeyDown(variables::Local::autoClickerKey);
@@ -1341,7 +1323,6 @@ namespace
 				}
 			}
 
-			// Orbit locked / nearest enemy
 			if (variables::Local::orbitPlayer && rootPart.Addr) {
 				uintptr_t target = Aimbot::lockedPlayerAddr;
 				RBX::Vec3 tpos{};
@@ -1380,7 +1361,6 @@ namespace
 				}
 			}
 
-			// Sit spam ΓÇö toggle Humanoid.Sit
 			if (variables::Local::sitSpam && humanoid.Addr) {
 				static auto lastSit = std::chrono::steady_clock::now();
 				if (std::chrono::duration<float, std::milli>(now - lastSit).count() >= 120.f) {
@@ -1391,7 +1371,6 @@ namespace
 				}
 			}
 
-			// Vehicle boost ΓÇö raise MaxSpeed on occupied VehicleSeat
 			if (variables::Local::vehicleBoost && humanoid.Addr) {
 				uintptr_t seat = memory->read<uintptr_t>(humanoid.Addr + Offsets::Humanoid::SeatPart);
 				if (seat) {
@@ -1400,7 +1379,6 @@ namespace
 				}
 			}
 
-			// Unlock / third-person zoom — restore when both off
 			{
 				static float maxZoomOrig = 128.f, minZoomOrig = 0.5f;
 				static bool zoomWasOn = false;
@@ -1427,7 +1405,6 @@ namespace
 				}
 			}
 
-			// Anti-AFK / AFK Assist ΓÇö keep Roblox from idling when you walk away
 			if (variables::Misc::antiAfk || variables::Misc::afkAssist) {
 				static auto lastAfk = std::chrono::steady_clock::now();
 				static POINT lastPt{ 0, 0 };
@@ -1468,7 +1445,6 @@ namespace
 
 			ApplyAntiFling(rootPart, humanoid, character);
 
-			// Keep exploit loop tight while Auto TP is sticking to a target
 			if (variables::Local::autoTp)
 				std::this_thread::sleep_for(std::chrono::milliseconds(0));
 			else if (variables::Local::antiFling)
@@ -1557,8 +1533,12 @@ namespace
 
 		SetLoad(0.40f, "Resolving offsets");
 		const auto anchors = Scanner::ResolveAnchors();
-		if (!anchors.success)
-			return FailAttach("Offset resolve failed. Update offsets.");
+		if (!anchors.success) {
+			char offMsg[160];
+			sprintf_s(offMsg, "Offset resolve failed. Roblox may have updated — built for %s",
+				Offsets::ClientVersion.c_str());
+			return FailAttach(offMsg);
+		}
 
 		Globals::dataModel = RBX::RbxInstance(anchors.dataModel);
 		Globals::renderEngine = RBX::RenderEngine(anchors.visualEngine);
@@ -1869,7 +1849,9 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 			Globals::RefreshServices();
 
 			PlayerCache::EnsureCacheWorker();
-			PlayerCache::refreshLivePositions();
+			const bool uiDrag = variables::Misc::menuDragging;
+			if (!uiDrag)
+				PlayerCache::refreshLivePositions();
 
 			auto viewMatrix = Globals::renderEngine.GetViewMat();
 			if (Globals::renderEngine.Addr) {
@@ -1898,11 +1880,11 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 					(unsigned long long)Globals::localPlayer.Addr);
 			}
 
-			Aimbot::RunAimbot(viewMatrix, players);
-			Aimbot::RunSilentFireAssist(viewMatrix, players);
-			Aimbot::RunMagicBulletAssist(viewMatrix, players);
-			Aimbot::RunTriggerbot(viewMatrix, players);
-			Aimbot::RunMeleeAura(players);
+			if (!uiDrag) {
+			Aimbot::RunCombatFrame(viewMatrix, players);
+
+			if (Globals::renderEngine.Addr != 0)
+				viewMatrix = Globals::renderEngine.GetViewMat();
 
 			if (variables::ESP::enabled ||
 				variables::ESP::names ||
@@ -1923,7 +1905,6 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 				Aimbot::lockedPlayerAddr = 0;
 			}
 
-			// Overlay extras
 			if (variables::Misc::enemyCounter) {
 				int enemies = 0;
 				for (auto& p : players) {
@@ -1943,6 +1924,7 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 					break;
 				}
 			}
+			} // !uiDrag
 		}
 
 		overlay.EndFrame();

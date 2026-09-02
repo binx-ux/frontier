@@ -284,6 +284,25 @@ namespace SpotifyPlayer {
         playing = true;
     }
 
+    inline DWORD lastTransportMs = 0;
+    inline constexpr DWORD kTransportCooldownMs = 650;
+
+    inline bool TransportReady()
+    {
+        const DWORD now = GetTickCount();
+        if (now - lastTransportMs < kTransportCooldownMs)
+            return false;
+        lastTransportMs = now;
+        return true;
+    }
+
+    inline void SendSpotifyCommand(int cmd)
+    {
+        if (!spotifyHwnd || !IsWindow(spotifyHwnd))
+            return;
+        PostMessageW(spotifyHwnd, WM_APPCOMMAND, (WPARAM)spotifyHwnd, MAKELONG(0, cmd));
+    }
+
     inline void SendMediaKey(WORD vk) {
         INPUT in[2]{};
         in[0].type = INPUT_KEYBOARD;
@@ -294,30 +313,34 @@ namespace SpotifyPlayer {
         SendInput(2, in, sizeof(INPUT));
     }
 
-    inline void SendAppCommand(int cmd) {
-        if (spotifyHwnd && IsWindow(spotifyHwnd)) {
-            SendMessageW(spotifyHwnd, WM_APPCOMMAND, (WPARAM)spotifyHwnd, MAKELONG(0, cmd));
-            PostMessageW(spotifyHwnd, WM_APPCOMMAND, (WPARAM)spotifyHwnd, MAKELONG(0, cmd));
-        }
-        HWND fg = GetForegroundWindow();
-        if (fg)
-            SendMessageW(fg, WM_APPCOMMAND, (WPARAM)fg, MAKELONG(0, cmd));
-    }
-
     inline void PlayPause() {
-        SendAppCommand(APPCOMMAND_MEDIA_PLAY_PAUSE);
-        SendMediaKey(VK_MEDIA_PLAY_PAUSE);
-        playing = !playing;
+        if (!TransportReady()) return;
+        if (spotifyHwnd && IsWindow(spotifyHwnd)) {
+            SendSpotifyCommand(APPCOMMAND_MEDIA_PLAY_PAUSE);
+        } else {
+            SendMediaKey(VK_MEDIA_PLAY_PAUSE);
+        }
+        lastRefreshMs = 0;
     }
 
     inline void Next() {
-        SendAppCommand(APPCOMMAND_MEDIA_NEXTTRACK);
-        SendMediaKey(VK_MEDIA_NEXT_TRACK);
+        if (!TransportReady()) return;
+        if (spotifyHwnd && IsWindow(spotifyHwnd)) {
+            SendSpotifyCommand(APPCOMMAND_MEDIA_NEXTTRACK);
+        } else {
+            SendMediaKey(VK_MEDIA_NEXT_TRACK);
+        }
+        lastRefreshMs = 0;
     }
 
     inline void Prev() {
-        SendAppCommand(APPCOMMAND_MEDIA_PREVIOUSTRACK);
-        SendMediaKey(VK_MEDIA_PREV_TRACK);
+        if (!TransportReady()) return;
+        if (spotifyHwnd && IsWindow(spotifyHwnd)) {
+            SendSpotifyCommand(APPCOMMAND_MEDIA_PREVIOUSTRACK);
+        } else {
+            SendMediaKey(VK_MEDIA_PREV_TRACK);
+        }
+        lastRefreshMs = 0;
     }
 
     inline void VolUp() { SendMediaKey(VK_VOLUME_UP); }
