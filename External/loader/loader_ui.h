@@ -459,15 +459,30 @@ namespace LoaderUI {
     {
         RECT panel = BrandPanelRect();
         const int cy = (panel.top + panel.bottom) / 2;
-        SelectObject(hdc, gFontLogo ? gFontLogo : gFontBold);
+
+        RECT logo{ panel.left + 28, cy - 42, panel.left + 62, cy - 8 };
+        FillRoundRect(hdc, logo, LoaderConfig::kAccent, LoaderConfig::kAccentHover, 8);
+        SelectObject(hdc, gFontBold);
         SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, RGB(4, 16, 24));
+        DrawTextA(hdc, "A", -1, &logo, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+        SelectObject(hdc, gFontLogo ? gFontLogo : gFontBold);
         SetTextColor(hdc, LoaderConfig::kText);
-        RECT mark{ panel.left + 32, cy - 36, panel.right - 16, cy - 8 };
+        RECT mark{ panel.left + 28, cy - 2, panel.right - 16, cy + 22 };
         DrawTextA(hdc, "FRONTIER", -1, &mark, DT_LEFT | DT_SINGLELINE);
+
         SelectObject(hdc, gFont);
-        SetTextColor(hdc, LoaderConfig::kTextMuted);
-        RECT sub{ panel.left + 32, cy - 2, panel.right - 16, cy + 18 };
-        DrawTextA(hdc, "ahead.best", -1, &sub, DT_LEFT | DT_SINGLELINE);
+        SetTextColor(hdc, LoaderConfig::kTextDim);
+        char sub[64];
+        sprintf_s(sub, "%s · ahead.best", LoaderConfig::kDisplayVersion);
+        RECT subRc{ panel.left + 28, cy + 22, panel.right - 16, cy + 42 };
+        DrawTextA(hdc, sub, -1, &subRc, DT_LEFT | DT_SINGLELINE);
+
+        RECT glow{ panel.left + 28, cy + 50, panel.right - 28, cy + 51 };
+        HBRUSH accentBrush = CreateSolidBrush(LoaderConfig::kAccent);
+        FillRect(hdc, &glow, accentBrush);
+        DeleteObject(accentBrush);
     }
 
     inline void DrawChromeBtn(HDC hdc, const RECT& rc, const char* label, bool danger, bool hot)
@@ -490,12 +505,17 @@ namespace LoaderUI {
     inline void DrawSectionTitle(HDC hdc, const char* title, const char* sub)
     {
         SelectObject(hdc, gFontBold);
-        SetTextColor(hdc, LoaderConfig::kText);
+        SetTextColor(hdc, LoaderConfig::kTextDim);
         RECT t = HelloTextRect();
-        DrawTextA(hdc, title, -1, &t, DT_LEFT | DT_SINGLELINE);
+        char upper[96];
+        strncpy_s(upper, title ? title : "", _TRUNCATE);
+        for (char* c = upper; *c; ++c) {
+            if (*c >= 'a' && *c <= 'z') *c = (char)(*c - 'a' + 'A');
+        }
+        DrawTextA(hdc, upper, -1, &t, DT_LEFT | DT_SINGLELINE);
         if (sub && sub[0]) {
             SelectObject(hdc, gFont);
-            SetTextColor(hdc, LoaderConfig::kTextDim);
+            SetTextColor(hdc, LoaderConfig::kText);
             RECT subRc = SubtitleTextRect();
             const int saved = SaveDC(hdc);
             IntersectClipRect(hdc, subRc.left, subRc.top, subRc.right, subRc.bottom);
@@ -529,7 +549,7 @@ namespace LoaderUI {
         COLORREF fill = enabled
             ? (hot ? LoaderConfig::kAccentHover : LoaderConfig::kAccent)
             : LoaderConfig::kAccentDim;
-        FillRoundRect(hdc, btn, fill, fill, 6);
+        FillRoundRect(hdc, btn, fill, hot ? LoaderConfig::kAccentLight : fill, 8);
         SelectObject(hdc, gFontBold);
         SetTextColor(hdc, RGB(255, 255, 255));
         DrawTextA(hdc, label, -1, const_cast<RECT*>(&btn), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
@@ -565,33 +585,38 @@ namespace LoaderUI {
     inline void DrawProductRow(HDC hdc, const RECT& rc, const char* name,
         const char* line, const char* hint, COLORREF accent, bool hot, bool locked)
     {
-        FillRoundRect(hdc, rc, hot ? LoaderConfig::kCardHover : LoaderConfig::kCard,
-            hot ? accent : LoaderConfig::kBorder, 8);
+        COLORREF border = hot ? accent : LoaderConfig::kBorder;
+        FillRoundRect(hdc, rc, hot ? LoaderConfig::kCardHover : LoaderConfig::kCard, border, 10);
+        if (hot) {
+            RECT glow = rc;
+            InflateRect(&glow, -1, -1);
+            FillRoundRect(hdc, glow, RGB(20, 28, 40), accent, 10);
+        }
 
         HBRUSH dot = CreateSolidBrush(accent);
         HGDIOBJ ob = SelectObject(hdc, dot);
-        const int x = rc.left + 14;
-        Ellipse(hdc, x, rc.top + 16, x + 8, rc.top + 24);
+        const int x = rc.left + 16;
+        Ellipse(hdc, x, rc.top + 18, x + 10, rc.top + 28);
         SelectObject(hdc, ob);
         DeleteObject(dot);
 
         SelectObject(hdc, gFontBold);
         SetTextColor(hdc, LoaderConfig::kText);
-        RECT nameRc{ x + 14, rc.top + 12, rc.right - 28, rc.top + 30 };
+        RECT nameRc{ x + 18, rc.top + 12, rc.right - 28, rc.top + 30 };
         DrawTextA(hdc, name, -1, &nameRc, DT_LEFT | DT_SINGLELINE);
 
         SelectObject(hdc, gFont);
         SetTextColor(hdc, locked ? LoaderConfig::kWarning : LoaderConfig::kTextDim);
-        RECT lineRc{ x + 14, rc.top + 30, rc.right - 28, rc.top + 46 };
+        RECT lineRc{ x + 18, rc.top + 30, rc.right - 28, rc.top + 46 };
         DrawTextA(hdc, locked ? "Sign in required" : line, -1, &lineRc, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS);
 
         SetTextColor(hdc, LoaderConfig::kTextMuted);
-        RECT hintRc{ x + 14, rc.top + 46, rc.right - 28, rc.bottom - 10 };
+        RECT hintRc{ x + 18, rc.top + 46, rc.right - 28, rc.bottom - 10 };
         DrawTextA(hdc, hint, -1, &hintRc, DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS);
 
         SelectObject(hdc, gFontBold);
-        SetTextColor(hdc, LoaderConfig::kTextMuted);
-        RECT arrow{ rc.right - 22, rc.top, rc.right - 6, rc.bottom };
+        SetTextColor(hdc, hot ? accent : LoaderConfig::kTextMuted);
+        RECT arrow{ rc.right - 24, rc.top, rc.right - 6, rc.bottom };
         DrawTextA(hdc, ">", -1, &arrow, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
 
@@ -607,10 +632,10 @@ namespace LoaderUI {
             "Copies loadstring to clipboard",
             LoaderConfig::kTraceAccent, gHover == HoverProductTrace, false);
         DrawProductRow(hdc, FrontierProductRect(), "FRONTIER",
-            frontierDown ? "Temporarily down" : LoaderProducts::ProductTagline(LoaderProducts::ProductFrontier),
+            LoaderProducts::ProductTagline(LoaderProducts::ProductFrontier),
             frontierDown ? LoaderConfig::kFrontierMaintenanceMsg : "Launch external after sign-in",
             LoaderConfig::kFrontierAccent, gHover == HoverProductFrontier,
-            s && (!s->authenticated || frontierDown));
+            s && !s->authenticated);
     }
 
     inline void DrawModeCard(HDC hdc, const State* s, int idx, int mode, const char* label, bool hot)
