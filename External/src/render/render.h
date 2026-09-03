@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstring>
 #include "../../ext/imgui/imgui.h"
+#include "../../ext/imgui/imgui_internal.h"
 #include "../../ext/imgui/imgui_impl_win32.h"
 #include "../../ext/imgui/imgui_impl_dx11.h"
 #include "../../src/core/variables/variables.h"
@@ -30,6 +31,8 @@
 #include "../../src/render/frontier_menu.h"
 #include "../../src/core/features/aimbot/aimbot.h"
 #include "../../src/core/telemetry/telemetry.h"
+#include "../../src/core/ui_diag.h"
+#include "../../src/core/debug_log.h"
 #include "../../src/core/updater/updater.h"
 #include "../../src/core/servers/server_browser.h"
 
@@ -54,7 +57,15 @@ LRESULT CALLBACK OverlayWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
     return DefWindowProc(hWnd, msg, wParam, lParam);
 }
 
+namespace {
+    void ImGuiErrorLogCallback(ImGuiContext*, void*, const char* msg)
+    {
+        UILog::Write("ImGui: %s", msg ? msg : "(null)");
+    }
+}
+
 namespace UI {
+
     inline ImVec4 V4(const float c[4]) { return ImVec4(c[0], c[1], c[2], c[3]); }
 
     inline void ApplyStyle() {
@@ -216,6 +227,12 @@ public:
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
         ImGuiIO& io = ImGui::GetIO();
+        io.ConfigErrorRecoveryEnableDebugLog = true;
+        io.ConfigErrorRecoveryEnableAssert = false;
+        io.ConfigErrorRecoveryEnableTooltip = false;
+        if (ImGuiContext* ctx = ImGui::GetCurrentContext())
+            ctx->ErrorCallback = ImGuiErrorLogCallback;
+        UILog::Write("ImGui init errorRecovery=1 log=%s", DebugLog::LogPath());
         // Persist layout in <exe_dir>\frontier\imgui.ini
         {
             static char iniPath[MAX_PATH]{};
@@ -525,7 +542,6 @@ public:
         variables::Misc::panelH = ws.y;
 
         ImDrawList* wdl = ImGui::GetWindowDrawList();
-        UIFx::DrawPanelAmbientGlow(ImGui::GetBackgroundDrawList(), wp, ws, panelAlpha);
         wdl->AddLine(ImVec2(wp.x + 12, wp.y + 1), ImVec2(wp.x + ws.x - 12, wp.y + 1),
             IM_COL32(255, 255, 255, (int)(22 * panelAlpha)), 1.f);
         wdl->AddRectFilled(ImVec2(wp.x, wp.y + 8), ImVec2(wp.x + 2.5f, wp.y + 34),
@@ -534,11 +550,10 @@ public:
         const float tabEase = UIMotion::EaseOutCubic(variables::Misc::tabContentAnim);
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, panelAlpha * tabEase);
         ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
-        if (ImGui::BeginChild("##mwscroll", ImVec2(0, 0), ImGuiChildFlags_None,
-            ImGuiWindowFlags_AlwaysVerticalScrollbar) && panelAnim > 0.04f) {
-            FrontierMenu::RenderTab(tab);
-            ImGui::Dummy(ImVec2(0, 8)); // bottom pad so last controls aren't flush
-        }
+        ImGui::BeginChild("##mwscroll", ImVec2(0, 0), ImGuiChildFlags_None,
+            ImGuiWindowFlags_AlwaysVerticalScrollbar);
+        FrontierMenu::RenderTab(tab);
+        ImGui::Dummy(ImVec2(0, 8)); // bottom pad so last controls aren't flush
         ImGui::EndChild();
         ImGui::PopStyleColor();
         ImGui::PopStyleVar();
@@ -889,12 +904,19 @@ public:
         ImGui::SetCursorScreenPos(contentOrigin);
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ease * tabEase);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 8));
-        if (!liteMenu && ImGui::BeginChild("##content", contentSize, ImGuiChildFlags_None,
-            ImGuiWindowFlags_AlwaysVerticalScrollbar) && ease > 0.04f) {
+        if (!liteMenu) {
+            ImGui::BeginChild("##content", contentSize, ImGuiChildFlags_None,
+                ImGuiWindowFlags_AlwaysVerticalScrollbar);
+            {
+                static int lastLoggedTab = -1;
+                if (lastLoggedTab != variables::selectedTab) {
+                    UILog::Write("RenderBody tab=%d menuAnim=%.3f", variables::selectedTab, variables::Misc::menuAnim);
+                    lastLoggedTab = variables::selectedTab;
+                }
+            }
             FrontierMenu::RenderBody();
-        }
-        if (!liteMenu)
             ImGui::EndChild();
+        }
         else
             wdl->AddRectFilled(contentOrigin,
                 ImVec2(contentOrigin.x + contentSize.x, contentOrigin.y + contentSize.y),

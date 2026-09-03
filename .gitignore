@@ -1,5 +1,7 @@
 # Build / IDE
 .vs/
+**/obj/
+**/bin/
 **/x64/
 **/Debug/
 **/Release/
@@ -10,7 +12,7 @@
 *.VC.db
 *.ipch
 
-# Binaries — never commit to public base export
+# Binaries / staged builds — never commit
 *.exe
 *.dll
 *.sys
@@ -23,9 +25,11 @@
 *.log
 *.recipe
 *.Build.CppClean.log
-
-# Closed product staging (optional local mirror of private remote)
-private/worktree/
+*.zip
+dist/
+_zippeek/
+private/
+_ref-loader/
 export/
 
 # Local secrets — never commit webhooks or keys
@@ -33,6 +37,9 @@ export/
 **/*webhook*
 .env
 .env.*
+loader.ini
+frontier.session
+**/frontier.session
 
 # OS
 Thumbs.db

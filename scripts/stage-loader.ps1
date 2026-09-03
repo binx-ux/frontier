@@ -1,6 +1,16 @@
 # Stage loader release folder (usermode + optional kernel)
 $root = Split-Path -Parent $PSScriptRoot
-$loaderOut = Join-Path $root "External\loader\x64\Release\FrontierLoader.exe"
+$cppLoaderOut = Join-Path $root "External\loader\x64\Release\FrontierLoader.exe"
+$guiLoaderOut = Join-Path $root "External\loader-gui\FrontierLoader\bin\Release\net48\FrontierLoader.exe"
+
+$loaderOut = $null
+if (Test-Path $guiLoaderOut) {
+    $loaderOut = $guiLoaderOut
+    Write-Host "Using GUI loader: $loaderOut"
+} elseif (Test-Path $cppLoaderOut) {
+    $loaderOut = $cppLoaderOut
+    Write-Host "Using C++ loader: $loaderOut"
+}
 
 # MSBuild outputs the cheat to solution-root x64\Release; External\x64\Release can be stale.
 $candidates = @(
@@ -41,7 +51,7 @@ if (Test-Path $driverSys) {
 if (Test-Path $loaderOut) {
     Copy-Item $loaderOut (Join-Path $stage "FrontierLoader.exe") -Force
 } else {
-    Write-Warning "Loader not built yet - only cheat staged"
+    Write-Warning "Loader not built yet - run scripts\build-loader-gui.ps1 or build External\loader"
 }
 
 Write-Host "Staged to $stage"

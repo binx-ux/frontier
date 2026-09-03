@@ -59,6 +59,7 @@ namespace LoaderUI {
         HoverProductTrace = 10,
         HoverProductFrontier = 11,
         HoverGuest = 12,
+        HoverChangeKey = 13,
     };
 
     struct State {
@@ -329,6 +330,18 @@ namespace LoaderUI {
     {
         RECT r = ContentRect();
         return RECT{ r.left, r.top + 138, r.right, r.top + 138 + 72 };
+    }
+
+    inline RECT ChangeKeyButtonRect()
+    {
+        RECT r = ContentRect();
+        return RECT{ r.left, r.top + 218, r.right, r.top + 246 };
+    }
+
+    inline bool ShowChangeKeyButton(const State* s)
+    {
+        (void)s;
+        return false; // open-source: no key UI
     }
 
     inline RECT GamePanelRect()
@@ -643,7 +656,7 @@ namespace LoaderUI {
             : (!hasKey
                 ? "Activate your key first"
                 : (!licensed
-                    ? "Buy at ahead.best to unlock"
+                    ? "Click to enter your key"
                     : "Usermode or Kernel mode"));
         DrawProductRow(hdc, TraceProductRect(), "TRACE",
             LoaderProducts::ProductTagline(LoaderProducts::ProductTrace),
@@ -654,6 +667,8 @@ namespace LoaderUI {
             frontierHint,
             LoaderConfig::kFrontierAccent, gHover == HoverProductFrontier,
             frontierLocked || frontierDown);
+        if (ShowChangeKeyButton(s))
+            DrawGhostButton(hdc, ChangeKeyButtonRect(), "Enter license key", gHover == HoverChangeKey);
     }
 
     inline void DrawModeCard(HDC hdc, const State* s, int idx, int mode, const char* label, bool hot)
@@ -862,10 +877,16 @@ namespace LoaderUI {
             s->updateAvailable = false;
             s->kernelAvailable = LoaderUpdate::ProbeKernelAvailable() || done->manifest.kernelAvailable;
             s->updating = false;
-            s->selectedMode = 0;
+            const int launchMode = s->selectedMode;
+            if (!done->launchAfter)
+                s->selectedMode = 0;
             if (done->launchAfter) {
                 s->launchAfterUpdate = false;
-                if (!LoaderUpdate::NeedsUpdate(s->manifest) && LoaderUpdate::LocalUsermodeExists())
+                s->selectedMode = launchMode;
+                const bool ready = launchMode == 1
+                    ? LoaderUpdate::ProbeKernelAvailable()
+                    : LoaderUpdate::LocalUsermodeExists();
+                if (ready && !LoaderUpdate::NeedsUpdate(s->manifest))
                     RunLaunch(s);
                 else
                     GoToLauncher(s);
@@ -970,6 +991,22 @@ namespace LoaderUI {
         RequestRedraw();
     }
 
+    inline void GoToActivateKey(State* s, const char* msg, int tone = 2)
+    {
+        if (!s) return;
+        LoaderLicense::ClearLicense();
+        LoaderOAuth::ClearSession();
+        s->licenseToken[0] = 0;
+        s->signedInAs[0] = 0;
+        s->authenticated = false;
+        s->licenseActive = false;
+        s->authBusy = false;
+        if (gKeyEdit && IsWindow(gKeyEdit))
+            SetWindowTextA(gKeyEdit, "");
+        SetAuthStatus(s, msg && msg[0] ? msg : "Paste your license key from ahead.best.", tone);
+        TransitionToScreen(s, ScreenAuth);
+    }
+
     inline void GoToLauncher(State* s)
     {
         if (!s) return;
@@ -983,12 +1020,20 @@ namespace LoaderUI {
     inline void RunLaunch(State* s)
     {
         if (!s) return;
-        if (!s->authenticated || !s->licenseToken[0] || !s->licenseActive) {
-            ShowMessage(L"Activate your FRONTIER license before launching.", MB_OK | MB_ICONWARNING);
+        // Open-source: no license gate.
+        if (!s->licenseToken[0])
+            strncpy_s(s->licenseToken, LoaderLicense::kOpenToken, _TRUNCATE);
+        if (!s->licenseHwid[0])
+            strncpy_s(s->licenseHwid, "opensource", _TRUNCATE);
+        s->authenticated = true;
+        s->licenseActive = true;
+        if (s->selectedMode == 1 && LoaderUpdate::NeedsKernelBundle(s->manifest)) {
+            s->launchAfterUpdate = true;
+            RunUpdate(s);
             return;
         }
         if (s->selectedMode == 1 && !LoaderUpdate::ProbeKernelAvailable()) {
-            ShowMessage(L"Kernel mode is not installed on this PC.\nUse Usermode instead.",
+            ShowMessage(L"Kernel mode is not installed on this PC.\nRun Update or use Usermode.",
                 MB_OK | MB_ICONINFORMATION);
             return;
         }
@@ -1161,40 +1206,12 @@ namespace LoaderUI {
         (void)s;
         std::thread([]() {
             auto* msg = new BootDoneMsg{};
-            char token[768]{}, savedHwid[64]{}, savedEmail[128]{};
-            LoaderLicense::LoadSaved(token, sizeof(token), savedHwid, sizeof(savedHwid), savedEmail, sizeof(savedEmail));
-            if (savedEmail[0]) {
-                if (strchr(savedEmail, '@'))
-                    MaskEmailDisplay(savedEmail, msg->signedInAs, sizeof(msg->signedInAs));
-                else
-                    MaskKeyDisplay(savedEmail, msg->signedInAs, sizeof(msg->signedInAs));
-            }
-            const std::string currentHw = LoaderLicense::GetHwid();
-            strncpy_s(msg->licenseHwid, currentHw.c_str(), _TRUNCATE);
-            if (savedHwid[0] && _stricmp(savedHwid, currentHw.c_str()) != 0) {
-                LoaderLicense::ClearLicense();
-                strncpy_s(msg->authStatus, "License is bound to another PC.", _TRUNCATE);
-                if (!PostToUi(WM_BOOT_DONE, 0, (LPARAM)msg))
-                    delete msg;
-                return;
-            }
-            if (token[0]) {
-                strncpy_s(msg->licenseToken, token, _TRUNCATE);
-                std::string err;
-                bool licensed = false;
-                if (LoaderLicense::ValidateTokenRemote(token, currentHw.c_str(), &licensed, err)) {
-                    msg->authenticated = true;
-                    msg->licenseActive = licensed;
-                    strncpy_s(msg->authStatus, licensed ? "License active on this PC." : "Signed in.", _TRUNCATE);
-                } else if (IsHardLicenseError(err)) {
-                    LoaderLicense::ClearLicense();
-                    strncpy_s(msg->authStatus, err.c_str(), _TRUNCATE);
-                } else {
-                    msg->authenticated = true;
-                    msg->licenseActive = true;
-                    strncpy_s(msg->authStatus, "Offline mode - saved license kept.", _TRUNCATE);
-                }
-            }
+            strncpy_s(msg->licenseToken, LoaderLicense::kOpenToken, _TRUNCATE);
+            strncpy_s(msg->licenseHwid, "opensource", _TRUNCATE);
+            strncpy_s(msg->signedInAs, "open source", _TRUNCATE);
+            strncpy_s(msg->authStatus, "Open source — no key required.", _TRUNCATE);
+            msg->authenticated = true;
+            msg->licenseActive = true;
             if (!PostToUi(WM_BOOT_DONE, 0, (LPARAM)msg))
                 delete msg;
         }).detach();
@@ -1217,6 +1234,7 @@ namespace LoaderUI {
         if (s->screen == ScreenProducts) {
             if (PtInRect(&TraceProductRect(), pt)) return HoverProductTrace;
             if (PtInRect(&FrontierProductRect(), pt)) return HoverProductFrontier;
+            if (ShowChangeKeyButton(s) && PtInRect(&ChangeKeyButtonRect(), pt)) return HoverChangeKey;
         }
         if (s->screen == ScreenLauncher) {
             if (PtInRect(&LaunchButtonRect(), pt)) return HoverPrimary;
@@ -1240,15 +1258,10 @@ namespace LoaderUI {
                 ShowMessage(L"FRONTIER is temporarily down.\nETA ~2 weeks.", MB_OK | MB_ICONINFORMATION);
                 return;
             }
-            if (!s->authenticated) {
-                ShowMessage(L"Enter your license key to launch FRONTIER.");
-                TransitionToScreen(s, ScreenAuth);
-                return;
-            }
-            if (!s->licenseActive) {
-                ShowMessage(L"This key is not licensed for FRONTIER yet.\nPurchase at ahead.best or redeem in the hub.");
-                return;
-            }
+            s->authenticated = true;
+            s->licenseActive = true;
+            if (!s->licenseToken[0])
+                strncpy_s(s->licenseToken, LoaderLicense::kOpenToken, _TRUNCATE);
             s->selectedProduct = LoaderProducts::ProductFrontier;
             GoToLauncher(s);
         }
@@ -1359,7 +1372,14 @@ namespace LoaderUI {
                 if (!s->authenticated && PtInRect(&PrimaryButtonRect(), pt)) { RunActivateKey(s); return 0; }
                 return 0;
             }
-            if (s->screen == ScreenProducts) { HandleProductsClick(s, pt); return 0; }
+            if (s->screen == ScreenProducts) {
+                if (ShowChangeKeyButton(s) && PtInRect(&ChangeKeyButtonRect(), pt)) {
+                    GoToActivateKey(s, "Paste your license key from ahead.best.");
+                    return 0;
+                }
+                HandleProductsClick(s, pt);
+                return 0;
+            }
             if (s->screen == ScreenLauncher) HandleLauncherClick(s, pt);
             return 0;
         }

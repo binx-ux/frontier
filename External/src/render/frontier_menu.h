@@ -12,6 +12,7 @@
 #include "../render/spotify_player.h"
 #include "../core/features/exploits/animation_catalog.h"
 #include "../core/config/config.h"
+#include "../core/ui_diag.h"
 #include "../discord/frontier_presence.h"
 #include "../sdk/offsets.h"
 #include "../memory/memory.h"
@@ -22,6 +23,18 @@
 #include <string>
 
 namespace FrontierMenu {
+
+    inline bool SafeReadI64(uint64_t addr, int64_t* out)
+    {
+        if (!out || !memory)
+            return false;
+        __try {
+            *out = memory->read<int64_t>(addr);
+            return true;
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            return false;
+        }
+    }
 
     inline void RefreshStatusInfo() {
         float t = (float)ImGui::GetTime();
@@ -48,10 +61,16 @@ namespace FrontierMenu {
         }
 
         if (Globals::dataModel.Addr) {
-            int64_t place = memory->read<int64_t>(Globals::dataModel.Addr + Offsets::DataModel::PlaceId);
-            int64_t game = memory->read<int64_t>(Globals::dataModel.Addr + Offsets::DataModel::GameId);
-            sprintf_s(variables::Status::placeId, "%lld", (long long)place);
-            sprintf_s(variables::Status::gameId, "%lld", (long long)game);
+            int64_t place = 0;
+            int64_t game = 0;
+            if (SafeReadI64(Globals::dataModel.Addr + Offsets::DataModel::PlaceId, &place) &&
+                SafeReadI64(Globals::dataModel.Addr + Offsets::DataModel::GameId, &game)) {
+                sprintf_s(variables::Status::placeId, "%lld", (long long)place);
+                sprintf_s(variables::Status::gameId, "%lld", (long long)game);
+            } else {
+                UILog::Write("RefreshStatusInfo failed place/game read dm=%llX",
+                    (unsigned long long)Globals::dataModel.Addr);
+            }
             std::string job = memory->read_string(Globals::dataModel.Addr + Offsets::DataModel::JobId);
             if (!job.empty() && job != "Unknown") {
                 strncpy_s(variables::Status::jobId, job.c_str(), _TRUNCATE);
@@ -1689,9 +1708,19 @@ namespace FrontierMenu {
     }
 
     inline void RenderTab(int tab) {
+        static int lastUiLogTab = -999;
+        if (lastUiLogTab != tab) {
+            UILog::Write("RenderTab(%d) layout=%d preset=%d", tab, variables::Theme::layoutMode, variables::Theme::preset);
+            lastUiLogTab = tab;
+        }
         FrontierUI::g_cardDepth = 0;
-        for (int i = 0; i < 16; i++) FrontierUI::g_cardOpen[i] = false;
+        for (int i = 0; i < 16; i++) {
+            FrontierUI::g_cardOpen[i] = false;
+            FrontierUI::g_cardChildActive[i] = false;
+            FrontierUI::g_cardFlat[i] = false;
+        }
         FrontierUI::g_tableOpen = false;
+        FrontierUI::g_grid2Open = false;
         if (tab < 0 || tab >= 9) tab = 0;
         int prevSub = variables::selectedSub;
         variables::selectedSub = variables::Misc::selectedSubByTab[tab];
@@ -1709,6 +1738,9 @@ namespace FrontierMenu {
         }
         variables::Misc::selectedSubByTab[tab] = variables::selectedSub;
         variables::selectedSub = prevSub;
+        if (FrontierUI::g_cardDepth != 0 || FrontierUI::g_tableOpen || FrontierUI::g_grid2Open)
+            UILog::Write("RenderTab leak tab=%d cardDepth=%d table=%d grid=%d",
+                tab, FrontierUI::g_cardDepth, FrontierUI::g_tableOpen ? 1 : 0, FrontierUI::g_grid2Open ? 1 : 0);
     }
 
     inline void RenderBody() {

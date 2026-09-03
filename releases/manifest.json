@@ -1,12 +1,16 @@
 {
-  "version": 36,
-  "display": "FRONTIER v1.2.32",
-  "kernel_available": true,
+  "version": 1,
+  "display": "FRONTIER v1.3.5",
+  "offline": true,
+  "down": true,
+  "eta": "~1 week",
+  "message": "FRONTIER is temporarily offline for maintenance. Estimated return in ~1 week.",
+  "kernel_available": false,
   "access_required": true,
   "discord_invite": "https://discord.gg/zHGKqd92Pz",
-  "loader_url": "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.32/FrontierLoader.exe",
-  "zip_url": "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.32/Frontier-v1.2.32.zip",
-  "usermode_url": "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.32/Frontier.exe",
-  "kernel_url": "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.32/Frontier-Kernel.exe",
-  "driver_url": "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.32/FrontierDrv.sys"
+  "loader_url": "",
+  "zip_url": "",
+  "usermode_url": "",
+  "kernel_url": "",
+  "driver_url": ""
 }

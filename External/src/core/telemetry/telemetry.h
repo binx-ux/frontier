@@ -2,6 +2,7 @@
 #include <atomic>
 #include <string>
 
+// Open-source build: telemetry fully disabled (no network, no consent UI).
 namespace Telemetry {
 
     inline std::atomic<bool> consentPending{ false };
@@ -17,4 +18,3 @@ namespace Telemetry {
     inline void ReportError(const char*, const std::string& = {}) {}
     inline void FlushPending() {}
 }
-

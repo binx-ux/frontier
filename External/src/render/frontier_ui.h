@@ -6,6 +6,7 @@
 #include "../../ext/imgui/imgui.h"
 #include "../../ext/imgui/imgui_internal.h"
 #include "../core/variables/variables.h"
+#include "../core/ui_diag.h"
 #include "../core/updater/updater.h"
 #include "brand.h"
 #include "frontier_theme.h"
@@ -500,12 +501,47 @@ namespace FrontierUI {
 
     inline int g_cardDepth = 0;
     inline bool g_cardOpen[16] = {};
+    inline bool g_cardChildActive[16] = {};
+    inline bool g_cardFlat[16] = {};
     inline ImVec2 g_cardMin[16]{};
     inline bool g_tableOpen = false;
 
     inline bool BeginCard(const char* title, bool /*defaultOpen*/ = true, bool* headerToggle = nullptr) {
         ImGui::PushID(title ? title : "section");
         const bool mwbyte = variables::Theme::layoutMode == 0;
+        const bool inTable = ImGui::GetCurrentTable() != nullptr;
+        const int slot = g_cardDepth < 16 ? g_cardDepth : 15;
+
+        if (inTable) {
+            g_cardOpen[slot] = true;
+            g_cardChildActive[slot] = false;
+            g_cardFlat[slot] = true;
+            g_cardDepth++;
+
+            if (title && title[0]) {
+                char upper[64];
+                strncpy_s(upper, title, _TRUNCATE);
+                for (char* c = upper; *c; ++c) {
+                    if (*c >= 'a' && *c <= 'z') *c = (char)(*c - 'a' + 'A');
+                }
+
+                ImGui::PushStyleColor(ImGuiCol_Text,
+                    mwbyte ? V4(variables::Theme::textDim) : V4(variables::Theme::text));
+                ImGui::Text("%s", upper);
+                ImGui::PopStyleColor();
+                if (headerToggle) {
+                    ImGui::SameLine(0.f, 8.f);
+                    const float toggleX = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - 44.f;
+                    if (toggleX > ImGui::GetCursorPosX())
+                        ImGui::SetCursorPosX(toggleX);
+                    ToggleSwitch("##hdr", headerToggle);
+                }
+                ImGui::Dummy(ImVec2(0, 6));
+            }
+            return true;
+        }
+
+        g_cardFlat[slot] = false;
         const bool glass = mwbyte || variables::Theme::preset == 4 || variables::Theme::preset == 7;
         const float cardRound = mwbyte ? 10.f : (variables::Theme::preset == 7 ? 16.f : (glass ? 14.f : 10.f));
         const float cardAlpha = mwbyte ? 0.42f : (variables::Theme::preset == 7 ? 0.82f : 0.72f);
@@ -520,17 +556,14 @@ namespace FrontierUI {
         ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, cardRound);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(glass ? 16.f : 18.f, glass ? 14.f : 16.f));
 
-        const bool visible = ImGui::BeginChild("##sec", ImVec2(0, 0),
-            ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Borders, ImGuiWindowFlags_None);
+        ImGuiChildFlags childFlags = ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY;
 
-        if (g_cardDepth < 16)
-            g_cardOpen[g_cardDepth] = true;
-        else
-            g_cardOpen[15] = true;
-        if (visible && g_cardDepth < 16)
-            g_cardMin[g_cardDepth] = ImGui::GetWindowPos();
-        else if (visible)
-            g_cardMin[15] = ImGui::GetWindowPos();
+        const bool visible = ImGui::BeginChild("##sec", ImVec2(0, 0), childFlags, ImGuiWindowFlags_None);
+
+        g_cardOpen[slot] = true;
+        g_cardChildActive[slot] = visible;
+        if (visible)
+            g_cardMin[slot] = ImGui::GetWindowPos();
         g_cardDepth++;
 
         if (visible && title && title[0]) {
@@ -564,12 +597,16 @@ namespace FrontierUI {
     }
 
     inline void EndCard() {
-        if (g_cardDepth <= 0) return;
+        if (g_cardDepth <= 0) {
+            UILog::Write("EndCard underflow");
+            return;
+        }
         g_cardDepth--;
         const int slot = g_cardDepth < 16 ? g_cardDepth : 15;
-        if (!g_cardOpen[slot]) return;
 
-        if (variables::Theme::preset == 4 || variables::Theme::preset == 7 || variables::Theme::layoutMode == 0) {
+        const bool childActive = g_cardChildActive[slot];
+        if (childActive && g_cardOpen[slot] && ImGui::GetCurrentTable() == nullptr &&
+            (variables::Theme::preset == 4 || variables::Theme::preset == 7 || variables::Theme::layoutMode == 0)) {
             ImDrawList* dl = ImGui::GetWindowDrawList();
             ImVec2 p0 = g_cardMin[slot];
             ImVec2 p1 = ImGui::GetWindowPos();
@@ -597,9 +634,15 @@ namespace FrontierUI {
         }
 
         g_cardOpen[slot] = false;
-        ImGui::EndChild();
-        ImGui::PopStyleVar(2);
-        ImGui::PopStyleColor(2);
+        g_cardChildActive[slot] = false;
+        const bool flat = g_cardFlat[slot];
+        g_cardFlat[slot] = false;
+
+        if (!flat) {
+            ImGui::EndChild();
+            ImGui::PopStyleVar(2);
+            ImGui::PopStyleColor(2);
+        }
         ImGui::PopID();
         ImGui::Dummy(ImVec2(0, variables::Theme::layoutMode == 0 ? 4.f : 14.f));
     }
@@ -622,14 +665,12 @@ namespace FrontierUI {
     }
 
     inline bool BeginTwoCol(const char* id) {
-        ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(10, 8));
         g_tableOpen = ImGui::BeginTable(id, 2,
             ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoSavedSettings |
             ImGuiTableFlags_PadOuterX);
-        if (!g_tableOpen) {
-            ImGui::PopStyleVar();
+        if (!g_tableOpen)
             return false;
-        }
+        ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(10, 8));
         ImGui::TableSetupColumn("L", ImGuiTableColumnFlags_WidthStretch, 0.5f);
         ImGui::TableSetupColumn("R", ImGuiTableColumnFlags_WidthStretch, 0.5f);
         ImGui::TableNextRow();
@@ -637,25 +678,25 @@ namespace FrontierUI {
         return true;
     }
 
-    inline void NextCol() { ImGui::TableNextColumn(); }
+    inline void NextCol() { if (g_tableOpen) ImGui::TableNextColumn(); }
     inline void EndTwoCol() {
         if (g_tableOpen) {
             if (ImGui::GetCurrentTable() != nullptr)
                 ImGui::EndTable();
+            ImGui::PopStyleVar();
             g_tableOpen = false;
         }
-        ImGui::PopStyleVar();
     }
 
     inline bool g_grid2Open = false;
 
     inline bool BeginCardGrid2x2(const char* id) {
-        ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(8, 8));
         g_grid2Open = ImGui::BeginTable(id, 2,
             ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_NoSavedSettings | ImGuiTableFlags_PadOuterX);
         if (!g_grid2Open)
-            ImGui::PopStyleVar();
-        return g_grid2Open;
+            return false;
+        ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(8, 8));
+        return true;
     }
 
     inline void GridCell() { if (g_grid2Open) ImGui::TableNextColumn(); }
@@ -663,10 +704,11 @@ namespace FrontierUI {
 
     inline void EndCardGrid2x2() {
         if (g_grid2Open) {
-            ImGui::EndTable();
+            if (ImGui::GetCurrentTable() != nullptr)
+                ImGui::EndTable();
+            ImGui::PopStyleVar();
             g_grid2Open = false;
         }
-        ImGui::PopStyleVar();
     }
 
     inline bool ChipToggle(const char* label, bool* v) {

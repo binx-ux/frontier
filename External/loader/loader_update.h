@@ -212,7 +212,7 @@ namespace LoaderUpdate {
         if (local >= LoaderConfig::kLocalVersion && m.version < LoaderConfig::kLocalVersion)
             return false;
         // Already on or ahead of the published manifest version.
-        if (local > 0 && local >= m.version)
+        if (local > 0 && local >= m.version && InstalledDisplayMatches(m.display))
             return false;
 
         if (local < m.version) return true;
@@ -609,6 +609,59 @@ namespace LoaderUpdate {
         return FileExists(kexe) && ProbeKernelDriverAvailable();
     }
 
+    inline bool NeedsKernelBundle(const Manifest& m)
+    {
+        if (!m.kernelAvailable) return false;
+        if (!m.kernelUrl[0] && !m.driverUrl[0]) return false;
+        return !ProbeKernelAvailable();
+    }
+
+    inline bool DownloadKernelBundle(const Manifest& m,
+        std::function<void(float, const char*)> progress, std::string& err)
+    {
+        const std::wstring dir = GetLoaderDir();
+        bool any = false;
+
+        if (m.kernelUrl[0]) {
+            if (progress) progress(0.20f, "Downloading kernel...");
+            std::wstring km = PathJoin(dir, L"kernel");
+            EnsureDir(km);
+            std::wstring ktmp = PathJoin(km, L"Frontier.new.exe");
+            if (!HttpDownloadFile(m.kernelUrl, ktmp, err, [&](float p) {
+                if (progress) progress(0.20f + p * 0.45f, "Downloading kernel...");
+            }))
+                return false;
+            ReplaceFileSafe(ktmp, PathJoin(km, LoaderConfig::kKernelExe), L"pendingKernel");
+            any = true;
+        }
+
+        if (m.driverUrl[0]) {
+            if (progress) progress(0.70f, "Downloading driver...");
+            std::wstring driverDir = PathJoin(PathJoin(dir, L"kernel"), L"driver");
+            EnsureDir(driverDir);
+            std::wstring tmpSys = PathJoin(driverDir, L"FrontierDrv.new.sys");
+            if (!HttpDownloadFile(m.driverUrl, tmpSys, err, [&](float p) {
+                if (progress) progress(0.70f + p * 0.20f, "Downloading driver...");
+            }))
+                return false;
+            ReplaceFileSafe(tmpSys, PathJoin(driverDir, L"FrontierDrv.sys"), L"pendingDriver");
+            any = true;
+        }
+
+        if (!any) {
+            err = "Manifest missing kernel_url and driver_url";
+            return false;
+        }
+
+        ApplyPendingUpdates();
+        if (!ProbeKernelAvailable()) {
+            err = "Kernel install incomplete";
+            return false;
+        }
+        if (progress) progress(1.f, "Kernel mode ready");
+        return true;
+    }
+
     inline bool RunPayload(int mode, std::wstring& errMsg)
     {
         std::wstring work;
@@ -713,9 +766,17 @@ namespace LoaderUpdate {
     {
         ApplyPendingUpdates();
 
-        if (IsUpToDate(m)) {
+        const bool needUsermode = !IsUpToDate(m);
+        const bool needKernel = NeedsKernelBundle(m);
+
+        if (!needUsermode && !needKernel) {
             if (progress) progress(1.f, "Already up to date");
             return true;
+        }
+
+        if (needKernel && !needUsermode) {
+            const bool ok = DownloadKernelBundle(m, progress, err);
+            return ok;
         }
 
         if (!m.usermodeUrl[0]) {
@@ -735,29 +796,10 @@ namespace LoaderUpdate {
         }))
             return false;
 
-        if (m.kernelAvailable && m.kernelUrl[0]) {
-            if (progress) progress(0.62f, "Downloading kernel...");
-            std::wstring km = PathJoin(dir, L"kernel");
-            EnsureDir(km);
-            std::wstring ktmp = PathJoin(km, L"Frontier.new.exe");
-            if (HttpDownloadFile(m.kernelUrl, ktmp, err, [&](float p) {
-                if (progress) progress(0.62f + p * 0.12f, "Downloading kernel...");
-            })) {
-                ReplaceFileSafe(ktmp, PathJoin(km, LoaderConfig::kKernelExe), L"pendingKernel");
-            }
-        }
-
-        if (m.driverUrl[0]) {
-            if (progress) progress(0.76f, "Downloading driver...");
-            std::wstring driverDir = PathJoin(PathJoin(dir, L"kernel"), L"driver");
-            EnsureDir(driverDir);
-            std::wstring sysPath = PathJoin(driverDir, L"FrontierDrv.sys");
-            std::wstring tmpSys = PathJoin(driverDir, L"FrontierDrv.new.sys");
-            if (HttpDownloadFile(m.driverUrl, tmpSys, err, [&](float p) {
-                if (progress) progress(0.76f + p * 0.08f, "Downloading driver...");
-            })) {
-                ReplaceFileSafe(tmpSys, sysPath, L"pendingDriver");
-            }
+        if (m.kernelAvailable && (m.kernelUrl[0] || m.driverUrl[0])) {
+            if (progress) progress(0.62f, "Downloading kernel bundle...");
+            if (!DownloadKernelBundle(m, progress, err))
+                return false;
         }
 
         if (progress) progress(0.86f, "Installing usermode...");

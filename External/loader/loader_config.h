@@ -10,9 +10,9 @@ namespace LoaderConfig {
 
 
 
-    inline constexpr int kLocalVersion = 39;
+    inline constexpr int kLocalVersion = 1;
 
-    inline constexpr const char* kDisplayVersion = "v1.2.35";
+    inline constexpr const char* kDisplayVersion = "v1.3.3";
 
     inline constexpr const char* kProductLine = "AHEAD Products";
 
@@ -34,7 +34,7 @@ namespace LoaderConfig {
 
     inline constexpr const char* kFallbackUsermodeUrl =
 
-        "https://github.com/binx-ux/frontier-releases/releases/download/v1.2.34/Frontier.exe";
+        "https://github.com/binx-ux/frontier-releases/releases/download/v1.3.0/Frontier.exe";
 
     inline constexpr const char* kReleasesPage =
 
@@ -42,20 +42,12 @@ namespace LoaderConfig {
 
     inline constexpr const char* kDiscordInvite = "https://discord.gg/zHGKqd92Pz";
 
-
-
-    inline constexpr const char* kLicenseApi = "https://www.ahead.best/api/frontier-license";
-
-    inline constexpr const char* kAccessApi = "https://www.ahead.best/api/trace-auth";
-
-    inline constexpr const char* kDiscordOAuthApi = "https://www.ahead.best/api/discord-oauth";
-
+    // Open-source: license / OAuth APIs disabled
+    inline constexpr const char* kLicenseApi = "";
+    inline constexpr const char* kAccessApi = "";
+    inline constexpr const char* kDiscordOAuthApi = "";
     inline constexpr int kOAuthPort = 38473;
-
     inline constexpr const char* kOAuthRedirectUri = "http://127.0.0.1:38473/callback";
-
-
-
     inline constexpr bool kDiscordOAuthEnabled = false;
 
     inline constexpr bool kKernelModeOffered = true;

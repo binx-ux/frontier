@@ -8,6 +8,28 @@ namespace DebugLog {
 
     inline std::mutex gMu;
 
+    inline const char* LogPath()
+    {
+        static char path[MAX_PATH]{};
+        static bool ready = false;
+        if (ready)
+            return path;
+
+        char exeDir[MAX_PATH]{};
+        if (GetModuleFileNameA(nullptr, exeDir, MAX_PATH) > 0) {
+            char* slash = strrchr(exeDir, '\\');
+            if (slash) *slash = 0;
+            char dir[MAX_PATH]{};
+            sprintf_s(dir, "%s\\frontier", exeDir);
+            CreateDirectoryA(dir, nullptr);
+            sprintf_s(path, "%s\\frontier.log", dir);
+        } else {
+            strcpy_s(path, "frontier.log");
+        }
+        ready = true;
+        return path;
+    }
+
     inline void Write(const char* fmt, ...)
     {
         char msg[512]{};
@@ -25,18 +47,7 @@ namespace DebugLog {
 
         std::lock_guard<std::mutex> lock(gMu);
 
-        char path[MAX_PATH]{};
-        char exeDir[MAX_PATH]{};
-        if (GetModuleFileNameA(nullptr, exeDir, MAX_PATH) > 0) {
-            char* slash = strrchr(exeDir, '\\');
-            if (slash) *slash = 0;
-            char dir[MAX_PATH]{};
-            sprintf_s(dir, "%s\\frontier", exeDir);
-            CreateDirectoryA(dir, nullptr);
-            sprintf_s(path, "%s\\frontier.log", dir);
-        } else {
-            strcpy_s(path, "frontier.log");
-        }
+        const char* path = LogPath();
 
         FILE* f = nullptr;
         if (fopen_s(&f, path, "a") == 0 && f) {

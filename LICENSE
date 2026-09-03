@@ -2,23 +2,6 @@ MIT License
 
 Copyright (c) 2026 binx-ux / FRONTIER contributors
 
-================================================================================
-SCOPE — READ THIS FIRST
-================================================================================
-
-This MIT license applies ONLY to the open **External Base** layer:
-
-  - Paths listed in docs/OPEN_VS_CLOSED.md
-  - Paths listed in base/MANIFEST.json
-  - Memory I/O, SDK, kernel driver SOURCE, offsets, and related scripts
-
-The FRONTIER **product** (cheat features, menu, loader, release binaries) is
-NOT covered by this license. See LICENSE-PROPRIETARY.md.
-
-================================================================================
-MIT LICENSE TEXT
-================================================================================
-
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights
@@ -37,10 +20,11 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-================================================================================
-ADDITIONAL NOTICE
-================================================================================
+--------------------------------------------------------------------------------
+NOTICE
 
 Provided for educational and research purposes. Using memory-reading tools
 against third-party services (including Roblox) may violate their Terms of
 Service and can result in account enforcement. You assume all risk.
+
+This project ships with no license keys, no HWID locks, and no telemetry.

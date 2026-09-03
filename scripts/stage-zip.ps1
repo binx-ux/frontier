@@ -1,6 +1,6 @@
 # Build Frontier release zip (loader + usermode + optional kernel)
 param(
-    [string]$Version = "v1.2.4"
+    [string]$Version = "v1.3.0"
 )
 
 $ErrorActionPreference = "Stop"
@@ -15,7 +15,7 @@ $ini = Join-Path $dist "loader.ini"
 $kernelExe = Join-Path $dist "kernel\Frontier.exe"
 $driverSys = Join-Path $dist "kernel\driver\FrontierDrv.sys"
 
-if (-not (Test-Path $loader)) { Write-Error "Build loader first: External\loader\x64\Release\FrontierLoader.exe" }
+if (-not (Test-Path $loader)) { Write-Error "Build loader first: scripts\build-loader-gui.ps1" }
 if (-not (Test-Path $cheat)) { Write-Error "Stage cheat first: scripts\stage-loader.ps1" }
 
 if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }

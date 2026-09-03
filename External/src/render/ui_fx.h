@@ -28,6 +28,8 @@ namespace UIFx {
 
     inline void EnsureParticles(float w, float h) {
         if (particlesInit) return;
+        if (w < 1.f) w = 1.f;
+        if (h < 1.f) h = 1.f;
         for (auto& p : particles) {
             p.x = (float)(rand() % (int)w);
             p.y = (float)(rand() % (int)h);
@@ -156,6 +158,13 @@ namespace UIFx {
 
     inline void DrawBackgroundFX(ImDrawList* dl, ImVec2 size, float dt, bool menuVisible, bool uiDragging = false) {
         if (!menuVisible && !variables::Theme::bgEffect && !variables::Theme::bgVideoEnabled) return;
+
+        if (!variables::Theme::bgEffect && !variables::Theme::bgVideoEnabled) {
+            if (menuVisible)
+                dl->AddRectFilled(ImVec2(0, 0), size, IM_COL32(0, 0, 0, 72));
+            return;
+        }
+
         if (uiDragging) {
             dl->AddRectFilled(ImVec2(0, 0), size, IM_COL32(4, 8, 14, 120));
             return;

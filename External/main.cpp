@@ -29,7 +29,7 @@
 #include "src/render/render.h"
 #include "src/discord/frontier_presence.h"
 #include "src/core/debug_log.h"
-#include "src/core/auth/session_gate.h"
+#include "src/core/ui_diag.h"
 #include "src/core/config/config.h"
 
 namespace
@@ -1646,14 +1646,19 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	FreeConsole();
 
 	SetUnhandledExceptionFilter([](EXCEPTION_POINTERS* ep) -> LONG {
-		char detail[160]{};
+		char detail[256]{};
 		DWORD code = ep && ep->ExceptionRecord ? ep->ExceptionRecord->ExceptionCode : 0;
-		sprintf_s(detail, "Unhandled exception 0x%08lX", code);
+		void* addr = ep && ep->ExceptionRecord ? ep->ExceptionRecord->ExceptionAddress : nullptr;
+		sprintf_s(detail, "Unhandled exception 0x%08lX at %p", code, addr);
+		DebugLog::Write("CRASH %s", detail);
+		UILog::Write("CRASH %s", detail);
 		Telemetry::ReportError("Crash", detail);
 		Sleep(400);
 		TerminateProcess(GetCurrentProcess(), 1);
 		return EXCEPTION_EXECUTE_HANDLER;
 	});
+
+	DebugLog::Write("Frontier starting log=%s ui_log=%d", DebugLog::LogPath(), UILog::Enabled() ? 1 : 0);
 
 	OverlayWindow overlay;
 	if (!overlay.Initialize())
@@ -1661,21 +1666,10 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 
 	ConfigIO::Load();
 
-	if (!RobloxIsRunning()) {
-		ShowTimedExitPrompt(overlay, "Please join a game");
-		overlay.Cleanup();
-		return 0;
-	}
-
 	FrontierPresence::SyncEnabled(variables::Misc::discordRpc);
 	FrontierPresence::StartWorker();
 
-	std::string licenseErr;
-	if (!SessionGate::ValidateSession(licenseErr)) {
-		ShowTimedExitPrompt(overlay, licenseErr.c_str());
-		overlay.Cleanup();
-		return 0;
-	}
+	// Open-source build: no license / telemetry gate.
 
 	std::atomic<bool> attachSucceeded{ false };
 	std::thread attachThread;
@@ -1771,6 +1765,8 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 
 		if (gameFocused && ((GetAsyncKeyState(menuVk) & 1) || (GetAsyncKeyState(VK_INSERT) & 1) || (GetAsyncKeyState(VK_RCONTROL) & 1))) {
 			if (!variables::Loading::active && !Telemetry::consentPending.load()) {
+				UILog::Write("Menu toggle key pressed open=%d float=%d",
+					variables::menuOpen ? 1 : 0, variables::Misc::floatingPanelOpen ? 1 : 0);
 				if (variables::Theme::useFloatingHeader)
 					variables::Misc::floatingPanelOpen = !variables::Misc::floatingPanelOpen;
 				else

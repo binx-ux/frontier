@@ -93,7 +93,7 @@ namespace FrontierTheme {
             variables::Theme::text[2] = 1.f; variables::Theme::text[3] = 1.f;
             variables::Theme::textDim[0] = 0.62f; variables::Theme::textDim[1] = 0.72f;
             variables::Theme::textDim[2] = 0.84f; variables::Theme::textDim[3] = 0.95f;
-            variables::Theme::bgEffect = true;
+            variables::Theme::bgEffect = false;
             variables::Theme::snowEffect = false;
             break;
         case 5: // Crimson
@@ -115,7 +115,7 @@ namespace FrontierTheme {
         case 6: // Midnight
             variables::Theme::accent[0] = 0.38f; variables::Theme::accent[1] = 0.55f;
             variables::Theme::accent[2] = 0.98f; variables::Theme::accent[3] = 1.f;
-            variables::Theme::bgEffect = true;
+            variables::Theme::bgEffect = false;
             variables::Theme::snowEffect = false;
             variables::Theme::bg[0] = 0.02f; variables::Theme::bg[1] = 0.025f;
             variables::Theme::bg[2] = 0.045f; variables::Theme::bg[3] = 0.99f;
@@ -141,7 +141,7 @@ namespace FrontierTheme {
             variables::Theme::text[2] = 1.f; variables::Theme::text[3] = 1.f;
             variables::Theme::textDim[0] = 0.58f; variables::Theme::textDim[1] = 0.64f;
             variables::Theme::textDim[2] = 0.76f; variables::Theme::textDim[3] = 0.95f;
-            variables::Theme::bgEffect = true;
+            variables::Theme::bgEffect = false;
             variables::Theme::snowEffect = false;
             break;
         case 8: // Spirit Video

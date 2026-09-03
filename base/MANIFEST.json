@@ -1,0 +1,36 @@
+{
+  "name": "frontier-base",
+  "description": "Open MIT-licensed base for FRONTIER — memory I/O, SDK, kernel driver source, offsets",
+  "license": "MIT",
+  "paths": [
+    "kernel/",
+    "kernel/shared/",
+    "offsets/",
+    "External/src/memory/",
+    "External/src/sdk/",
+    "External/src/core/globals/",
+    "External/src/core/debug_log.h",
+    "External/src/core/tp_handler/",
+    "scripts/sync-offsets.js",
+    "scripts/build-kernel.ps1",
+    "scripts/export-public-base.ps1",
+    "LICENSE",
+    "WARNING.md",
+    "docs/OPEN_VS_CLOSED.md",
+    "base/README.md",
+    "base/MANIFEST.json"
+  ],
+  "never_publish": [
+    "External/main.cpp",
+    "External/src/core/features/",
+    "External/src/render/",
+    "External/loader/",
+    "External/src/discord/",
+    "releases/",
+    "dist/",
+    "*.exe",
+    "*.dll",
+    "*.sys",
+    "*.pdb"
+  ]
+}
